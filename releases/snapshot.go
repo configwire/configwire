@@ -53,7 +53,7 @@ import (
 	"sort"
 	"strings"
 
-	"configwire/eval"
+	"github.com/configwire/configwire/eval"
 
 	"github.com/pocketbase/pocketbase/core"
 )

@@ -53,7 +53,7 @@ const (
 	// DefaultRateLimit applies when sdk_keys.rateLimit is missing/non-positive.
 	DefaultRateLimit = 60
 	// RateWindow is the fixed per-key rate-limit window.
-	RateWindow       = time.Minute
+	RateWindow = time.Minute
 )
 
 // EventIn is one validated ingest event with server-normalized timestamp.

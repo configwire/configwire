@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"configwire/envresolve"
-	"configwire/ingest"
+	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/ingest"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/subscriptions"

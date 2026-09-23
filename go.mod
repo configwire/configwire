@@ -1,4 +1,4 @@
-module configwire
+module github.com/configwire/configwire
 
 go 1.27
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"configwire/purge"
+	"github.com/configwire/configwire/purge"
 )
 
 // fakeRows builds n fetch rows + per-variant exposure rows for one env,

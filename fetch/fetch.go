@@ -60,11 +60,11 @@ import (
 	"strings"
 	"time"
 
-	"configwire/envresolve"
-	"configwire/eval"
-	"configwire/ingest"
-	"configwire/releases"
-	"configwire/security"
+	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/eval"
+	"github.com/configwire/configwire/ingest"
+	"github.com/configwire/configwire/releases"
+	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"

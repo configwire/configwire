@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"configwire/envresolve"
+	"github.com/configwire/configwire/envresolve"
 
 	"github.com/pocketbase/pocketbase/core"
 )

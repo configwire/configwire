@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"sync"
 
-	"configwire/envresolve"
-	"configwire/security"
+	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"

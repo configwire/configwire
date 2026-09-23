@@ -37,7 +37,7 @@ import (
 
 const (
 	// RawRetentionDays bounds raw event lifetime before rollup-then-delete.
-	RawRetentionDays    = 30
+	RawRetentionDays = 30
 	// RollupRetentionDays bounds daily aggregate lifetime.
 	RollupRetentionDays = 90
 	// rollupExtraDays derives the event_daily cutoff from the raw-events

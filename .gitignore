@@ -1,0 +1,15 @@
+# ConfigWire data dir (PocketBase sqlite + uploads) — never commit.
+pb_data/
+
+# Built binary (go build output in repo root).
+/configwire
+
+# Scratch / proof logs.
+.omo/
+*.log
+/tmp/
+
+# OS / IDE.
+.DS_Store
+.idea/
+.vscode/

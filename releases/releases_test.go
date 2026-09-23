@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"configwire/eval"
+	"github.com/configwire/configwire/eval"
 )
 
 func goodVariants() any {

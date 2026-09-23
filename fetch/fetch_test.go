@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"configwire/eval"
-	"configwire/releases"
+	"github.com/configwire/configwire/eval"
+	"github.com/configwire/configwire/releases"
 )
 
 func query(raw string) url.Values {

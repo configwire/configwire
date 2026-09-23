@@ -27,10 +27,10 @@ import (
 	"strings"
 	"time"
 
-	"configwire/envresolve"
-	"configwire/purge"
-	"configwire/releases"
-	"configwire/security"
+	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/purge"
+	"github.com/configwire/configwire/releases"
+	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"

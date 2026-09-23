@@ -11,13 +11,13 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
-	"configwire/envresolve"
-	"configwire/fetch"
-	"configwire/ingest"
-	_ "configwire/migrations"
-	"configwire/purge"
-	"configwire/releases"
-	"configwire/stats"
+	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/fetch"
+	"github.com/configwire/configwire/ingest"
+	_ "github.com/configwire/configwire/migrations"
+	"github.com/configwire/configwire/purge"
+	"github.com/configwire/configwire/releases"
+	"github.com/configwire/configwire/stats"
 )
 
 // ConfigWire data-integrity hooks.
