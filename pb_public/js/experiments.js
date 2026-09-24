@@ -42,7 +42,17 @@
 
   function saveExperiment(ev) {
     if (ev) ev.preventDefault();
-    var parsed = CW.parseJSONInput(CW.$("exp-variants").value, "variants");
+    // Builder is the source of truth: auto-apply percent rows to the
+    // hidden exp-variants transport before reading it. Abort on invalid
+    // rows (apply already surfaced the reason in the visible hint).
+    if (!applyVariantsBuilderToVariants()) {
+      var hintEl = CW.$("exp-variants-hint");
+      var resEl = CW.$("experiment-result");
+      if (resEl) resEl.textContent = (hintEl && hintEl.textContent) || "invalid variants";
+      return Promise.resolve();
+    }
+    var transport = CW.$("exp-variants");
+    var parsed = CW.parseJSONInput(transport ? transport.value : "", "variants");
     if (!parsed.ok) { CW.$("experiment-result").textContent = parsed.error; return Promise.resolve(); }
     var variants = parsed.value;
     var idEl = CW.$("exp-id");
@@ -89,11 +99,12 @@
     });
   }
 
-  // Variants builder (explicit Apply only): the rows edit a working copy;
-  // exp-variants JSON is the source of truth and is only rewritten when
-  // the Apply button runs. Never auto-apply on keystroke, so manual JSON
-  // edits are never clobbered. All DOM lookups are null-guarded so the
-  // page keeps working when the builder markup has not landed yet.
+  // Variants builder is the source of truth: saveExperiment auto-applies
+  // the rows to the hidden exp-variants transport before reading it.
+  // The Apply/Validate button only re-validates and refreshes the hint.
+  // Never auto-apply on keystroke (weight inputs recalc the last row
+  // only). All DOM lookups are null-guarded so the page keeps working
+  // when the builder markup has not landed yet.
   var MAX_VARIANT_ROWS = 8;
   var VARIANTS_TOTAL = 10000;
 

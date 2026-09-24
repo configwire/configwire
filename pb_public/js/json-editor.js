@@ -56,7 +56,6 @@
     "flag-default": "defaultValue",
     "flag-rules-condition": "condition",
     "flag-rules-value": "value",
-    "exp-variants": "variants",
   };
 
   function getJsonEditorTarget() { return jsonEditorTarget; }

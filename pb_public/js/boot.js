@@ -122,19 +122,11 @@
     CW.on("exp-flag-select", "change", function () {
       if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
     });
+    // exp-variants is a hidden transport (builder is the visible source of
+    // truth). Keep a null-guarded hint refresh; never sync the builder
+    // back from the hidden field here — save auto-applies builder to JSON.
     CW.on("exp-variants", "input", function () {
       if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
-      if (!CW.syncVariantsBuilderFromInput) return;
-      var raw = CW.$("exp-variants");
-      raw = raw ? raw.value : "";
-      var parsed;
-      try { parsed = JSON.parse(raw); } catch (e) { return; }
-      if (CW.validateVariants) {
-        var res;
-        try { res = CW.validateVariants(parsed); } catch (e2) { return; }
-        if (!res || !res.ok) return;
-      }
-      CW.syncVariantsBuilderFromInput();
     });
     CW.on("exp-variants-apply", "click", function () {
       if (CW.applyVariantsBuilderToVariants) CW.applyVariantsBuilderToVariants();

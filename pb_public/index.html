@@ -193,16 +193,13 @@
             </div>
             <div class="form-actions">
               <button type="button" id="exp-variant-add" class="btn secondary">Add variant</button>
-              <button type="button" id="exp-variants-apply" class="btn secondary">Apply builder to JSON</button>
+              <button type="button" id="exp-variants-apply" class="btn secondary">Validate weights</button>
               <button type="button" id="exp-variants-balance" class="btn ghost">Even split</button>
             </div>
-          </div>
-          <label class="json-field-label">Variants (JSON)
-            <span class="json-row">
-              <input id="exp-variants" type="text" value='[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}]' spellcheck="false" size="48" aria-describedby="exp-variants-hint">
-              <button type="button" class="btn secondary json-expand" data-target="exp-variants" aria-haspopup="dialog" title="Open larger JSON editor">Expand</button>
-            </span>
             <span id="exp-variants-hint" class="json-hint" role="status"></span>
+          </div>
+          <label class="json-field-label" hidden>Variants (JSON, internal)
+            <input id="exp-variants" type="hidden" value='[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}]'>
           </label>
           <label>Status
             <select id="exp-status">
