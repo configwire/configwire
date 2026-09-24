@@ -84,15 +84,38 @@
     CW.on("flag-rules-field", "change", function () {
       var fieldSel = CW.$("flag-rules-field");
       var base = fieldSel ? fieldSel.value : "platform";
-      var wrap = CW.$("flag-rules-custom-wrap");
-      if (wrap) wrap.hidden = base !== "custom.";
+      var opSel = CW.$("flag-rules-op");
+      var op = opSel ? opSel.value : "";
       if (CW.populateRuleOpOptions) CW.populateRuleOpOptions(base);
+      var freshOp = CW.$("flag-rules-op");
+      if (freshOp) op = freshOp.value;
+      if (CW.updateRuleBuilderVisibility) CW.updateRuleBuilderVisibility(base, op);
       if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
     });
     CW.on("flag-rules-op", "change", function () {
+      var fieldSel = CW.$("flag-rules-field");
+      var opSel = CW.$("flag-rules-op");
+      if (CW.updateRuleBuilderVisibility) {
+        CW.updateRuleBuilderVisibility(
+          fieldSel ? fieldSel.value : "platform",
+          opSel ? opSel.value : ""
+        );
+      }
       if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
     });
     CW.on("flag-rules-custom", "input", function () {
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-cond-value", "input", function () {
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-cond-lo", "input", function () {
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-cond-hi", "input", function () {
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-seed", "input", function () {
       if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
     });
     CW.on("flag-rules-value", "input", CW.updateFlagRuleHints);
@@ -328,6 +351,7 @@
     get populateRuleOpOptions() { return CW.populateRuleOpOptions; },
     get syncRuleBuilderFromCondition() { return CW.syncRuleBuilderFromCondition; },
     get applyRuleBuilderToCondition() { return CW.applyRuleBuilderToCondition; },
+    get updateRuleBuilderVisibility() { return CW.updateRuleBuilderVisibility; },
     get resetRuleBuilder() { return CW.resetRuleBuilder; },
   };
 })();

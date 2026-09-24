@@ -6,7 +6,7 @@
 <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
 <meta name="theme-color" content="#1a1f2a">
 <title>ConfigWire Admin</title>
-<link rel="stylesheet" href="/styles.css?v=10">
+<link rel="stylesheet" href="/styles.css?v=11">
 <link rel="icon" type="image/png" href="/img/favicon.png">
 <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -242,11 +242,23 @@
                 <option value="custom.">custom.*</option>
               </select>
             </label>
-            <label>Op
-              <select id="flag-rules-op" aria-label="Condition op"></select>
+            <label>Operator
+              <select id="flag-rules-op" aria-label="Condition operator"></select>
+            </label>
+            <label id="flag-rules-cond-value-wrap">Value
+              <input id="flag-rules-cond-value" type="text" value="ios" spellcheck="false" placeholder="ios" aria-label="Condition value">
+            </label>
+            <label id="flag-rules-cond-lo-wrap" hidden>Min
+              <input id="flag-rules-cond-lo" type="number" value="0" min="0" max="9999" aria-label="Condition range min">
+            </label>
+            <label id="flag-rules-cond-hi-wrap" hidden>Max
+              <input id="flag-rules-cond-hi" type="number" value="9999" min="0" max="9999" aria-label="Condition range max">
             </label>
             <label id="flag-rules-custom-wrap" hidden>Custom attr
               <input id="flag-rules-custom" type="text" spellcheck="false" placeholder="tier" aria-label="Custom attribute name">
+            </label>
+            <label id="flag-rules-seed-wrap" hidden>Seed
+              <input id="flag-rules-seed" type="text" spellcheck="false" placeholder="rollout-1" aria-label="Percentile seed">
             </label>
           </div>
           <label class="json-field-label">Condition (JSON)
@@ -294,12 +306,12 @@
 <script src="/js/router.js?v=8"></script>
 <script src="/js/scope.js?v=8"></script>
 <script src="/js/flags.js?v=9"></script>
-<script src="/js/rules.js?v=9"></script>
+<script src="/js/rules.js?v=10"></script>
 <script src="/js/experiments.js?v=8"></script>
 <script src="/js/keys.js?v=8"></script>
 <script src="/js/releases.js?v=8"></script>
 <script src="/js/stats.js?v=8"></script>
 <script src="/js/json-editor.js?v=9"></script>
-<script src="/js/boot.js?v=9"></script>
+<script src="/js/boot.js?v=10"></script>
 </body>
 </html>

@@ -169,12 +169,112 @@
     if (!base) return false;
     fieldSel.value = base;
     populateRuleOpOptions(base, parsed.cond.op);
+    var opSel = CW.$("flag-rules-op");
+    var op = (opSel && opSel.value) || parsed.cond.op;
+    updateRuleBuilderVisibility(base, op);
     var isCustom = base === "custom.";
-    if (customWrap) customWrap.hidden = !isCustom;
     if (isCustom && customInput) {
       customInput.value = String(parsed.cond.field || "").slice("custom.".length);
     }
+    setBuilderValueInputs(base, op, parsed.cond.value);
+    var seedInput = CW.$("flag-rules-seed");
+    if (seedInput) {
+      seedInput.value = typeof parsed.cond.seed === "string" ? parsed.cond.seed : "";
+    }
     return true;
+  }
+
+  function toFiniteNumber(raw, fallback) {
+    var n = typeof raw === "number" ? raw : parseFloat(String(raw == null ? "" : raw).trim());
+    return isFinite(n) ? n : fallback;
+  }
+
+  // Value typing mirrors eval.go: percentile is numeric, custom.* coerces
+  // JSON scalars with string fallback, string fields stay raw strings.
+  function builderValueFor(base, op) {
+    if (base === "percentile") {
+      if (op === "between") {
+        var loEl = CW.$("flag-rules-cond-lo");
+        var hiEl = CW.$("flag-rules-cond-hi");
+        var lo = loEl ? toFiniteNumber(loEl.value, 0) : 0;
+        var hi = hiEl ? toFiniteNumber(hiEl.value, 9999) : 9999;
+        return [lo, hi];
+      }
+      var vEl = CW.$("flag-rules-cond-value");
+      var raw = vEl ? vEl.value : "";
+      if (!String(raw == null ? "" : raw).trim()) return 5000;
+      return toFiniteNumber(raw, 5000);
+    }
+    if (base === "custom.") {
+      var cEl = CW.$("flag-rules-cond-value");
+      var text = cEl ? String(cEl.value == null ? "" : cEl.value) : "";
+      try { return JSON.parse(text); }
+      catch (e) {
+        if (/^(true|false)$/.test(text.trim())) return text.trim() === "true";
+        var num = parseFloat(text.trim());
+        if (text.trim() !== "" && isFinite(num) && String(num) === text.trim()) return num;
+        return text;
+      }
+    }
+    var sEl = CW.$("flag-rules-cond-value");
+    return sEl ? String(sEl.value == null ? "" : sEl.value) : "";
+  }
+
+  function condValueToText(v) {
+    if (v === undefined || v === null) return "";
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    try { return JSON.stringify(v); }
+    catch (e) { return String(v); }
+  }
+
+  function setBuilderValueInputs(base, op, value) {
+    var vEl = CW.$("flag-rules-cond-value");
+    var loEl = CW.$("flag-rules-cond-lo");
+    var hiEl = CW.$("flag-rules-cond-hi");
+    if (base === "percentile" && op === "between") {
+      var lo = 0, hi = 9999;
+      if (Array.isArray(value)) {
+        if (value.length > 0) lo = toFiniteNumber(value[0], 0);
+        if (value.length > 1) hi = toFiniteNumber(value[1], 9999);
+      } else if (value !== undefined) {
+        lo = toFiniteNumber(value, 0);
+      }
+      if (loEl) loEl.value = String(lo);
+      if (hiEl) hiEl.value = String(hi);
+      return;
+    }
+    if (vEl) vEl.value = condValueToText(value === undefined ? "" : value);
+  }
+
+  function updateRuleBuilderVisibility(base, op) {
+    var isBetween = base === "percentile" && op === "between";
+    var isPercentile = base === "percentile";
+    var isCustom = base === "custom.";
+    var vWrap = CW.$("flag-rules-cond-value-wrap");
+    var loWrap = CW.$("flag-rules-cond-lo-wrap");
+    var hiWrap = CW.$("flag-rules-cond-hi-wrap");
+    var customWrap = CW.$("flag-rules-custom-wrap");
+    var seedWrap = CW.$("flag-rules-seed-wrap");
+    if (vWrap) vWrap.hidden = !!isBetween;
+    if (loWrap) loWrap.hidden = !isBetween;
+    if (hiWrap) hiWrap.hidden = !isBetween;
+    if (customWrap) customWrap.hidden = !isCustom;
+    if (seedWrap) seedWrap.hidden = !isPercentile;
+    var vInput = CW.$("flag-rules-cond-value");
+    if (vInput) {
+      if (isPercentile && !isBetween) {
+        vInput.setAttribute("type", "number");
+        vInput.setAttribute("min", "0");
+        vInput.setAttribute("max", "9999");
+        if (!vInput.placeholder || vInput.placeholder === "ios") vInput.placeholder = "5000";
+      } else {
+        vInput.setAttribute("type", "text");
+        vInput.removeAttribute("min");
+        vInput.removeAttribute("max");
+        if (base === "platform" && (!vInput.placeholder || vInput.placeholder === "5000")) vInput.placeholder = "ios";
+      }
+    }
   }
 
   function applyRuleBuilderToCondition() {
@@ -192,13 +292,14 @@
       var name = customInput && customInput.value ? customInput.value.trim() : "";
       field = "custom." + name;
     }
-    var parsed = parseRuleConditionInput();
-    var cond = { field: field, op: op, value: "" };
-    if (parsed.ok) {
-      cond.value = parsed.cond.value === undefined ? "" : parsed.cond.value;
-      if (typeof parsed.cond.seed === "string" && parsed.cond.seed) cond.seed = parsed.cond.seed;
-    } else if (base === "percentile") {
-      cond.value = op === "between" ? [0, 9999] : 5000;
+    var cond = { field: field, op: op, value: builderValueFor(base, op) };
+    var seedInput = CW.$("flag-rules-seed");
+    if (seedInput && base === "percentile") {
+      var seed = String(seedInput.value == null ? "" : seedInput.value).trim();
+      if (seed) cond.seed = seed;
+    } else {
+      var parsed = parseRuleConditionInput();
+      if (parsed.ok && typeof parsed.cond.seed === "string" && parsed.cond.seed) cond.seed = parsed.cond.seed;
     }
     try { input.value = JSON.stringify(cond); }
     catch (e) { return false; }
@@ -209,11 +310,18 @@
   function resetRuleBuilder() {
     var fieldSel = CW.$("flag-rules-field");
     if (fieldSel) fieldSel.value = "platform";
-    var customWrap = CW.$("flag-rules-custom-wrap");
-    if (customWrap) customWrap.hidden = true;
     var customInput = CW.$("flag-rules-custom");
     if (customInput) customInput.value = "";
+    var vInput = CW.$("flag-rules-cond-value");
+    if (vInput) vInput.value = "ios";
+    var loInput = CW.$("flag-rules-cond-lo");
+    if (loInput) loInput.value = "0";
+    var hiInput = CW.$("flag-rules-cond-hi");
+    if (hiInput) hiInput.value = "9999";
+    var seedInput = CW.$("flag-rules-seed");
+    if (seedInput) seedInput.value = "";
     populateRuleOpOptions("platform", "==");
+    updateRuleBuilderVisibility("platform", "==");
   }
 
   CW.conditionHTML = conditionHTML;
@@ -226,5 +334,6 @@
   CW.populateRuleOpOptions = populateRuleOpOptions;
   CW.syncRuleBuilderFromCondition = syncRuleBuilderFromCondition;
   CW.applyRuleBuilderToCondition = applyRuleBuilderToCondition;
+  CW.updateRuleBuilderVisibility = updateRuleBuilderVisibility;
   CW.resetRuleBuilder = resetRuleBuilder;
 })();

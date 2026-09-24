@@ -533,9 +533,10 @@ section[aria-labelledby="stats"] form.inline-form button { flex-shrink: 0; }
 #flag-rules-form { display: grid; grid-template-columns: 140px 1fr; gap: var(--space-3); align-items: start; }
 #flag-rules-form label { min-width: 0; }
 #flag-rules-form label input, #flag-rules-form label select { width: 100%; }
-#flag-rules-form .rule-builder { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); align-items: start; }
-#flag-rules-form .rule-builder #flag-rules-custom-wrap { grid-column: 1 / -1; }
-#flag-rules-form .rule-builder #flag-rules-custom-wrap[hidden] { display: none; }
+#flag-rules-form .rule-builder { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-3); align-items: start; }
+#flag-rules-form .rule-builder #flag-rules-custom-wrap,
+#flag-rules-form .rule-builder #flag-rules-seed-wrap { grid-column: 1 / -1; }
+#flag-rules-form .rule-builder [hidden] { display: none; }
 #flag-rules-form .json-field-label, #flag-rules-form .form-actions { grid-column: 1 / -1; }
 #flag-rules-form .form-actions { display: flex; gap: var(--space-2); }
 #experiment-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); align-items: start; }
@@ -614,6 +615,7 @@ dialog#json-editor-dialog .muted { font-size: 13px; }
   #flag-form .form-actions { flex-direction: column; align-items: stretch; }
   #flag-form .form-actions button { width: 100%; }
   #flag-rules-form, #experiment-form { grid-template-columns: 1fr; }
+  #flag-rules-form .rule-builder { grid-template-columns: 1fr; }
   #flag-rules-form .form-actions, #experiment-form .form-actions { flex-direction: column; align-items: stretch; }
   #flag-rules-form .form-actions button, #experiment-form .form-actions button { width: 100%; }
   section[aria-labelledby="stats"] form.inline-form { flex-direction: column; align-items: stretch; }
