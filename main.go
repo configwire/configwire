@@ -17,6 +17,7 @@ import (
 	_ "github.com/configwire/configwire/migrations"
 	"github.com/configwire/configwire/purge"
 	"github.com/configwire/configwire/releases"
+	"github.com/configwire/configwire/security"
 	"github.com/configwire/configwire/stats"
 )
 
@@ -160,6 +161,12 @@ func main() {
 	ingest.EnableWAL(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		// Global security headers for every response.
+		se.Router.BindFunc(func(re *core.RequestEvent) error {
+			security.SetHeaders(re)
+			return re.Next()
+		})
+
 		se.Router.GET("/hello", func(re *core.RequestEvent) error {
 			return re.String(200, "Hello world!")
 		})

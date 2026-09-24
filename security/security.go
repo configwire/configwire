@@ -1,7 +1,5 @@
 // Package security sets static response headers with no behavior change.
-// Ownership: this helper is called ONLY from the request paths owned by
-// the releases, stats, and fetch packages (their files). configwire/main.go
-// wiring is owned by configwire/main.go — never add calls there.
+// Global middleware in main.go covers every response; per-handler calls stay as backup.
 //
 // Headers (static values, no behavior change):
 //   - X-Content-Type-Options: nosniff (block MIME sniffing)
