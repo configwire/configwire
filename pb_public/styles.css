@@ -328,6 +328,68 @@ td code { background: transparent; border: none; padding: 0; }
   gap: var(--space-2);
   flex-wrap: wrap;
 }
+/* ---- Rules list: human-readable cards (scoped to #rule-list only).
+ * Renderer contract (js/rules.js renderRules): ul#rule-list holds
+ * li.rule-item rows (.rule-prio + .rule-cond|code + .rule-arrow +
+ * .rule-value[.is-true|.is-false] + .rule-flag), or the single
+ * <li>No rules for the selected flag.</li> empty state. */
+#rule-list li.rule-item { gap: var(--space-3); min-width: 0; }
+#rule-list .rule-prio {
+  display: inline-block;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-3);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#rule-list .rule-cond {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+#rule-list code {
+  flex: 1 1 140px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+#rule-list .rule-arrow { flex-shrink: 0; color: var(--muted-dim); }
+#rule-list .rule-value {
+  display: inline-block;
+  flex-shrink: 0;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-3);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#rule-list .rule-value.is-true {
+  color: var(--mint);
+  border-color: rgba(94, 234, 212, 0.4);
+  background: rgba(94, 234, 212, 0.1);
+}
+#rule-list .rule-value.is-false { color: var(--muted); }
+#rule-list .rule-flag {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted-dim);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 #release-list button, #flag-tbody button, #key-list button {
   padding: var(--space-1) var(--space-2);
   font-size: 12px;
