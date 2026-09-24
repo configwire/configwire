@@ -125,6 +125,9 @@
       if (input) {
         input.value = CW.$("json-editor-text").value;
         updateJsonHint(jsonEditorTarget);
+        if (jsonEditorTarget === "flag-rules-condition" && CW.syncRuleBuilderFromCondition) {
+          CW.syncRuleBuilderFromCondition();
+        }
       }
     }
     if (dlg && dlg.open) dlg.close();

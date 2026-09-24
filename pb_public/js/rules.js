@@ -114,10 +114,117 @@
     return CW.updateJsonHint("flag-rules-value");
   }
 
+  // Condition builder (dropdowns only): mirrors the frozen allowlists in
+  // releases/snapshot.go + eval/eval.go so Field -> Op stays valid.
+  // The selects write into the Condition JSON input; value/seed are
+  // preserved from the current JSON and stay editable as raw JSON.
+  var CONDITION_OPS = {
+    platform: ["==", "!=", "contains", "regex"],
+    appVersion: ["<", "<=", "==", "!=", ">=", ">", "contains", "regex"],
+    locale: ["==", "!=", "contains", "regex"],
+    country: ["==", "!=", "contains", "regex"],
+    percentile: ["<=", "between"],
+    "custom.": ["==", "!=", "<", "<=", ">", ">=", "contains", "regex"],
+  };
+
+  function ruleBaseField(field) {
+    if (typeof field !== "string" || !field) return null;
+    if (CONDITION_OPS[field]) return field;
+    if (field === "custom." || field.indexOf("custom.") === 0) return "custom.";
+    return null;
+  }
+
+  function parseRuleConditionInput() {
+    var input = CW.$("flag-rules-condition");
+    if (!input) return { ok: false, cond: null };
+    var raw = input.value;
+    if (!raw || !raw.trim()) return { ok: false, cond: null };
+    try {
+      var v = JSON.parse(raw);
+      if (!v || typeof v !== "object" || Array.isArray(v)) return { ok: false, cond: null };
+      return { ok: true, cond: v };
+    } catch (e) { return { ok: false, cond: null }; }
+  }
+
+  function populateRuleOpOptions(base, keepOp) {
+    var opSel = CW.$("flag-rules-op");
+    if (!opSel) return;
+    var ops = CONDITION_OPS[base] || [];
+    var cur = typeof keepOp === "string" && keepOp ? keepOp : opSel.value;
+    opSel.innerHTML = ops.map(function (op) {
+      return '<option value="' + CW.esc(op) + '">' + CW.esc(op) + "</option>";
+    }).join("");
+    if (ops.indexOf(cur) >= 0) opSel.value = cur;
+    else if (ops.length) opSel.value = ops[0];
+  }
+
+  function syncRuleBuilderFromCondition() {
+    var fieldSel = CW.$("flag-rules-field");
+    var customWrap = CW.$("flag-rules-custom-wrap");
+    var customInput = CW.$("flag-rules-custom");
+    if (!fieldSel) return false;
+    var parsed = parseRuleConditionInput();
+    if (!parsed.ok) return false;
+    var base = ruleBaseField(parsed.cond.field);
+    if (!base) return false;
+    fieldSel.value = base;
+    populateRuleOpOptions(base, parsed.cond.op);
+    var isCustom = base === "custom.";
+    if (customWrap) customWrap.hidden = !isCustom;
+    if (isCustom && customInput) {
+      customInput.value = String(parsed.cond.field || "").slice("custom.".length);
+    }
+    return true;
+  }
+
+  function applyRuleBuilderToCondition() {
+    var fieldSel = CW.$("flag-rules-field");
+    var opSel = CW.$("flag-rules-op");
+    var input = CW.$("flag-rules-condition");
+    var customInput = CW.$("flag-rules-custom");
+    if (!fieldSel || !opSel || !input) return false;
+    var base = fieldSel.value || "platform";
+    if (!CONDITION_OPS[base]) return false;
+    var op = opSel.value || CONDITION_OPS[base][0];
+    if (CONDITION_OPS[base].indexOf(op) < 0) op = CONDITION_OPS[base][0];
+    var field = base;
+    if (base === "custom.") {
+      var name = customInput && customInput.value ? customInput.value.trim() : "";
+      field = "custom." + name;
+    }
+    var parsed = parseRuleConditionInput();
+    var cond = { field: field, op: op, value: "" };
+    if (parsed.ok) {
+      cond.value = parsed.cond.value === undefined ? "" : parsed.cond.value;
+      if (typeof parsed.cond.seed === "string" && parsed.cond.seed) cond.seed = parsed.cond.seed;
+    } else if (base === "percentile") {
+      cond.value = op === "between" ? [0, 9999] : 5000;
+    }
+    try { input.value = JSON.stringify(cond); }
+    catch (e) { return false; }
+    if (CW.updateJsonHint) CW.updateJsonHint("flag-rules-condition");
+    return true;
+  }
+
+  function resetRuleBuilder() {
+    var fieldSel = CW.$("flag-rules-field");
+    if (fieldSel) fieldSel.value = "platform";
+    var customWrap = CW.$("flag-rules-custom-wrap");
+    if (customWrap) customWrap.hidden = true;
+    var customInput = CW.$("flag-rules-custom");
+    if (customInput) customInput.value = "";
+    populateRuleOpOptions("platform", "==");
+  }
+
   CW.conditionHTML = conditionHTML;
   CW.valueHTML = valueHTML;
   CW.loadRules = loadRules;
   CW.deleteRule = deleteRule;
   CW.updateRuleConditionHint = updateRuleConditionHint;
   CW.updateRuleValueHint = updateRuleValueHint;
+  CW.CONDITION_OPS = CONDITION_OPS;
+  CW.populateRuleOpOptions = populateRuleOpOptions;
+  CW.syncRuleBuilderFromCondition = syncRuleBuilderFromCondition;
+  CW.applyRuleBuilderToCondition = applyRuleBuilderToCondition;
+  CW.resetRuleBuilder = resetRuleBuilder;
 })();

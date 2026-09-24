@@ -77,7 +77,24 @@
     CW.on("group-filter", "change", CW.renderFlags);
     CW.on("flag-form", "submit", CW.saveFlag);
     CW.on("flag-default", "input", CW.updateFlagDefaultHint);
-    CW.on("flag-rules-condition", "input", CW.updateFlagRuleHints);
+    CW.on("flag-rules-condition", "input", function () {
+      if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
+      if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
+    });
+    CW.on("flag-rules-field", "change", function () {
+      var fieldSel = CW.$("flag-rules-field");
+      var base = fieldSel ? fieldSel.value : "platform";
+      var wrap = CW.$("flag-rules-custom-wrap");
+      if (wrap) wrap.hidden = base !== "custom.";
+      if (CW.populateRuleOpOptions) CW.populateRuleOpOptions(base);
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-op", "change", function () {
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-custom", "input", function () {
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
     CW.on("flag-rules-value", "input", CW.updateFlagRuleHints);
     CW.on("exp-variants", "input", CW.updateExpVariantsHint);
     document.addEventListener("click", function (ev) {
@@ -101,6 +118,8 @@
     CW.on("json-editor-cancel", "click", function () { CW.closeJsonEditor(false); });
     CW.updateAllJsonHints();
     if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
+    if (CW.resetRuleBuilder) CW.resetRuleBuilder();
+    if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
     CW.on("flag-reset", "click", function () {
       CW.$("flag-id").value = "";
       CW.$("flag-form").reset();
@@ -213,6 +232,7 @@
             : JSON.stringify(found.value);
         } catch (e2) { CW.$("flag-rules-value").value = "null"; }
         if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
+        if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
         CW.$("flag-rules-result").textContent = "editing " + found.id;
       }
     });
@@ -304,5 +324,10 @@
     get updateRuleConditionHint() { return CW.updateRuleConditionHint; },
     get updateRuleValueHint() { return CW.updateRuleValueHint; },
     get updateExpVariantsHint() { return CW.updateExpVariantsHint; },
+    get CONDITION_OPS() { return CW.CONDITION_OPS; },
+    get populateRuleOpOptions() { return CW.populateRuleOpOptions; },
+    get syncRuleBuilderFromCondition() { return CW.syncRuleBuilderFromCondition; },
+    get applyRuleBuilderToCondition() { return CW.applyRuleBuilderToCondition; },
+    get resetRuleBuilder() { return CW.resetRuleBuilder; },
   };
 })();

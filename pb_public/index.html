@@ -6,7 +6,7 @@
 <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
 <meta name="theme-color" content="#1a1f2a">
 <title>ConfigWire Admin</title>
-<link rel="stylesheet" href="/styles.css?v=9">
+<link rel="stylesheet" href="/styles.css?v=10">
 <link rel="icon" type="image/png" href="/img/favicon.png">
 <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -231,6 +231,24 @@
           <input id="flag-rules-flag-id" type="hidden" value="">
           <input id="flag-rules-id" type="hidden" value="">
           <label>Priority <input id="flag-rules-priority" type="number" value="0" required></label>
+          <div class="rule-builder" aria-label="Condition builder">
+            <label>Field
+              <select id="flag-rules-field" aria-label="Condition field">
+                <option value="platform">platform</option>
+                <option value="appVersion">appVersion</option>
+                <option value="locale">locale</option>
+                <option value="country">country</option>
+                <option value="percentile">percentile</option>
+                <option value="custom.">custom.*</option>
+              </select>
+            </label>
+            <label>Op
+              <select id="flag-rules-op" aria-label="Condition op"></select>
+            </label>
+            <label id="flag-rules-custom-wrap" hidden>Custom attr
+              <input id="flag-rules-custom" type="text" spellcheck="false" placeholder="tier" aria-label="Custom attribute name">
+            </label>
+          </div>
           <label class="json-field-label">Condition (JSON)
             <span class="json-row">
               <input id="flag-rules-condition" type="text" value='{"field":"platform","op":"==","value":"ios"}' spellcheck="false" size="40" aria-describedby="flag-rules-condition-hint">
@@ -275,13 +293,13 @@
 <script src="/js/auth.js?v=8"></script>
 <script src="/js/router.js?v=8"></script>
 <script src="/js/scope.js?v=8"></script>
-<script src="/js/flags.js?v=8"></script>
-<script src="/js/rules.js?v=8"></script>
+<script src="/js/flags.js?v=9"></script>
+<script src="/js/rules.js?v=9"></script>
 <script src="/js/experiments.js?v=8"></script>
 <script src="/js/keys.js?v=8"></script>
 <script src="/js/releases.js?v=8"></script>
 <script src="/js/stats.js?v=8"></script>
-<script src="/js/json-editor.js?v=8"></script>
-<script src="/js/boot.js?v=8"></script>
+<script src="/js/json-editor.js?v=9"></script>
+<script src="/js/boot.js?v=9"></script>
 </body>
 </html>

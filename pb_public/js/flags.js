@@ -217,6 +217,8 @@
     if (form) form.reset();
     var prio = CW.$("flag-rules-priority");
     if (prio && !prio.value) prio.value = "0";
+    if (CW.resetRuleBuilder) CW.resetRuleBuilder();
+    if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
     updateFlagRuleHints();
     var res = CW.$("flag-rules-result");
     if (res) res.textContent = "";
