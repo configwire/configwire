@@ -11,6 +11,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
+	"github.com/configwire/configwire/account"
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/fetch"
 	"github.com/configwire/configwire/ingest"
@@ -194,6 +195,8 @@ func main() {
 		stats.Register(se)
 
 		purge.Register(se)
+
+		account.Register(se)
 
 		registerSpikeRoutes(se)
 
