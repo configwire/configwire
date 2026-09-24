@@ -5,6 +5,12 @@
   var CW = window.CW;
   if (CW.state.rulesLoaded === undefined) CW.state.rulesLoaded = false;
   if (CW.state.activeFlagRulesId === undefined) CW.state.activeFlagRulesId = null;
+  if (CW.state.collapsedGroups === undefined) CW.state.collapsedGroups = {};
+
+  function groupStatus(msg) {
+    var el = CW.$("group-result");
+    if (el) el.textContent = msg;
+  }
 
   function ruleCountFor(flagId) {
     if (!Array.isArray(CW.state.rules)) return null;
@@ -18,27 +24,95 @@
   }
 
   function renderFlags() {
-    var groupFilter = CW.$("group-filter").value;
-    var rows = CW.state.flags
-      .filter(function (f) { return !groupFilter || (f.group || "") === groupFilter; })
-      .map(function (f) {
-        var gname = CW.state.groups[f.group] || f.group || "";
-        var count = ruleCountFor(f.id);
-        var rulesLabel = count == null ? "rules" : "rules (" + count + ")";
-        return "<tr><td>" + CW.esc(f.key) + "</td><td>" + CW.esc(f.type) + "</td>" +
-          "<td>" + CW.esc(gname) + "</td><td><code>" + CW.esc(JSON.stringify(f.defaultValue)) +
-          "</code></td>" +
-          '<td><button type="button" data-flag-rules="' + CW.esc(f.id) + '">' + CW.esc(rulesLabel) + "</button> " +
-          '<button type="button" data-stats-flag="' + CW.esc(f.key) + '">stats</button> ' +
-          '<button type="button" data-edit-flag="' + CW.esc(f.id) + '">edit</button> ' +
-          '<button type="button" data-delete-flag="' + CW.esc(f.id) + '">delete</button></td></tr>';
-      });
-    CW.$("flag-tbody").innerHTML = rows.length
-      ? rows.join("")
-      : '<tr><td colspan="5">No flags for this project.</td></tr>';
+    renderFlagFolders();
     renderFlagGroupSelect();
     renderFlagSelects();
     CW.renderStatsFlagOptions();
+  }
+
+  function flagsInGroup(gid) {
+    return CW.state.flags.filter(function (f) { return f && (f.group || "") === (gid || ""); });
+  }
+
+  function sortedGroupIds() {
+    return Object.keys(CW.state.groups).sort(function (a, b) {
+      var na = (CW.state.groups[a] || "").toLowerCase();
+      var nb = (CW.state.groups[b] || "").toLowerCase();
+      return na < nb ? -1 : na > nb ? 1 : 0;
+    });
+  }
+
+  function folderRowHTML(f) {
+    var count = ruleCountFor(f.id);
+    var rulesLabel = count == null ? "rules" : "rules (" + count + ")";
+    var moveOpts = '<option value="">(no group)</option>' +
+      sortedGroupIds().map(function (id) {
+        return '<option value="' + CW.esc(id) + '"' + (f.group === id ? " selected" : "") + ">" +
+          CW.esc(CW.state.groups[id]) + "</option>";
+      }).join("");
+    return "<tr><td>" + CW.esc(f.key) + "</td><td>" + CW.esc(f.type) + "</td>" +
+      "<td><code>" + CW.esc(JSON.stringify(f.defaultValue)) + "</code></td>" +
+      '<td><select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group">' +
+      moveOpts + "</select></td>" +
+      '<td><button type="button" data-flag-rules="' + CW.esc(f.id) + '">' + CW.esc(rulesLabel) + "</button> " +
+      '<button type="button" data-stats-flag="' + CW.esc(f.key) + '">stats</button> ' +
+      '<button type="button" data-edit-flag="' + CW.esc(f.id) + '">edit</button> ' +
+      '<button type="button" data-delete-flag="' + CW.esc(f.id) + '">delete</button></td></tr>';
+  }
+
+  function folderHTML(gid, name) {
+    var key = gid || "__none";
+    var flags = flagsInGroup(gid);
+    var collapsed = !!CW.state.collapsedGroups[key];
+    var rows = flags.map(folderRowHTML).join("");
+    var body = collapsed ? "" :
+      '<div class="table-wrap"><table aria-label="Flags in ' + CW.esc(name) + '">' +
+      "<thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Move to</th><th></th></tr></thead>" +
+      "<tbody>" + (rows || '<tr><td colspan="5">No flags in this group.</td></tr>') + "</tbody></table></div>";
+    var groupBtns = gid
+      ? '<button type="button" data-add-flag-group="' + CW.esc(gid) + '">+ flag</button> ' +
+        '<button type="button" data-edit-group="' + CW.esc(gid) + '">edit</button> ' +
+        '<button type="button" data-delete-group="' + CW.esc(gid) + '">delete</button>'
+      : '<button type="button" data-add-flag-group="">+ flag</button>';
+    return '<section class="folder">' +
+      '<div class="folder-head"><button type="button" class="folder-toggle" data-toggle-group="' + CW.esc(key) +
+      '" aria-expanded="' + String(!collapsed) + '" aria-label="Toggle ' + CW.esc(name) + '">' +
+      (collapsed ? "&#9656;" : "&#9662;") + "</button>" +
+      '<span class="folder-name">' + CW.esc(name) + '</span> <span class="muted">(' + flags.length +
+      (flags.length === 1 ? " flag" : " flags") + ")</span>" +
+      '<span class="folder-actions">' + groupBtns + "</span></div>" + body + "</section>";
+  }
+
+  function renderFlagFolders() {
+    var box = CW.$("flag-folders");
+    if (!box) return;
+    var ids = sortedGroupIds();
+    var html = ids.map(function (id) { return folderHTML(id, CW.state.groups[id] || id); }).join("");
+    var none = flagsInGroup("");
+    if (none.length || !ids.length) html += folderHTML("", "(no group)");
+    box.innerHTML = html || '<p class="muted">No flags for this project.</p>';
+  }
+
+  function toggleGroupCollapse(key) {
+    CW.state.collapsedGroups[key] = !CW.state.collapsedGroups[key];
+    renderFlagFolders();
+  }
+
+  function addFlagToGroup(gid) {
+    openFlagDialog(null);
+    var sel = CW.$("flag-group");
+    if (sel) sel.value = gid || "";
+    var res = CW.$("flag-result");
+    if (res) res.textContent = gid && CW.state.groups[gid] ? "new flag in " + CW.state.groups[gid] : "";
+  }
+
+  function moveFlag(id, gid) {
+    return CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(id), { group: gid || null }).then(function (out) {
+      var ok = out.status === 200 || out.status === 201;
+      CW.toast(ok ? "flag moved" : "flag move failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      loadFlags().catch(function () {});
+      return out;
+    });
   }
 
   function renderFlagSelects() {
@@ -52,13 +126,6 @@
   }
 
   function renderGroups() {
-    var sel = CW.$("group-filter");
-    var cur = sel.value;
-    sel.innerHTML = '<option value="">(all groups)</option>' +
-      Object.keys(CW.state.groups).map(function (id) {
-        return '<option value="' + CW.esc(id) + '">' + CW.esc(CW.state.groups[id]) + "</option>";
-      }).join("");
-    sel.value = cur;
     renderFlagGroupSelect();
   }
 
@@ -114,6 +181,7 @@
     };
     var group = CW.$("flag-group").value || "";
     if (group) body.group = group;
+    else if (id) body.group = null;
     var req = id
       ? CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(id), body)
       : CW.apiMut("POST", "/api/collections/flags/records", body);
@@ -141,21 +209,71 @@
     });
   }
 
-  function createGroup(ev) {
-    if (ev) ev.preventDefault();
-    if (!CW.state.projectId) { CW.$("group-result").textContent = "select a project first"; return Promise.resolve(); }
-    var name = CW.$("group-name").value.trim();
-    if (!name) { CW.$("group-result").textContent = "group name is required"; return Promise.resolve(); }
+  function promptCreateGroup() {
+    if (!CW.state.projectId) { CW.toast("select a project first"); return Promise.resolve(); }
+    var name = window.prompt("New group name");
+    if (name == null) return Promise.resolve();
+    name = name.trim();
+    if (!name) { CW.toast("group name is required"); return Promise.resolve(); }
     return CW.apiMut("POST", "/api/collections/groups/records", { name: name, project: CW.state.projectId }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
-      CW.$("group-result").textContent = ok
+      groupStatus(ok
         ? "group created: " + (out.data.name || out.data.id)
-        : "group create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        : "group create failed (" + out.status + "): " + CW.serverMessage(out.data));
       if (ok) {
         CW.toast("group created: " + (out.data.name || out.data.id), true);
-        CW.$("group-name").value = "";
         loadFlags().catch(function () {});
       }
+      return out;
+    });
+  }
+
+  function renameGroup(id) {
+    var cur = CW.state.groups[id] || "";
+    var name = window.prompt("Rename group", cur);
+    if (name == null) return Promise.resolve();
+    name = name.trim();
+    if (!name) { groupStatus("group name is required"); return Promise.resolve(); }
+    if (name === cur) return Promise.resolve();
+    return CW.apiMut("PATCH", "/api/collections/groups/records/" + encodeURIComponent(id), { name: name }).then(function (out) {
+      var ok = out.status === 200 || out.status === 201;
+      groupStatus(ok
+        ? "group renamed: " + (out.data.name || out.data.id)
+        : "group rename failed (" + out.status + "): " + CW.serverMessage(out.data));
+      if (ok) {
+        CW.toast("group renamed: " + (out.data.name || out.data.id), true);
+        loadFlags().catch(function () {});
+      }
+      return out;
+    });
+  }
+
+  function deleteGroup(id) {
+    var name = CW.state.groups[id] || id;
+    var inGroup = CW.state.flags.filter(function (f) { return f && f.group === id; });
+    var msg = inGroup.length
+      ? 'Delete group "' + name + '" with ' + inGroup.length + (inGroup.length === 1 ? " flag" : " flags") + "? Those flags will become ungrouped."
+      : 'Delete group "' + name + '"?';
+    if (!window.confirm(msg)) return Promise.resolve();
+    // Ungroup flags first so the delete never leaves dangling group refs
+    // (flags.group is an optional, non-cascade relation).
+    var clear = inGroup.reduce(function (p, f) {
+      return p.then(function () {
+        return CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(f.id), { group: null }).then(
+          function () {},
+          function () {}
+        );
+      });
+    }, Promise.resolve());
+    return clear.then(function () {
+      return CW.apiMut("DELETE", "/api/collections/groups/records/" + encodeURIComponent(id));
+    }).then(function (out) {
+      var ok = out.status === 200 || out.status === 201 || out.status === 204;
+      groupStatus(ok
+        ? "group deleted: " + name
+        : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data));
+      CW.toast(ok ? "group deleted" : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      loadFlags().catch(function () {});
       return out;
     });
   }
@@ -357,7 +475,12 @@
   CW.loadFlags = loadFlags;
   CW.saveFlag = saveFlag;
   CW.deleteFlag = deleteFlag;
-  CW.createGroup = createGroup;
+  CW.promptCreateGroup = promptCreateGroup;
+  CW.renameGroup = renameGroup;
+  CW.deleteGroup = deleteGroup;
+  CW.toggleGroupCollapse = toggleGroupCollapse;
+  CW.addFlagToGroup = addFlagToGroup;
+  CW.moveFlag = moveFlag;
   CW.flagKeyById = flagKeyById;
   CW.updateFlagDefaultHint = updateFlagDefaultHint;
   CW.resetFlagForm = resetFlagForm;
