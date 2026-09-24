@@ -152,8 +152,9 @@
       <section class="card" aria-labelledby="experiments">
         <div class="card-head"><h2 id="experiments">Experiments</h2><button id="refresh-experiments" type="button" class="btn ghost">Refresh experiments</button></div>
         <ul id="experiment-list" aria-label="Experiments"><li>Not loaded.</li></ul>
-        <h3>Experiment create</h3>
-        <form id="experiment-form" aria-label="Experiment create">
+        <h3>Experiment create / edit</h3>
+        <form id="experiment-form" aria-label="Experiment create or edit">
+          <input id="exp-id" type="hidden" value="">
           <label>Name <input id="exp-name" type="text" required spellcheck="false"></label>
           <label>Flag
             <select id="exp-flag-select" aria-label="Experiment flag"></select>
@@ -211,7 +212,8 @@
             </select>
           </label>
           <div class="form-actions">
-            <button type="submit" class="btn primary">Create experiment</button>
+            <button type="submit" id="experiment-submit" class="btn primary">Save experiment</button>
+            <button type="button" id="experiment-reset" class="btn ghost">Clear</button>
           </div>
         </form>
         <p id="experiment-result" role="status"></p>

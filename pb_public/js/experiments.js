@@ -8,9 +8,22 @@
     var list = CW.$("experiment-list");
     if (!CW.state.experiments.length) { list.innerHTML = "<li>No experiments.</li>"; return; }
     list.innerHTML = CW.state.experiments.map(function (x) {
-      return "<li>" + CW.esc(x.name) + " [" + CW.esc(x.status) + "] flag " +
+      var variants = Array.isArray(x.variants) ? x.variants : [];
+      var summary = variants.map(function (v) {
+        return "<span>" + CW.esc(v.name) + " " + CW.esc(v.weightBps) + "</span>";
+      }).join(" ");
+      var st = x.status || "draft";
+      var statuses = ["draft", "running", "stopped"];
+      var opts = statuses.map(function (s) {
+        return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
+      }).join("");
+      return "<li>" + CW.esc(x.name) + " [" + CW.esc(st) + "] flag " +
         CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
-        " seed <code>" + CW.esc(x.seed) + "</code></li>";
+        " seed <code>" + CW.esc(x.seed) + "</code>" +
+        ' <span class="exp-variants">' + summary + "</span> " +
+        '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select> " +
+        '<button type="button" data-edit-experiment="' + CW.esc(x.id) + '">Edit</button> ' +
+        '<button type="button" data-delete-experiment="' + CW.esc(x.id) + '">Delete</button></li>';
     }).join("");
   }
 
@@ -27,11 +40,13 @@
     });
   }
 
-  function createExperiment(ev) {
+  function saveExperiment(ev) {
     if (ev) ev.preventDefault();
     var parsed = CW.parseJSONInput(CW.$("exp-variants").value, "variants");
     if (!parsed.ok) { CW.$("experiment-result").textContent = parsed.error; return Promise.resolve(); }
     var variants = parsed.value;
+    var idEl = CW.$("exp-id");
+    var id = idEl ? String(idEl.value || "").trim() : "";
     var body = {
       name: CW.$("exp-name").value.trim(),
       seed: CW.$("exp-seed").value.trim(),
@@ -40,10 +55,35 @@
     };
     var flagId = CW.$("exp-flag-select").value;
     if (flagId) body.flag = flagId;
-    return CW.apiMut("POST", "/api/collections/experiments/records", body).then(function (out) {
+    var req = id
+      ? CW.apiMut("PATCH", "/api/collections/experiments/records/" + encodeURIComponent(id), body)
+      : CW.apiMut("POST", "/api/collections/experiments/records", body);
+    return req.then(function (out) {
       CW.$("experiment-result").textContent = out.status === 200 || out.status === 201
-        ? "experiment created: " + (out.data.name || out.data.id)
-        : "experiment create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        ? (id ? "experiment saved: " : "experiment created: ") + (out.data.name || out.data.id)
+        : "experiment save failed (" + out.status + "): " + CW.serverMessage(out.data);
+      loadExperiments().catch(function () {});
+      return out;
+    });
+  }
+
+  function createExperiment(ev) {
+    return saveExperiment(ev);
+  }
+
+  function deleteExperiment(id) {
+    return CW.apiMut("DELETE", "/api/collections/experiments/records/" + encodeURIComponent(id)).then(function (out) {
+      var ok = out.status === 200 || out.status === 201 || out.status === 204;
+      CW.toast(ok ? "experiment deleted" : "experiment delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      loadExperiments().catch(function () {});
+      return out;
+    });
+  }
+
+  function setExperimentStatus(id, status) {
+    return CW.apiMut("PATCH", "/api/collections/experiments/records/" + encodeURIComponent(id), { status: status }).then(function (out) {
+      var ok = out.status === 200 || out.status === 201;
+      CW.toast(ok ? "experiment status: " + status : "experiment status failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
       loadExperiments().catch(function () {});
       return out;
     });
@@ -267,7 +307,10 @@
 
   CW.renderExperiments = renderExperiments;
   CW.loadExperiments = loadExperiments;
+  CW.saveExperiment = saveExperiment;
   CW.createExperiment = createExperiment;
+  CW.deleteExperiment = deleteExperiment;
+  CW.setExperimentStatus = setExperimentStatus;
   CW.updateExpVariantsHint = updateExpVariantsHint;
   CW.validateVariants = validateVariants;
   CW.addVariantRow = addVariantRow;

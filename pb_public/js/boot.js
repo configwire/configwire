@@ -186,7 +186,49 @@
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
     CW.on("group-create-form", "submit", CW.createGroup);
-    CW.on("experiment-form", "submit", CW.createExperiment);
+    CW.on("experiment-form", "submit", CW.saveExperiment);
+    CW.on("experiment-reset", "click", function () {
+      CW.$("exp-id").value = "";
+      CW.$("experiment-form").reset();
+      if (CW.resetVariantsBuilder) CW.resetVariantsBuilder();
+      if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
+      CW.$("experiment-result").textContent = "";
+    });
+    CW.on("experiment-list", "click", function (ev) {
+      var t = ev.target;
+      var del = t && t.getAttribute && t.getAttribute("data-delete-experiment");
+      if (del) {
+        if (!window.confirm("Delete this experiment?")) return;
+        CW.deleteExperiment(del).catch(function (e) { CW.toast(e.message); });
+        return;
+      }
+      var eid = t && t.getAttribute && t.getAttribute("data-edit-experiment");
+      if (eid) {
+        var found = null;
+        for (var i = 0; i < CW.state.experiments.length; i++) {
+          if (CW.state.experiments[i].id === eid) { found = CW.state.experiments[i]; break; }
+        }
+        if (!found) { CW.toast("experiment not found: " + eid); return; }
+        CW.$("exp-id").value = found.id;
+        CW.$("exp-name").value = found.name || "";
+        CW.$("exp-seed").value = found.seed || "";
+        CW.$("exp-flag-select").value = found.flag || "";
+        CW.$("exp-status").value = found.status || "draft";
+        try {
+          CW.$("exp-variants").value = JSON.stringify(found.variants || []);
+        } catch (e) { CW.$("exp-variants").value = "[]"; }
+        if (CW.syncVariantsBuilderFromInput) CW.syncVariantsBuilderFromInput();
+        if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
+        CW.$("experiment-result").textContent = "editing " + (found.name || eid);
+      }
+    });
+    CW.on("experiment-list", "change", function (ev) {
+      var t = ev.target;
+      var sid = t && t.getAttribute && t.getAttribute("data-exp-status");
+      if (!sid) return;
+      var status = t.value;
+      CW.setExperimentStatus(sid, status).catch(function (e) { CW.toast(e.message); });
+    });
     CW.on("key-form", "submit", CW.createKey);
     CW.on("key-copy", "click", function () {
       var v = CW.$("key-once-value").textContent;
@@ -357,6 +399,9 @@
     get saveFlag() { return CW.saveFlag; },
     get deleteRule() { return CW.deleteRule; },
     get createExperiment() { return CW.createExperiment; },
+    get saveExperiment() { return CW.saveExperiment; },
+    get deleteExperiment() { return CW.deleteExperiment; },
+    get setExperimentStatus() { return CW.setExperimentStatus; },
     get createKey() { return CW.createKey; }, get revokeKey() { return CW.revokeKey; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
     get createGroup() { return CW.createGroup; },
