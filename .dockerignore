@@ -1,6 +1,5 @@
 # Build context is configwire/ — keep the image lean, never bake data/logs.
 pb_data/
-.omo/
 *.log
 /tmp/
 .DS_Store

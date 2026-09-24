@@ -5,7 +5,6 @@ pb_data/
 /configwire
 
 # Scratch / proof logs.
-.omo/
 *.log
 /tmp/
 
