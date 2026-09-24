@@ -6,7 +6,7 @@
 <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
 <meta name="theme-color" content="#1a1f2a">
 <title>ConfigWire Admin</title>
-<link rel="stylesheet" href="/styles.css?v=13">
+<link rel="stylesheet" href="/styles.css?v=14">
 <link rel="icon" type="image/png" href="/img/favicon.png">
 <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -119,9 +119,55 @@
       </section>
 
       <section class="card" aria-labelledby="experiments">
-        <div class="card-head"><h2 id="experiments">Experiments</h2><button id="refresh-experiments" type="button" class="btn ghost">Refresh experiments</button></div>
+        <div class="card-head"><h2 id="experiments">Experiments</h2><div class="card-actions"><button id="experiment-add-btn" type="button" class="btn primary">Add experiment</button><button id="refresh-experiments" type="button" class="btn ghost">Refresh experiments</button></div></div>
         <ul id="experiment-list" aria-label="Experiments"><li>Not loaded.</li></ul>
-        <h3>Experiment create / edit</h3>
+      </section>
+
+      <section class="card" aria-labelledby="keys">
+        <div class="card-head"><h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh keys</button></div>
+        <ul id="key-list" aria-label="SDK keys"><li>Not loaded.</li></ul>
+        <h3>SDK key create</h3>
+        <form id="key-form" aria-label="SDK key create">
+          <label>rateLimit (req/60s) <input id="key-ratelimit" type="number" min="1" value="60"></label>
+          <button type="submit" class="btn primary">Create key for selected env</button>
+        </form>
+        <p id="key-result" role="status"></p>
+        <div id="key-once" hidden>
+          <p><strong>New key (shown once — copy now):</strong></p>
+          <code id="key-once-value"></code>
+          <button id="key-copy" type="button" class="btn secondary">Copy</button>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="releases">
+        <div class="card-head"><h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh releases</button></div>
+        <ul id="release-list" aria-label="Releases"><li>Not loaded.</li></ul>
+      </section>
+
+      <section class="card" aria-labelledby="publish">
+        <div class="card-head"><h2 id="publish">Publish</h2></div>
+        <form id="publish-form">
+          <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
+          <label>baseVersion (auto-filled from latest) <input id="publish-base" name="baseVersion" type="number" min="0" required></label>
+          <button type="submit" class="btn primary">Publish new version</button>
+        </form>
+        <p id="publish-result" role="status"></p>
+      </section>
+
+      <section class="card" aria-labelledby="stats">
+        <div class="card-head"><h2 id="stats">Stats</h2></div>
+        <form class="inline-form" onsubmit="return false" aria-label="Stats filters">
+          <label for="stats-flag">Flag <select id="stats-flag"><option value="">All flags</option></select></label>
+          <label for="stats-since">Since <select id="stats-since"><option value="7d" selected>7d</option><option value="30d">30d</option><option value="90d">90d</option></select></label>
+          <button id="refresh-stats" type="button" class="btn secondary">Load stats</button>
+        </form>
+        <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Not loaded.</div>
+      </section>
+      </div>
+      </section>
+      <dialog id="experiment-dialog" aria-labelledby="experiment-dialog-title">
+        <h3 id="experiment-dialog-title">Add experiment</h3>
+        <p class="muted">Create a new experiment or edit the selected experiment. Saving reloads the experiment list.</p>
         <form id="experiment-form" aria-label="Experiment create or edit">
           <input id="exp-id" type="hidden" value="">
           <label>Name <input id="exp-name" type="text" required spellcheck="false"></label>
@@ -183,50 +229,11 @@
           </div>
         </form>
         <p id="experiment-result" role="status"></p>
-      </section>
-
-      <section class="card" aria-labelledby="keys">
-        <div class="card-head"><h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh keys</button></div>
-        <ul id="key-list" aria-label="SDK keys"><li>Not loaded.</li></ul>
-        <h3>SDK key create</h3>
-        <form id="key-form" aria-label="SDK key create">
-          <label>rateLimit (req/60s) <input id="key-ratelimit" type="number" min="1" value="60"></label>
-          <button type="submit" class="btn primary">Create key for selected env</button>
-        </form>
-        <p id="key-result" role="status"></p>
-        <div id="key-once" hidden>
-          <p><strong>New key (shown once — copy now):</strong></p>
-          <code id="key-once-value"></code>
-          <button id="key-copy" type="button" class="btn secondary">Copy</button>
+        <div class="dialog-actions">
+          <span class="dialog-spacer"></span>
+          <button type="button" id="experiment-dialog-close" class="btn ghost">Close</button>
         </div>
-      </section>
-
-      <section class="card" aria-labelledby="releases">
-        <div class="card-head"><h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh releases</button></div>
-        <ul id="release-list" aria-label="Releases"><li>Not loaded.</li></ul>
-      </section>
-
-      <section class="card" aria-labelledby="publish">
-        <div class="card-head"><h2 id="publish">Publish</h2></div>
-        <form id="publish-form">
-          <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
-          <label>baseVersion (auto-filled from latest) <input id="publish-base" name="baseVersion" type="number" min="0" required></label>
-          <button type="submit" class="btn primary">Publish new version</button>
-        </form>
-        <p id="publish-result" role="status"></p>
-      </section>
-
-      <section class="card" aria-labelledby="stats">
-        <div class="card-head"><h2 id="stats">Stats</h2></div>
-        <form class="inline-form" onsubmit="return false" aria-label="Stats filters">
-          <label for="stats-flag">Flag <select id="stats-flag"><option value="">All flags</option></select></label>
-          <label for="stats-since">Since <select id="stats-since"><option value="7d" selected>7d</option><option value="30d">30d</option><option value="90d">90d</option></select></label>
-          <button id="refresh-stats" type="button" class="btn secondary">Load stats</button>
-        </form>
-        <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Not loaded.</div>
-      </section>
-      </div>
-      </section>
+      </dialog>
       <dialog id="flag-dialog" aria-labelledby="flag-dialog-title">
         <h3 id="flag-dialog-title">Add flag</h3>
         <p class="muted">Create a new flag or edit the selected flag. Saving reloads the flag table.</p>
@@ -349,11 +356,11 @@
 <script src="/js/scope.js?v=8"></script>
 <script src="/js/flags.js?v=10"></script>
 <script src="/js/rules.js?v=10"></script>
-<script src="/js/experiments.js?v=10"></script>
+<script src="/js/experiments.js?v=11"></script>
 <script src="/js/keys.js?v=8"></script>
 <script src="/js/releases.js?v=8"></script>
 <script src="/js/stats.js?v=8"></script>
 <script src="/js/json-editor.js?v=9"></script>
-<script src="/js/boot.js?v=12"></script>
+<script src="/js/boot.js?v=13"></script>
 </body>
 </html>

@@ -75,9 +75,15 @@
       ? CW.apiMut("PATCH", "/api/collections/experiments/records/" + encodeURIComponent(id), body)
       : CW.apiMut("POST", "/api/collections/experiments/records", body);
     return req.then(function (out) {
-      CW.$("experiment-result").textContent = out.status === 200 || out.status === 201
-        ? (id ? "experiment saved: " : "experiment created: ") + (out.data.name || out.data.id)
-        : "experiment save failed (" + out.status + "): " + CW.serverMessage(out.data);
+      var ok = out.status === 200 || out.status === 201;
+      if (ok) {
+        CW.toast((id ? "experiment saved: " : "experiment created: ") + (out.data.name || out.data.id), true);
+        var resEl = CW.$("experiment-result");
+        if (resEl) resEl.textContent = "";
+        closeExperimentDialog();
+      } else {
+        CW.$("experiment-result").textContent = "experiment save failed (" + out.status + "): " + CW.serverMessage(out.data);
+      }
       loadExperiments().catch(function () {});
       return out;
     });
@@ -415,6 +421,62 @@
   // Canonical event wiring lives in boot.js (mirrors flag-rules pattern).
   // This module only defines logic + CW.* exports, no self-binding.
 
+  function resetExperimentForm() {
+    var idEl = CW.$("exp-id");
+    if (idEl) idEl.value = "";
+    var form = CW.$("experiment-form");
+    if (form) form.reset();
+    if (CW.resetVariantsBuilder) CW.resetVariantsBuilder();
+    if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
+    if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
+    var res = CW.$("experiment-result");
+    if (res) res.textContent = "";
+  }
+
+  function fillExperimentForm(found) {
+    if (!found) return false;
+    var idEl = CW.$("exp-id");
+    if (idEl) idEl.value = found.id || "";
+    var nameEl = CW.$("exp-name");
+    if (nameEl) nameEl.value = found.name || "";
+    var seedEl = CW.$("exp-seed");
+    if (seedEl) seedEl.value = found.seed || "";
+    var flagSel = CW.$("exp-flag-select");
+    if (flagSel) flagSel.value = found.flag || "";
+    var statusSel = CW.$("exp-status");
+    if (statusSel) statusSel.value = found.status || "draft";
+    try {
+      CW.$("exp-variants").value = JSON.stringify(found.variants || []);
+    } catch (e) { CW.$("exp-variants").value = "[]"; }
+    if (CW.syncVariantsBuilderFromInput) CW.syncVariantsBuilderFromInput();
+    if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
+    if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
+    var res = CW.$("experiment-result");
+    if (res) res.textContent = "editing " + (found.name || found.id || "");
+    return true;
+  }
+
+  function openExperimentDialog(exp) {
+    var title = CW.$("experiment-dialog-title");
+    if (!exp) {
+      resetExperimentForm();
+      if (title) title.textContent = "Add experiment";
+    } else {
+      fillExperimentForm(exp);
+      if (title) title.textContent = exp.name ? "Edit " + exp.name : "Edit experiment";
+    }
+    var dlg = CW.$("experiment-dialog");
+    if (!dlg) return;
+    if (dlg.showModal) {
+      try { if (!dlg.open) dlg.showModal(); } catch (e) { /* already open */ }
+    }
+  }
+
+  function closeExperimentDialog() {
+    var dlg = CW.$("experiment-dialog");
+    if (dlg && dlg.open) dlg.close();
+  }
+
   CW.renderExperiments = renderExperiments;
   CW.loadExperiments = loadExperiments;
   CW.saveExperiment = saveExperiment;
@@ -431,6 +493,10 @@
   CW.balanceVariantsBuilder = balanceVariantsBuilder;
   CW.recalcLastVariantWeight = recalcLastVariantWeight;
   CW.refreshLastRowLock = refreshLastRowLock;
+  CW.resetExperimentForm = resetExperimentForm;
+  CW.fillExperimentForm = fillExperimentForm;
+  CW.openExperimentDialog = openExperimentDialog;
+  CW.closeExperimentDialog = closeExperimentDialog;
   CW.bpsToPercent = bpsToPercent;
   CW.percentToBps = percentToBps;
 })();

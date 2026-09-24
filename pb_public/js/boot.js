@@ -202,11 +202,21 @@
     CW.on("group-create-form", "submit", CW.createGroup);
     CW.on("experiment-form", "submit", CW.saveExperiment);
     CW.on("experiment-reset", "click", function () {
-      CW.$("exp-id").value = "";
-      CW.$("experiment-form").reset();
-      if (CW.resetVariantsBuilder) CW.resetVariantsBuilder();
-      if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
-      CW.$("experiment-result").textContent = "";
+      if (CW.resetExperimentForm) CW.resetExperimentForm();
+      else {
+        CW.$("exp-id").value = "";
+        CW.$("experiment-form").reset();
+        if (CW.resetVariantsBuilder) CW.resetVariantsBuilder();
+        if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
+        CW.$("experiment-result").textContent = "";
+      }
+    });
+    CW.on("experiment-add-btn", "click", function () {
+      if (CW.openExperimentDialog) CW.openExperimentDialog(null);
+    });
+    CW.on("experiment-dialog-close", "click", function () {
+      if (CW.closeExperimentDialog) CW.closeExperimentDialog();
+      else { var dlg = CW.$("experiment-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
     CW.on("experiment-list", "click", function (ev) {
       var t = ev.target;
@@ -223,17 +233,20 @@
           if (CW.state.experiments[i].id === eid) { found = CW.state.experiments[i]; break; }
         }
         if (!found) { CW.toast("experiment not found: " + eid); return; }
-        CW.$("exp-id").value = found.id;
-        CW.$("exp-name").value = found.name || "";
-        CW.$("exp-seed").value = found.seed || "";
-        CW.$("exp-flag-select").value = found.flag || "";
-        CW.$("exp-status").value = found.status || "draft";
-        try {
-          CW.$("exp-variants").value = JSON.stringify(found.variants || []);
-        } catch (e) { CW.$("exp-variants").value = "[]"; }
-        if (CW.syncVariantsBuilderFromInput) CW.syncVariantsBuilderFromInput();
-        if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
-        CW.$("experiment-result").textContent = "editing " + (found.name || eid);
+        if (CW.openExperimentDialog) CW.openExperimentDialog(found);
+        else {
+          CW.$("exp-id").value = found.id;
+          CW.$("exp-name").value = found.name || "";
+          CW.$("exp-seed").value = found.seed || "";
+          CW.$("exp-flag-select").value = found.flag || "";
+          CW.$("exp-status").value = found.status || "draft";
+          try {
+            CW.$("exp-variants").value = JSON.stringify(found.variants || []);
+          } catch (e) { CW.$("exp-variants").value = "[]"; }
+          if (CW.syncVariantsBuilderFromInput) CW.syncVariantsBuilderFromInput();
+          if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
+          CW.$("experiment-result").textContent = "editing " + (found.name || eid);
+        }
       }
     });
     CW.on("experiment-list", "change", function (ev) {
@@ -417,6 +430,9 @@
     get deleteRule() { return CW.deleteRule; },
     get createExperiment() { return CW.createExperiment; },
     get saveExperiment() { return CW.saveExperiment; },
+    get openExperimentDialog() { return CW.openExperimentDialog; },
+    get closeExperimentDialog() { return CW.closeExperimentDialog; },
+    get resetExperimentForm() { return CW.resetExperimentForm; },
     get deleteExperiment() { return CW.deleteExperiment; },
     get setExperimentStatus() { return CW.setExperimentStatus; },
     get createKey() { return CW.createKey; }, get revokeKey() { return CW.revokeKey; },

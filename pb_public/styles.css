@@ -624,7 +624,7 @@ section[aria-labelledby="stats"] form.inline-form button { flex-shrink: 0; }
 .json-hint.err { color: var(--danger); }
 input.invalid, textarea.invalid { border-color: var(--danger); }
 input.valid, textarea.valid { border-color: rgba(94, 234, 212, 0.55); }
-dialog#json-editor-dialog, dialog#flag-rules-dialog, dialog#flag-dialog {
+dialog#json-editor-dialog, dialog#flag-rules-dialog, dialog#flag-dialog, dialog#experiment-dialog {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -635,9 +635,12 @@ dialog#json-editor-dialog, dialog#flag-rules-dialog, dialog#flag-dialog {
 }
 dialog#flag-rules-dialog { width: min(760px, 94vw); max-height: 88dvh; overflow-y: auto; }
 dialog#flag-dialog { width: min(560px, 92vw); max-height: 88dvh; overflow-y: auto; }
-dialog#json-editor-dialog::backdrop, dialog#flag-rules-dialog::backdrop, dialog#flag-dialog::backdrop { background: rgba(8, 11, 18, 0.7); backdrop-filter: blur(2px); }
-dialog#flag-rules-dialog h3, dialog#flag-dialog h3 { margin: 0 0 var(--space-1); font-size: 16px; color: var(--text); }
-dialog#flag-dialog .muted { font-size: 13px; }
+dialog#experiment-dialog { width: min(760px, 94vw); max-height: 88dvh; overflow-y: auto; }
+dialog#json-editor-dialog::backdrop, dialog#flag-rules-dialog::backdrop, dialog#flag-dialog::backdrop, dialog#experiment-dialog::backdrop { background: rgba(8, 11, 18, 0.7); backdrop-filter: blur(2px); }
+dialog#flag-rules-dialog h3, dialog#flag-dialog h3, dialog#experiment-dialog h3 { margin: 0 0 var(--space-1); font-size: 16px; color: var(--text); }
+dialog#flag-dialog .muted, dialog#experiment-dialog .muted { font-size: 13px; }
+dialog#experiment-dialog h4 { margin: var(--space-4) 0 var(--space-2); font-size: 13px; color: var(--muted); font-weight: 600; }
+#experiment-result { color: var(--muted); margin: var(--space-2) 0 0; min-height: 1em; }
 dialog#flag-rules-dialog h4 { margin: var(--space-4) 0 var(--space-2); font-size: 13px; color: var(--muted); font-weight: 600; }
 #flag-rules-result, #flag-result { color: var(--muted); margin: var(--space-2) 0 0; min-height: 1em; }
 dialog#json-editor-dialog h3 { margin: 0 0 var(--space-1); font-size: 15px; color: var(--text); }
