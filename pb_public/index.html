@@ -162,15 +162,15 @@
           <label>Seed <input id="exp-seed" type="text" required spellcheck="false" placeholder="exp-seed-1"></label>
           <div class="rule-builder" aria-label="Variant builder">
             <h4>Variants</h4>
-            <p class="muted">Weights are basis points and must sum to 10000 (5000 = 50%). Values is an optional per-flag override map keyed by flag key, e.g. {"launch_flag": true} — empty means fall back to the base rule value. Press Apply builder to JSON before creating.</p>
+            <p class="muted">Weights are percent (0-100, doubles allowed) and must sum to 100%. The last variant is auto-calculated.</p>
             <div id="exp-variants-builder-rows" aria-label="Variant rows">
               <div class="rule-builder exp-variant-row" aria-label="Variant 1">
                 <strong>Variant 1</strong>
                 <label><span>Name</span>
                   <input class="exp-variant-name" type="text" value="control" spellcheck="false" aria-label="Variant 1 name">
                 </label>
-                <label>Weight (bps)
-                  <input class="exp-variant-weight" type="number" value="5000" min="0" max="10000" aria-label="Variant 1 weight bps">
+                <label>Weight (%)
+                  <input class="exp-variant-weight" type="number" value="50" min="0" max="100" step="0.01" aria-label="Variant 1 weight percent">
                 </label>
                 <label>Values (JSON)
                   <input class="exp-variant-values" type="text" value="" spellcheck="false" placeholder='{"launch_flag": true}' aria-label="Variant 1 values JSON">
@@ -182,8 +182,8 @@
                 <label><span>Name</span>
                   <input class="exp-variant-name" type="text" value="treatment" spellcheck="false" aria-label="Variant 2 name">
                 </label>
-                <label>Weight (bps)
-                  <input class="exp-variant-weight" type="number" value="5000" min="0" max="10000" aria-label="Variant 2 weight bps">
+                <label>Weight (%)
+                  <input class="exp-variant-weight" type="number" value="50" min="0" max="100" step="0.01" readonly title="auto-calculated" aria-label="Variant 2 weight percent">
                 </label>
                 <label>Values (JSON)
                   <input class="exp-variant-values" type="text" value="" spellcheck="false" placeholder='{"launch_flag": true}' aria-label="Variant 2 values JSON">

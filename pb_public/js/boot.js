@@ -141,6 +141,7 @@
     });
     CW.on("exp-variant-add", "click", function () {
       if (CW.addVariantRow) CW.addVariantRow("", 0, "");
+      if (CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();
     });
     CW.on("exp-variants-balance", "click", function () {
       if (CW.balanceVariantsBuilder) CW.balanceVariantsBuilder();
@@ -152,6 +153,17 @@
       var row = t.closest ? t.closest(".exp-variant-row") : null;
       if (!row) row = t.parentNode;
       if (row && row.parentNode) row.parentNode.removeChild(row);
+      if (CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();
+    });
+    CW.on("exp-variants-builder-rows", "input", function (ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var w = null;
+      if (t) {
+        if (t.closest) w = t.closest(".exp-variant-weight");
+        else if (t.className && String(t.className).indexOf("exp-variant-weight") !== -1) w = t;
+      }
+      if (!w) return;
+      if (CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target && ev.target.closest ? ev.target.closest(".json-expand") : null;
@@ -439,5 +451,6 @@
     get addVariantRow() { return CW.addVariantRow; },
     get balanceVariantsBuilder() { return CW.balanceVariantsBuilder; },
     get resetVariantsBuilder() { return CW.resetVariantsBuilder; },
+    get recalcLastVariantWeight() { return CW.recalcLastVariantWeight; },
   };
 })();

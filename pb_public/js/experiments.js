@@ -97,6 +97,20 @@
   var MAX_VARIANT_ROWS = 8;
   var VARIANTS_TOTAL = 10000;
 
+  function round2(n) {
+    return Math.round(n * 100) / 100;
+  }
+
+  // Percent <-> bps conversions. Backend contract stays integer bps
+  // summing to 10000; the builder only displays/inputs percent doubles.
+  function bpsToPercent(bps) {
+    return round2(bps / 100);
+  }
+
+  function percentToBps(pct) {
+    return Math.round(pct * 100);
+  }
+
   // Mirrors eval/experiment.go ValidateExperiment (non-empty, weightBps
   // >= 0, sum == 10000) plus duplicate-name and empty-name checks.
   function validateVariants(v) {
@@ -156,50 +170,126 @@
     } catch (e) { return ""; }
   }
 
-  function addVariantRow(name, weightBps, valuesText, index) {
+  function addVariantRow(name, weightPercent, valuesText, index) {
     var wrap = CW.$("exp-variants-builder-rows");
     if (!wrap) return null;
     if (wrap.children && wrap.children.length >= MAX_VARIANT_ROWS) return null;
     var n = typeof index === "number" && isFinite(index) && index > 0
       ? Math.floor(index)
       : (wrap.children ? wrap.children.length + 1 : 1);
+    var pct = weightPercent == null || weightPercent === "" ? "" : String(weightPercent);
     var row = document.createElement("div");
     row.className = "rule-builder exp-variant-row";
     row.setAttribute("aria-label", "Variant " + n);
     row.innerHTML =
       '<strong>Variant ' + n + '</strong>' +
       '<label><span>Name</span> <input class="exp-variant-name" type="text" spellcheck="false" aria-label="Variant ' + n + ' name" value="' + CW.esc(name || "") + '"></label>' +
-      '<label>Weight (bps) <input class="exp-variant-weight" type="number" min="0" max="10000" step="1" aria-label="Variant ' + n + ' weight bps" value="' + CW.esc(String(weightBps == null ? "" : weightBps)) + '"></label>' +
+      '<label>Weight (%) <input class="exp-variant-weight" type="number" min="0" max="100" step="0.01" aria-label="Variant ' + n + ' weight percent" value="' + CW.esc(pct) + '"></label>' +
       "<label>Values (JSON) <input class=\"exp-variant-values\" type=\"text\" spellcheck=\"false\" placeholder='{\"launch_flag\": true}' aria-label=\"Variant " + n + " values JSON\" value=\"" + CW.esc(valuesText || "") + "\"></label>" +
       '<button type="button" class="btn ghost exp-variant-remove" aria-label="Remove variant ' + n + '">Remove</button>';
     wrap.appendChild(row);
     updateVariantPlaceholders();
+    refreshLastRowLock();
     return row;
+  }
+
+  function refreshLastRowLock() {
+    var rows = variantRows();
+    var i, weightEl;
+    for (i = 0; i < rows.length; i++) {
+      weightEl = rowField(rows[i], "exp-variant-weight");
+      if (!weightEl) continue;
+      if (i === rows.length - 1) {
+        weightEl.readOnly = true;
+        weightEl.setAttribute("readonly", "readonly");
+        weightEl.classList.add("auto-weight");
+        weightEl.title = "auto-calculated";
+      } else {
+        weightEl.readOnly = false;
+        weightEl.removeAttribute("readonly");
+        if (weightEl.classList) weightEl.classList.remove("auto-weight");
+        weightEl.title = "";
+      }
+    }
+    return true;
+  }
+
+  function recalcLastVariantWeight() {
+    var rows = variantRows();
+    if (!rows.length) return false;
+    var sum = 0;
+    var i, weightEl, v;
+    for (i = 0; i < rows.length - 1; i++) {
+      weightEl = rowField(rows[i], "exp-variant-weight");
+      v = weightEl ? parseFloat(String(weightEl.value)) : 0;
+      if (!isFinite(v)) v = 0;
+      sum += v;
+    }
+    var lastPct = round2(100 - sum);
+    if (!isFinite(lastPct) || lastPct < 0) lastPct = 0;
+    var lastEl = rowField(rows[rows.length - 1], "exp-variant-weight");
+    if (lastEl) lastEl.value = String(lastPct);
+    refreshLastRowLock();
+    return true;
   }
 
   function applyVariantsBuilderToVariants() {
     var input = CW.$("exp-variants");
     var rows = variantRows();
     if (!input || !rows.length) return false;
-    var variants = [];
-    var i, nameEl, weightEl, valuesEl, name, w, text, v;
+    var pcts = [];
+    var names = [];
+    var valuesList = [];
+    var i, nameEl, weightEl, valuesEl, name, p, text;
     for (i = 0; i < rows.length; i++) {
       nameEl = rowField(rows[i], "exp-variant-name");
       weightEl = rowField(rows[i], "exp-variant-weight");
       valuesEl = rowField(rows[i], "exp-variant-values");
       name = nameEl && nameEl.value ? nameEl.value.trim() : "";
-      w = weightEl ? parseInt(String(weightEl.value), 10) : 0;
-      if (!isFinite(w)) w = 0;
-      v = { name: name, weightBps: w };
+      p = weightEl ? parseFloat(String(weightEl.value)) : NaN;
+      if (!isFinite(p) || p < 0 || p > 100) {
+        CW.setJsonHint(CW.$("exp-variants-hint"), input, false,
+          "row " + (i + 1) + " weight must be a number 0-100 (percent)");
+        return false;
+      }
       text = valuesEl ? String(valuesEl.value == null ? "" : valuesEl.value).trim() : "";
       if (text) {
-        try { v.values = JSON.parse(text); }
-        catch (e) {
+        try {
+          valuesList[i] = JSON.parse(text);
+        } catch (e) {
           CW.setJsonHint(CW.$("exp-variants-hint"), input, false,
             "row " + (i + 1) + " values is not valid JSON: " + ((e && e.message) ? e.message : "invalid JSON"));
           return false;
         }
+      } else {
+        valuesList[i] = undefined;
       }
+      names.push(name);
+      pcts.push(p);
+    }
+    var sumOthers = 0;
+    var j;
+    for (j = 0; j < pcts.length - 1; j++) sumOthers = round2(sumOthers + pcts[j]);
+    if (sumOthers > 100) {
+      CW.setJsonHint(CW.$("exp-variants-hint"), input, false,
+        "weights exceed 100% — lower the other rows so the last row stays >= 0");
+      return false;
+    }
+    var lastPct = round2(100 - sumOthers);
+    pcts[pcts.length - 1] = lastPct;
+    var lastEl = rowField(rows[rows.length - 1], "exp-variant-weight");
+    if (lastEl) lastEl.value = String(lastPct);
+    refreshLastRowLock();
+    var bpsList = pcts.map(function (x) { return percentToBps(x); });
+    var bpsSum = 0;
+    var k;
+    for (k = 0; k < bpsList.length; k++) bpsSum += bpsList[k];
+    bpsList[bpsList.length - 1] += (VARIANTS_TOTAL - bpsSum);
+    var variants = [];
+    var m, v;
+    for (m = 0; m < rows.length; m++) {
+      v = { name: names[m], weightBps: bpsList[m] };
+      if (valuesList[m] !== undefined) v.values = valuesList[m];
       variants.push(v);
     }
     try { input.value = JSON.stringify(variants); }
@@ -223,10 +313,11 @@
     var i, item, w;
     for (i = 0; i < n; i++) {
       item = parsed[i] || {};
-      w = typeof item.weightBps === "number" && isFinite(item.weightBps) ? item.weightBps : 0;
+      w = typeof item.weightBps === "number" && isFinite(item.weightBps) ? bpsToPercent(item.weightBps) : 0;
       addVariantRow(typeof item.name === "string" ? item.name : "", w, valuesTextFor(item.values), i + 1);
     }
     updateVariantPlaceholders();
+    refreshLastRowLock();
     return true;
   }
 
@@ -234,21 +325,23 @@
     var wrap = CW.$("exp-variants-builder-rows");
     if (!wrap) return false;
     wrap.innerHTML = "";
-    addVariantRow("control", 5000, "");
-    addVariantRow("treatment", 5000, "");
+    addVariantRow("control", 50, "");
+    addVariantRow("treatment", 50, "");
+    recalcLastVariantWeight();
     return true;
   }
 
   function balanceVariantsBuilder() {
     var rows = variantRows();
     if (!rows.length) return false;
-    var each = Math.floor(VARIANTS_TOTAL / rows.length);
-    var rest = VARIANTS_TOTAL - each * rows.length;
+    var each = round2(100 / rows.length);
+    var last = round2(100 - each * (rows.length - 1));
     var i, weightEl;
     for (i = 0; i < rows.length; i++) {
       weightEl = rowField(rows[i], "exp-variant-weight");
-      if (weightEl) weightEl.value = String(each + (i === 0 ? rest : 0));
+      if (weightEl) weightEl.value = String(i === rows.length - 1 ? last : each);
     }
+    refreshLastRowLock();
     return true;
   }
 
@@ -295,7 +388,7 @@
     if (parsed === null) return ok;
     var res = validateVariants(parsed);
     if (res.ok) {
-      CW.setJsonHint(hint, input, true, "Valid JSON — sum " + res.sum + "/10000");
+      CW.setJsonHint(hint, input, true, "Valid JSON — sum " + res.sum + "/10000 (" + bpsToPercent(res.sum) + "%)");
     } else {
       CW.setJsonHint(hint, input, false, res.error);
     }
@@ -319,4 +412,8 @@
   CW.updateVariantPlaceholders = updateVariantPlaceholders;
   CW.resetVariantsBuilder = resetVariantsBuilder;
   CW.balanceVariantsBuilder = balanceVariantsBuilder;
+  CW.recalcLastVariantWeight = recalcLastVariantWeight;
+  CW.refreshLastRowLock = refreshLastRowLock;
+  CW.bpsToPercent = bpsToPercent;
+  CW.percentToBps = percentToBps;
 })();
