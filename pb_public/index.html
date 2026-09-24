@@ -6,7 +6,7 @@
 <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
 <meta name="theme-color" content="#1a1f2a">
 <title>ConfigWire Admin</title>
-<link rel="stylesheet" href="/styles.css?v=12">
+<link rel="stylesheet" href="/styles.css?v=13">
 <link rel="icon" type="image/png" href="/img/favicon.png">
 <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -99,7 +99,7 @@
 
       <div class="grid">
       <section class="card" aria-labelledby="flags">
-        <div class="card-head"><h2 id="flags">Flags</h2><button id="refresh-flags" type="button" class="btn ghost">Refresh flags</button></div>
+        <div class="card-head"><h2 id="flags">Flags</h2><div class="card-actions"><button id="flag-add-btn" type="button" class="btn primary">Add flag</button><button id="refresh-flags" type="button" class="btn ghost">Refresh flags</button></div></div>
         <label>Group filter
           <select id="group-filter">
             <option value="">(all groups)</option>
@@ -116,37 +116,6 @@
           <tbody id="flag-tbody"><tr><td colspan="5">Not loaded.</td></tr></tbody>
         </table>
         </div>
-
-        <h3>Flag create / edit</h3>
-        <form id="flag-form" aria-label="Flag create or edit">
-          <input id="flag-id" type="hidden" value="">
-          <label>Key <input id="flag-key" type="text" required pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="128" spellcheck="false" placeholder="launch_flag"></label>
-          <label>Type
-            <select id="flag-type">
-              <option value="bool">bool</option>
-              <option value="number">number</option>
-              <option value="string">string</option>
-              <option value="json">json</option>
-            </select>
-          </label>
-          <label>Group (optional)
-            <select id="flag-group" aria-label="Flag group">
-              <option value="">(no group)</option>
-            </select>
-          </label>
-          <label class="flag-default-label">defaultValue (JSON)
-            <span class="json-row">
-              <input id="flag-default" type="text" value="false" spellcheck="false" aria-describedby="flag-default-hint">
-              <button type="button" id="flag-default-expand" class="btn secondary json-expand" data-target="flag-default" aria-haspopup="dialog" title="Open larger JSON editor">Expand</button>
-            </span>
-            <span id="flag-default-hint" class="json-hint" role="status"></span>
-          </label>
-          <div class="form-actions">
-            <button type="submit" id="flag-submit" class="btn primary">Save flag</button>
-            <button type="button" id="flag-reset" class="btn ghost">Clear</button>
-          </div>
-        </form>
-        <p id="flag-result" role="status"></p>
       </section>
 
       <section class="card" aria-labelledby="experiments">
@@ -258,6 +227,43 @@
       </section>
       </div>
       </section>
+      <dialog id="flag-dialog" aria-labelledby="flag-dialog-title">
+        <h3 id="flag-dialog-title">Add flag</h3>
+        <p class="muted">Create a new flag or edit the selected flag. Saving reloads the flag table.</p>
+        <form id="flag-form" aria-label="Flag create or edit">
+          <input id="flag-id" type="hidden" value="">
+          <label>Key <input id="flag-key" type="text" required pattern="[A-Za-z_][A-Za-z0-9_]*" maxlength="128" spellcheck="false" placeholder="launch_flag"></label>
+          <label>Type
+            <select id="flag-type">
+              <option value="bool">bool</option>
+              <option value="number">number</option>
+              <option value="string">string</option>
+              <option value="json">json</option>
+            </select>
+          </label>
+          <label>Group (optional)
+            <select id="flag-group" aria-label="Flag group">
+              <option value="">(no group)</option>
+            </select>
+          </label>
+          <label class="flag-default-label">defaultValue (JSON)
+            <span class="json-row">
+              <input id="flag-default" type="text" value="false" spellcheck="false" aria-describedby="flag-default-hint">
+              <button type="button" id="flag-default-expand" class="btn secondary json-expand" data-target="flag-default" aria-haspopup="dialog" title="Open larger JSON editor">Expand</button>
+            </span>
+            <span id="flag-default-hint" class="json-hint" role="status"></span>
+          </label>
+          <div class="form-actions">
+            <button type="submit" id="flag-submit" class="btn primary">Save flag</button>
+            <button type="button" id="flag-reset" class="btn ghost">Clear</button>
+          </div>
+        </form>
+        <p id="flag-result" role="status"></p>
+        <div class="dialog-actions">
+          <span class="dialog-spacer"></span>
+          <button type="button" id="flag-dialog-close" class="btn ghost">Close</button>
+        </div>
+      </dialog>
       <dialog id="flag-rules-dialog" aria-labelledby="flag-rules-title">
         <h3 id="flag-rules-title">Rules for flag</h3>
         <p class="muted">Rules scoped to this flag. Create, edit and delete without leaving the flag row.</p>
@@ -341,13 +347,13 @@
 <script src="/js/auth.js?v=8"></script>
 <script src="/js/router.js?v=8"></script>
 <script src="/js/scope.js?v=8"></script>
-<script src="/js/flags.js?v=9"></script>
+<script src="/js/flags.js?v=10"></script>
 <script src="/js/rules.js?v=10"></script>
 <script src="/js/experiments.js?v=10"></script>
 <script src="/js/keys.js?v=8"></script>
 <script src="/js/releases.js?v=8"></script>
 <script src="/js/stats.js?v=8"></script>
 <script src="/js/json-editor.js?v=9"></script>
-<script src="/js/boot.js?v=11"></script>
+<script src="/js/boot.js?v=12"></script>
 </body>
 </html>

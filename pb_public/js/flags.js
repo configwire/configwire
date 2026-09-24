@@ -118,10 +118,15 @@
       ? CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(id), body)
       : CW.apiMut("POST", "/api/collections/flags/records", body);
     return req.then(function (out) {
-      CW.$("flag-result").textContent = out.status === 200 || out.status === 201
-        ? "flag saved: " + (out.data.key || out.data.id)
-        : "flag save failed (" + out.status + "): " + CW.serverMessage(out.data);
-      if (out.status === 409) CW.$("flag-result").textContent += " — refresh and retry";
+      var ok = out.status === 200 || out.status === 201;
+      if (ok) {
+        CW.toast("flag saved: " + (out.data.key || out.data.id), true);
+        CW.$("flag-result").textContent = "";
+        closeFlagDialog();
+      } else {
+        CW.$("flag-result").textContent = "flag save failed (" + out.status + "): " + CW.serverMessage(out.data);
+        if (out.status === 409) CW.$("flag-result").textContent += " — refresh and retry";
+      }
       loadFlags().catch(function () {});
       return out;
     });
@@ -294,6 +299,50 @@
     return CW.updateJsonHint("flag-default");
   }
 
+  function resetFlagForm() {
+    var idEl = CW.$("flag-id");
+    if (idEl) idEl.value = "";
+    var form = CW.$("flag-form");
+    if (form) form.reset();
+    var group = CW.$("flag-group");
+    if (group) group.value = "";
+    renderFlagGroupSelect();
+    updateFlagDefaultHint();
+    var res = CW.$("flag-result");
+    if (res) res.textContent = "";
+  }
+
+  function openFlagDialog(flag) {
+    var title = CW.$("flag-dialog-title");
+    if (!flag) {
+      resetFlagForm();
+      if (title) title.textContent = "Add flag";
+    } else {
+      renderFlagGroupSelect();
+      CW.$("flag-id").value = flag.id || "";
+      CW.$("flag-key").value = flag.key || "";
+      CW.$("flag-type").value = flag.type || "bool";
+      CW.$("flag-group").value = flag.group || "";
+      try {
+        CW.$("flag-default").value = JSON.stringify(flag.defaultValue === undefined ? null : flag.defaultValue);
+      } catch (e) { CW.$("flag-default").value = "null"; }
+      updateFlagDefaultHint();
+      var res = CW.$("flag-result");
+      if (res) res.textContent = "editing " + (flag.key || flag.id || "");
+      if (title) title.textContent = flag.key ? "Edit " + flag.key : "Edit flag";
+    }
+    var dlg = CW.$("flag-dialog");
+    if (!dlg) return;
+    if (dlg.showModal) {
+      try { if (!dlg.open) dlg.showModal(); } catch (e) { /* already open */ }
+    }
+  }
+
+  function closeFlagDialog() {
+    var dlg = CW.$("flag-dialog");
+    if (dlg && dlg.open) dlg.close();
+  }
+
   CW.renderFlags = renderFlags;
   CW.ruleCountFor = ruleCountFor;
   CW.openFlagRulesDialog = openFlagRulesDialog;
@@ -311,4 +360,7 @@
   CW.createGroup = createGroup;
   CW.flagKeyById = flagKeyById;
   CW.updateFlagDefaultHint = updateFlagDefaultHint;
+  CW.resetFlagForm = resetFlagForm;
+  CW.openFlagDialog = openFlagDialog;
+  CW.closeFlagDialog = closeFlagDialog;
 })();

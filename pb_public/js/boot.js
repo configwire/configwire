@@ -182,10 +182,20 @@
     if (CW.resetRuleBuilder) CW.resetRuleBuilder();
     if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
     CW.on("flag-reset", "click", function () {
-      CW.$("flag-id").value = "";
-      CW.$("flag-form").reset();
-      CW.renderFlagGroupSelect();
-      CW.updateFlagDefaultHint();
+      if (CW.resetFlagForm) CW.resetFlagForm();
+      else {
+        CW.$("flag-id").value = "";
+        CW.$("flag-form").reset();
+        CW.renderFlagGroupSelect();
+        CW.updateFlagDefaultHint();
+      }
+    });
+    CW.on("flag-add-btn", "click", function () {
+      if (CW.openFlagDialog) CW.openFlagDialog(null);
+    });
+    CW.on("flag-dialog-close", "click", function () {
+      if (CW.closeFlagDialog) CW.closeFlagDialog();
+      else { var dlg = CW.$("flag-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
@@ -289,14 +299,17 @@
       if (fid) {
         for (var i = 0; i < CW.state.flags.length; i++) {
           if (CW.state.flags[i].id === fid) {
-            var f = CW.state.flags[i];
-            CW.$("flag-id").value = f.id;
-            CW.$("flag-key").value = f.key || "";
-            CW.$("flag-type").value = f.type || "bool";
-            CW.$("flag-group").value = f.group || "";
-            CW.$("flag-default").value = JSON.stringify(f.defaultValue === undefined ? null : f.defaultValue);
-            CW.updateFlagDefaultHint();
-            CW.$("flag-result").textContent = "editing " + (f.key || fid);
+            if (CW.openFlagDialog) CW.openFlagDialog(CW.state.flags[i]);
+            else {
+              var f = CW.state.flags[i];
+              CW.$("flag-id").value = f.id;
+              CW.$("flag-key").value = f.key || "";
+              CW.$("flag-type").value = f.type || "bool";
+              CW.$("flag-group").value = f.group || "";
+              CW.$("flag-default").value = JSON.stringify(f.defaultValue === undefined ? null : f.defaultValue);
+              CW.updateFlagDefaultHint();
+              CW.$("flag-result").textContent = "editing " + (f.key || fid);
+            }
             break;
           }
         }
@@ -410,6 +423,9 @@
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
     get createGroup() { return CW.createGroup; },
     get deleteFlag() { return CW.deleteFlag; },
+    get openFlagDialog() { return CW.openFlagDialog; },
+    get closeFlagDialog() { return CW.closeFlagDialog; },
+    get resetFlagForm() { return CW.resetFlagForm; },
     get openFlagRulesDialog() { return CW.openFlagRulesDialog; },
     get renderFlagRulesList() { return CW.renderFlagRulesList; },
     get saveFlagRule() { return CW.saveFlagRule; },
