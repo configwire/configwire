@@ -280,7 +280,7 @@ td code { background: transparent; border: none; padding: 0; }
 
 /* ---- Stats card (scoped to section[aria-labelledby="stats"] + #stats-view only;
  * reuses :root tokens + .card/.btn/.ghost/.muted/.badge patterns. No new font/icon/dep.
- * Renderer contract (app.js renderStats — order stable):
+ * Renderer contract (js/stats.js renderStats — order stable):
  * selects #stats-flag/#stats-since + button #refresh-stats; #stats-view holds
  * EITHER the true-empty branch (exposures==0, flag known: tiles
  * <div class="stats-tiles"> (.stats-tile × 3, muted numbers), guide

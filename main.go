@@ -184,7 +184,7 @@ func main() {
 		registerSpikeRoutes(se)
 
 		// Static files only; dynamic data via
-		// fetch calls from pb_public/app.js. Mounted LAST on /{path...}
+		// fetch calls from pb_public/js/*.js. Mounted LAST on /{path...}
 		// with indexFallback so /api/* (registered above) keeps
 		// precedence: unknown /api/* paths still answer 404 JSON, while
 		// unknown non-API paths fall back to index.html. Serve runs from
