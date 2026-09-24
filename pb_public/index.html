@@ -19,14 +19,14 @@
     <span class="brand-mark" aria-hidden="true"><img src="/img/logo.png" alt="ConfigWire logo" width="22" height="22"></span>
     <span class="brand-text"><strong>ConfigWire</strong><small>Admin console</small></span>
   </div>
-  <nav aria-label="Modules">
-    <a href="#flags">Flags</a>
-    <a href="#rules">Rules</a>
-    <a href="#experiments">Experiments</a>
-    <a href="#keys">SDK keys</a>
-    <a href="#releases">Releases</a>
-    <a href="#publish">Publish</a>
-    <a href="#stats">Stats</a>
+  <nav aria-label="Modules" id="sidebar-nav">
+    <a href="#/p/flags">Flags</a>
+    <a href="#/p/rules">Rules</a>
+    <a href="#/p/experiments">Experiments</a>
+    <a href="#/p/keys">SDK keys</a>
+    <a href="#/p/releases">Releases</a>
+    <a href="#/p/publish">Publish</a>
+    <a href="#/p/stats">Stats</a>
   </nav>
   <div class="sidebar-foot">
     <button id="logout-btn" type="button" class="btn ghost" hidden>Log out</button>
@@ -56,7 +56,28 @@
     </section>
 
     <section id="admin-section" hidden>
-      <div id="scope-bar" class="card scope" aria-label="Project and environment scope">
+      <section id="view-home" aria-label="Projects" hidden>
+        <div class="card home-head">
+          <div>
+            <h2>Projects</h2>
+            <p class="muted">Pick a project to manage its flags, releases, keys and stats.</p>
+          </div>
+          <form id="project-create-form" class="inline-form" aria-label="Project create">
+            <label>New project <input id="project-name" type="text" required maxlength="128" spellcheck="false" placeholder="project name"></label>
+            <button type="submit" class="btn primary">Add project</button>
+          </form>
+        </div>
+        <p id="project-result" role="status"></p>
+        <div id="project-grid" class="project-grid" role="list" aria-label="Projects"></div>
+        <p id="project-empty" class="muted" hidden>No projects yet — create one above to get started.</p>
+      </section>
+
+      <section id="view-detail" aria-label="Project detail" hidden>
+        <div class="card detail-head">
+          <button id="back-to-projects" type="button" class="btn ghost">&larr; Projects</button>
+          <h2 id="detail-project-name">Project</h2>
+        </div>
+        <div id="scope-bar" class="card scope" aria-label="Project and environment scope">
         <label>Project
           <select id="project-select" aria-label="Project"></select>
         </label>
@@ -64,11 +85,6 @@
           <select id="env-select" aria-label="Environment"></select>
         </label>
         <button id="refresh-scope" type="button" class="btn secondary">Reload scope</button>
-        <form id="project-create-form" class="inline-form" aria-label="Project create">
-          <label>New project <input id="project-name" type="text" required maxlength="128" spellcheck="false" placeholder="project name"></label>
-          <button type="submit" class="btn primary">Add project</button>
-        </form>
-        <p id="project-result" role="status"></p>
         <form id="env-create-form" class="inline-form" aria-label="Environment create">
           <label>New env slug <input id="env-slug" type="text" required maxlength="64" spellcheck="false" placeholder="staging"></label>
           <button type="submit" class="btn primary">Add env</button>
@@ -231,6 +247,7 @@
         <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Not loaded.</div>
       </section>
       </div>
+      </section>
       <dialog id="json-editor-dialog" aria-labelledby="json-editor-title">
         <h3 id="json-editor-title">Edit JSON</h3>
         <p class="muted" id="json-editor-subtitle">Larger editor with automatic JSON validation. Save writes back to the form.</p>
@@ -246,6 +263,6 @@
     </section>
   </main>
 </div>
-<script src="/app.js?v=3"></script>
+<script src="/app.js?v=4"></script>
 </body>
 </html>

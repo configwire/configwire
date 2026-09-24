@@ -30,6 +30,8 @@
     lastStats: null, // last successful stats payload (kept across errors)
     lastStatsText: "", // JSON text of lastStats for copy-JSON
     lastStatsError: "", // inline error line rendered under the numbers
+    homeStats: {}, // projectId -> {flags, envs, keys} for the home grid
+    view: "home", // "home" | "detail" (hash-routed)
   };
 
   function $(id) { return document.getElementById(id); }
@@ -90,6 +92,178 @@
       if (state.envId) localStorage.setItem(LS_ENV, state.envId);
       else localStorage.removeItem(LS_ENV);
     } catch (e) { /* private mode */ }
+  }
+
+  // ---- hash router: #/ => home, #/p/<id>[#anchor] => detail ----
+
+  function parseHash() {
+    var h = window.location.hash || "";
+    if (h.indexOf("#/p/") === 0) {
+      var rest = h.slice("#/p/".length);
+      var anchor = "";
+      var hi = rest.indexOf("#");
+      if (hi !== -1) { anchor = rest.slice(hi + 1); rest = rest.slice(0, hi); }
+      // Allow a trailing "/<anchor>" form too.
+      var si = rest.indexOf("/");
+      if (si !== -1 && !anchor) { anchor = rest.slice(si + 1); rest = rest.slice(0, si); }
+      return { view: "detail", id: decodeURIComponent(rest), anchor: anchor };
+    }
+    return { view: "home", id: "", anchor: "" };
+  }
+
+  function projectById(id) {
+    for (var i = 0; i < state.projects.length; i++) {
+      if (state.projects[i].id === id) return state.projects[i];
+    }
+    return null;
+  }
+
+  function syncSidebar() {
+    var nav = $("sidebar-nav");
+    if (!nav) return;
+    var links = nav.querySelectorAll("a");
+    if (state.view !== "detail" || !state.projectId) {
+      nav.setAttribute("aria-hidden", "true");
+      for (var i = 0; i < links.length; i++) {
+        links[i].setAttribute("tabindex", "-1");
+        links[i].setAttribute("aria-disabled", "true");
+      }
+      nav.style.display = "none";
+      return;
+    }
+    nav.removeAttribute("aria-hidden");
+    nav.style.display = "";
+    var mods = ["flags", "rules", "experiments", "keys", "releases", "publish", "stats"];
+    for (var j = 0; j < links.length; j++) {
+      var m = mods[j] || "";
+      links[j].removeAttribute("tabindex");
+      links[j].removeAttribute("aria-disabled");
+      links[j].setAttribute("href", "#/p/" + encodeURIComponent(state.projectId) + "#" + m);
+    }
+  }
+
+  function showView(name) {
+    state.view = name;
+    var home = $("view-home");
+    var detail = $("view-detail");
+    if (home) home.hidden = name !== "home";
+    if (detail) detail.hidden = name !== "detail";
+    syncSidebar();
+  }
+
+  function renderProjectCards() {
+    var grid = $("project-grid");
+    var empty = $("project-empty");
+    if (!grid) return;
+    if (!state.projects.length) {
+      grid.innerHTML = "";
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    grid.innerHTML = state.projects.map(function (p) {
+      var s = state.homeStats[p.id] || { flags: 0, envs: 0, keys: 0 };
+      return '<article class="card project-card" role="listitem" tabindex="0" data-project-id="' +
+        esc(p.id) + '" aria-label="' + esc(p.name || p.id) + '">' +
+        "<h3>" + esc(p.name || p.id) + "</h3>" +
+        '<p class="project-card-stats"><span>' + esc(s.flags) + " flags</span>" +
+        "<span> · </span><span>" + esc(s.envs) + " envs</span>" +
+        "<span> · </span><span>" + esc(s.keys) + " active keys</span></p>" +
+        "</article>";
+    }).join("");
+  }
+
+  // Home aggregates via the existing perPage=200 reads (no new backend).
+  // Keys are owned per-project through env->project, same as loadKeys.
+  function loadHomeStats() {
+    return api("/api/collections/flags/records?perPage=200").then(function (f) {
+      return api("/api/collections/environments/records?perPage=200").then(function (e) {
+        return api("/api/collections/sdk_keys/records?perPage=200").then(function (k) {
+          var envProject = {};
+          (e.items || []).forEach(function (env) { envProject[env.id] = env.project; });
+          var stats = {};
+          state.projects.forEach(function (p) { stats[p.id] = { flags: 0, envs: 0, keys: 0 }; });
+          (f.items || []).forEach(function (fl) {
+            if (stats[fl.project]) stats[fl.project].flags++;
+          });
+          (e.items || []).forEach(function (env) {
+            if (stats[env.project]) stats[env.project].envs++;
+          });
+          (k.items || []).forEach(function (key) {
+            var pid = envProject[key.env];
+            if (pid && stats[pid] && !key.revoked) stats[pid].keys++;
+          });
+          state.homeStats = stats;
+          renderProjectCards();
+        });
+      });
+    }, function () { renderProjectCards(); });
+  }
+
+  function loadDetailScope() {
+    loadEnvs().then(function () {
+      renderDetailHeader();
+      loadFlags().catch(function (e) { $("flag-tbody").innerHTML = "<tr><td colspan=5>" + esc(e.message) + "</td></tr>"; });
+      loadReleases().catch(function (e) { $("release-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+      loadRules().catch(function (e) { $("rule-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+      loadExperiments().catch(function (e) { $("experiment-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+      loadKeys().catch(function (e) { $("key-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+      loadStats().catch(function () { /* inline in stats card */ });
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  function renderDetailHeader() {
+    var p = projectById(state.projectId);
+    var el = $("detail-project-name");
+    if (el) el.textContent = p ? (p.name || p.id) : "Project";
+    renderScopeHint();
+    syncSidebar();
+  }
+
+  function showHome() {
+    showView("home");
+    renderProjectCards();
+    if (state.token) loadHomeStats().catch(function () {});
+  }
+
+  function openProject(id, anchor) {
+    if (!projectById(id)) { showHome(); return; }
+    state.projectId = id;
+    persistScope();
+    var want = "#/p/" + encodeURIComponent(id);
+    if (window.location.hash !== want && !anchor) window.location.hash = want;
+    showView("detail");
+    renderDetailHeader();
+    loadDetailScope();
+    if (anchor) {
+      var t = $(anchor);
+      var card = t && t.closest ? t.closest("section") : null;
+      if (card && card.scrollIntoView) card.scrollIntoView();
+    }
+  }
+
+  function route() {
+    if (!state.token) return;
+    var r = parseHash();
+    if (r.view === "detail" && r.id && projectById(r.id)) {
+      // Avoid re-loading on pure in-page anchor hops to the same project.
+      if (state.view === "detail" && state.projectId === r.id) {
+        showView("detail");
+        renderDetailHeader();
+        if (r.anchor) {
+          var t = $(r.anchor);
+          var card = t && t.closest ? t.closest("section") : null;
+          if (card && card.scrollIntoView) card.scrollIntoView();
+        }
+        return;
+      }
+      openProject(r.id, r.anchor);
+    } else if (r.view === "detail" && r.id) {
+      // Unknown id (stale reload): fall back home rather than blank detail.
+      showHome();
+    } else {
+      showHome();
+    }
   }
 
   // ---- login ----
@@ -573,6 +747,11 @@
     return api("/api/collections/sdk_keys/records?perPage=200").then(function (data) {
       var items = data.items || [];
       if (state.envId) items = items.filter(function (k) { return k.env === state.envId; });
+      else if (state.projectId) {
+        var envIds = {};
+        state.envs.forEach(function (e) { envIds[e.id] = true; });
+        items = items.filter(function (k) { return envIds[k.env]; });
+      }
       state.keys = items;
       renderKeys();
     });
@@ -812,6 +991,12 @@
         var newId = out.data.id;
         loadProjects().then(function () {
           if (newId) { state.projectId = newId; persistScope(); }
+          loadHomeStats().catch(function () {});
+          if (newId) {
+            window.location.hash = "#/p/" + encodeURIComponent(newId);
+            // route() picks it up via hashchange; cover no-change case.
+            if (parseHash().id !== newId) openProject(newId, "");
+          }
           return loadEnvs();
         }).then(function () {
           renderScopeHint();
@@ -980,13 +1165,20 @@
 
   function refreshAll() {
     loadPersistedScope();
-    loadProjects().then(loadEnvs).then(function () {
-      loadFlags().catch(function (e) { $("flag-tbody").innerHTML = "<tr><td colspan=5>" + esc(e.message) + "</td></tr>"; });
-      loadReleases().catch(function (e) { $("release-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
-      loadRules().catch(function (e) { $("rule-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
-      loadExperiments().catch(function (e) { $("experiment-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
-      loadKeys().catch(function (e) { $("key-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
-      loadStats().catch(function () { /* inline in stats card */ });
+    loadProjects().then(function () {
+      renderProjectEnv();
+      route();
+      if (state.view === "detail") return; // route()->openProject loads detail scope
+      loadHomeStats().catch(function () {});
+      // Preload current scope in the background so a card click is instant.
+      loadEnvs().then(function () {
+        loadFlags().catch(function (e) { $("flag-tbody").innerHTML = "<tr><td colspan=5>" + esc(e.message) + "</td></tr>"; });
+        loadReleases().catch(function (e) { $("release-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+        loadRules().catch(function (e) { $("rule-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+        loadExperiments().catch(function (e) { $("experiment-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+        loadKeys().catch(function (e) { $("key-list").innerHTML = "<li>" + esc(e.message) + "</li>"; });
+        loadStats().catch(function () { /* inline in stats card */ });
+      }).catch(function (e) { toast(e.message); });
     }).catch(function (e) { toast(e.message); });
   }
 
@@ -1004,17 +1196,32 @@
     });
     on("logout-btn", "click", logout);
     on("refresh-scope", "click", refreshAll);
+    on("back-to-projects", "click", function () {
+      window.location.hash = "#/";
+      showHome();
+    });
+    window.addEventListener("hashchange", route);
+    on("project-grid", "click", function (ev) {
+      var t = ev && ev.target && ev.target.closest ? ev.target.closest("[data-project-id]") : null;
+      if (!t) return;
+      var id = t.getAttribute("data-project-id");
+      if (id) window.location.hash = "#/p/" + encodeURIComponent(id);
+    });
+    on("project-grid", "keydown", function (ev) {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      var t = ev && ev.target && ev.target.closest ? ev.target.closest("[data-project-id]") : null;
+      if (!t) return;
+      ev.preventDefault();
+      var id = t.getAttribute("data-project-id");
+      if (id) window.location.hash = "#/p/" + encodeURIComponent(id);
+    });
     on("project-select", "change", function () {
-      state.projectId = $("project-select").value || null;
-      state.envId = null;
-      persistScope();
-      loadEnvs().then(function () {
-        loadFlags().catch(function () {});
-        loadReleases().catch(function () {});
-        loadExperiments().catch(function () {});
-        loadKeys().catch(function () {});
-        loadStats().catch(function () {});
-      });
+      var id = $("project-select").value || "";
+      if (!id) return;
+      if (window.location.hash !== "#/p/" + encodeURIComponent(id)) {
+        window.location.hash = "#/p/" + encodeURIComponent(id);
+      }
+      openProject(id, "");
     });
     on("env-select", "change", function () {
       state.envId = $("env-select").value || null;
@@ -1198,6 +1405,8 @@
     createProject: createProject, createEnv: createEnv, createGroup: createGroup,
     deleteFlag: deleteFlag,
     publish: publish, rollback: rollback,
+    openProject: openProject, showHome: showHome, route: route, parseHash: parseHash,
+    renderProjectCards: renderProjectCards, loadHomeStats: loadHomeStats,
     openJsonEditor: openJsonEditor, closeJsonEditor: closeJsonEditor,
     openJsonEditorFor: openJsonEditorFor,
     updateFlagDefaultHint: updateFlagDefaultHint, updateEditorStatus: updateEditorStatus,

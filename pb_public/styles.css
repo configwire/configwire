@@ -117,6 +117,20 @@ code {
 main { padding: var(--space-6); max-width: 1200px; width: 100%; margin: 0 auto; }
 .grid { display: grid; grid-template-columns: 1fr; gap: var(--space-4); margin-top: var(--space-4); }
 
+/* ---- Projects home (two-view app: home grid + per-project detail) ---- */
+.project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-top: var(--space-4); }
+.project-card { cursor: pointer; margin-bottom: 0; transition: border-color 160ms ease, background 160ms ease; }
+.project-card:hover { border-color: var(--accent); background: var(--panel-2); }
+.project-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.project-card h3 { margin: 0 0 var(--space-2); font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
+.project-card-stats { margin: 0; color: var(--muted); font-size: 13px; }
+.home-head { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.home-head h2 { margin-bottom: var(--space-1); }
+.home-head p { margin: 0; }
+.detail-head { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.detail-head h2 { overflow-wrap: anywhere; }
+#view-home[hidden], #view-detail[hidden] { display: none; }
+
 /* ---- Cards ---- */
 .card {
   background: var(--panel);
@@ -463,6 +477,9 @@ dialog#json-editor-dialog .muted { font-size: 13px; }
   #stats-view .stats-chart { flex-direction: column; align-items: stretch; }
   #stats-view .stats-donut { align-self: center; }
   .card { padding: var(--space-3); }
+  .project-grid { grid-template-columns: 1fr; }
+  .home-head, .detail-head { flex-direction: column; align-items: stretch; }
+  .home-head form button[type="submit"] { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
