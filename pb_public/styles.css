@@ -383,7 +383,7 @@ td code { background: transparent; border: none; padding: 0; }
   background: rgba(94, 234, 212, 0.1);
 }
 #flag-rules-list .rule-value.is-false { color: var(--muted); }
-#release-list button, #flag-tbody button, #key-list button, #flag-rules-list button {
+#release-list button, #flag-tbody button, #key-list button, #flag-rules-list button, #experiment-list .exp-actions-buttons button {
   padding: var(--space-1) var(--space-2);
   font-size: 12px;
   font-weight: 500;
@@ -391,8 +391,69 @@ td code { background: transparent; border: none; padding: 0; }
   border-color: var(--border);
   color: var(--text);
 }
-#release-list button:hover, #flag-tbody button:hover, #key-list button:hover, #flag-rules-list button:hover { border-color: var(--accent); background: rgba(59, 130, 246, 0.14); filter: none; }
+#release-list button:hover, #flag-tbody button:hover, #key-list button:hover, #flag-rules-list button:hover, #experiment-list .exp-actions-buttons button:hover { border-color: var(--accent); background: rgba(59, 130, 246, 0.14); filter: none; }
 #flag-rules-list .rule-actions { margin-left: auto; display: inline-flex; gap: var(--space-2); flex-shrink: 0; }
+/* ---- Experiments list: structured cards (scoped to #experiment-list only).
+ * Renderer contract (js/experiments.js renderExperiments): ul#experiment-list
+ * holds li.exp-card rows (.exp-card-head > .exp-name + .badge[.ok|.revoked],
+ * .exp-meta (flag key + seed codes), .exp-variants (.exp-variant-pill × N,
+ * name + <b>pct%</b> via bpsToPercent), .exp-actions (status label+select +
+ * .exp-actions-buttons with .btn.ghost Edit/Delete)), or the single
+ * <li>No experiments.</li> empty state. */
+#experiment-list li.exp-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "head actions" "meta actions" "variants actions";
+  gap: 4px 12px;
+  align-items: center;
+}
+#experiment-list .exp-card-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+#experiment-list .exp-name { color: var(--text); overflow-wrap: anywhere; }
+#experiment-list .exp-meta { grid-area: meta; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+#experiment-list .exp-meta code { font-size: 12px; color: var(--muted); }
+#experiment-list .exp-variants { grid-area: variants; display: flex; gap: var(--space-2); flex-wrap: wrap; }
+#experiment-list .exp-variant-pill {
+  display: inline-block;
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 400;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-3);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+#experiment-list .exp-variant-pill b { color: var(--text); font-weight: 600; }
+#experiment-list .exp-actions {
+  grid-area: actions;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+#experiment-list .exp-actions label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+#experiment-list .exp-actions select { min-width: 140px; }
+#experiment-list .exp-actions-buttons { margin-left: auto; display: inline-flex; gap: var(--space-2); flex-shrink: 0; }
 .badge {
   display: inline-block;
   font-size: 11px;
@@ -626,6 +687,8 @@ dialog#json-editor-dialog .muted { font-size: 13px; }
   .exp-variant-row { grid-template-columns: 1fr; }
   #flag-rules-form .form-actions, #experiment-form .form-actions { flex-direction: column; align-items: stretch; }
   #flag-rules-form .form-actions button, #experiment-form .form-actions button { width: 100%; }
+  #experiment-list li.exp-card { grid-template-columns: 1fr; grid-template-areas: "head" "meta" "variants" "actions"; }
+  #experiment-list .exp-actions-buttons { margin-left: 0; }
   section[aria-labelledby="stats"] form.inline-form { flex-direction: column; align-items: stretch; }
   section[aria-labelledby="stats"] form.inline-form button { width: 100%; }
   #stats-view .stats-chart { flex-direction: column; align-items: stretch; }

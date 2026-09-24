@@ -10,20 +10,26 @@
     list.innerHTML = CW.state.experiments.map(function (x) {
       var variants = Array.isArray(x.variants) ? x.variants : [];
       var summary = variants.map(function (v) {
-        return "<span>" + CW.esc(v.name) + " " + CW.esc(v.weightBps) + "</span>";
-      }).join(" ");
+        var w = (v && typeof v.weightBps === "number" && isFinite(v.weightBps)) ? v.weightBps : 0;
+        return '<span class="exp-variant-pill">' + CW.esc(v.name) + " <b>" + CW.esc(String(bpsToPercent(w))) + "%</b></span>";
+      }).join("");
       var st = x.status || "draft";
+      var badgeClass = st === "running"
+        ? "badge ok exp-status-running"
+        : st === "stopped" ? "badge revoked exp-status-stopped" : "badge exp-status-draft";
       var statuses = ["draft", "running", "stopped"];
       var opts = statuses.map(function (s) {
         return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
       }).join("");
-      return "<li>" + CW.esc(x.name) + " [" + CW.esc(st) + "] flag " +
-        CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
-        " seed <code>" + CW.esc(x.seed) + "</code>" +
-        ' <span class="exp-variants">' + summary + "</span> " +
-        '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select> " +
-        '<button type="button" data-edit-experiment="' + CW.esc(x.id) + '">Edit</button> ' +
-        '<button type="button" data-delete-experiment="' + CW.esc(x.id) + '">Delete</button></li>';
+      return '<li class="exp-card">' +
+        '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
+        '<span class="' + badgeClass + '">' + CW.esc(st) + "</span></div>" +
+        '<div class="exp-meta">flag <code>' + CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
+        "</code> · seed <code>" + CW.esc(x.seed) + "</code></div>" +
+        '<div class="exp-variants">' + summary + "</div>" +
+        '<div class="exp-actions"><label>status <select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select></label> " +
+        '<span class="exp-actions-buttons"><button type="button" class="btn ghost" data-edit-experiment="' + CW.esc(x.id) + '">Edit</button> ' +
+        '<button type="button" class="btn ghost" data-delete-experiment="' + CW.esc(x.id) + '">Delete</button></span></div></li>';
     }).join("");
   }
 
