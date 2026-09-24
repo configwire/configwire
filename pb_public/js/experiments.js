@@ -256,12 +256,41 @@
     return true;
   }
 
-  function applyVariantsBuilderToVariants() {
-    var input = CW.$("exp-variants");
+  function clearVariantFieldMarks() {
     var rows = variantRows();
-    if (!input || !rows.length) return false;
-    var pcts = [];
+    var i, j, els;
+    for (i = 0; i < rows.length; i++) {
+      els = rows[i] && rows[i].querySelectorAll
+        ? rows[i].querySelectorAll(".exp-variant-name,.exp-variant-weight,.exp-variant-values")
+        : [];
+      for (j = 0; j < els.length; j++) {
+        els[j].classList.remove("invalid");
+        els[j].classList.remove("valid");
+        els[j].removeAttribute("aria-invalid");
+      }
+    }
+  }
+
+  function markVariantInvalid(el) {
+    if (!el || !el.classList) return;
+    el.classList.remove("valid");
+    el.classList.add("invalid");
+    el.setAttribute("aria-invalid", "true");
+  }
+
+  // Single source of row-level validation. Marks the offending field so
+  // errors show inside the variant rows instead of a JSON summary line.
+  // Does not mutate row values (apply does the last-row auto-fix).
+  function readAndValidateVariantRows(mark) {
+    var rows = variantRows();
+    function fail(el, msg) {
+      if (mark !== false) markVariantInvalid(el);
+      return { ok: false, error: msg };
+    }
+    if (!rows.length) return { ok: false, error: "add at least one variant" };
+    var seen = {};
     var names = [];
+    var pcts = [];
     var valuesList = [];
     var i, nameEl, weightEl, valuesEl, name, p, text;
     for (i = 0; i < rows.length; i++) {
@@ -269,20 +298,20 @@
       weightEl = rowField(rows[i], "exp-variant-weight");
       valuesEl = rowField(rows[i], "exp-variant-values");
       name = nameEl && nameEl.value ? nameEl.value.trim() : "";
+      if (!name) return fail(nameEl, "Variant " + (i + 1) + ": name is required");
+      if (seen[name]) return fail(nameEl, "Variant " + (i + 1) + ": duplicate variant name: " + name);
+      seen[name] = true;
       p = weightEl ? parseFloat(String(weightEl.value)) : NaN;
       if (!isFinite(p) || p < 0 || p > 100) {
-        CW.setJsonHint(CW.$("exp-variants-hint"), input, false,
-          "row " + (i + 1) + " weight must be a number 0-100 (percent)");
-        return false;
+        return fail(weightEl, "Variant " + (i + 1) + ": weight must be a number 0-100 (%)");
       }
       text = valuesEl ? String(valuesEl.value == null ? "" : valuesEl.value).trim() : "";
       if (text) {
         try {
           valuesList[i] = JSON.parse(text);
         } catch (e) {
-          CW.setJsonHint(CW.$("exp-variants-hint"), input, false,
-            "row " + (i + 1) + " values is not valid JSON: " + ((e && e.message) ? e.message : "invalid JSON"));
-          return false;
+          return fail(valuesEl, "Variant " + (i + 1) + ": values is not valid JSON" +
+            ((e && e.message) ? ": " + e.message : ""));
         }
       } else {
         valuesList[i] = undefined;
@@ -294,10 +323,28 @@
     var j;
     for (j = 0; j < pcts.length - 1; j++) sumOthers = round2(sumOthers + pcts[j]);
     if (sumOthers > 100) {
-      CW.setJsonHint(CW.$("exp-variants-hint"), input, false,
-        "weights exceed 100% — lower the other rows so the last row stays >= 0");
+      return { ok: false, error: "weights exceed 100% — lower the other rows so the last row stays >= 0" };
+    }
+    return { ok: true, error: "", names: names, pcts: pcts, valuesList: valuesList };
+  }
+
+  function applyVariantsBuilderToVariants() {
+    var input = CW.$("exp-variants");
+    var hint = CW.$("exp-variants-hint");
+    var rows = variantRows();
+    if (!input || !rows.length) return false;
+    clearVariantFieldMarks();
+    var checked = readAndValidateVariantRows(true);
+    if (!checked.ok) {
+      CW.setJsonHint(hint, null, false, checked.error);
       return false;
     }
+    var pcts = checked.pcts;
+    var names = checked.names;
+    var valuesList = checked.valuesList;
+    var sumOthers = 0;
+    var j;
+    for (j = 0; j < pcts.length - 1; j++) sumOthers = round2(sumOthers + pcts[j]);
     var lastPct = round2(100 - sumOthers);
     pcts[pcts.length - 1] = lastPct;
     var lastEl = rowField(rows[rows.length - 1], "exp-variant-weight");
@@ -351,6 +398,8 @@
     addVariantRow("control", 50, "");
     addVariantRow("treatment", 50, "");
     recalcLastVariantWeight();
+    clearVariantFieldMarks();
+    CW.setJsonHint(CW.$("exp-variants-hint"), null, true, "");
     return true;
   }
 
@@ -398,24 +447,20 @@
   }
 
   function updateExpVariantsHint() {
-    var ok = CW.updateJsonHint("exp-variants");
     var hint = CW.$("exp-variants-hint");
-    var input = CW.$("exp-variants");
-    if (!hint || !input) return ok;
-    if (!ok) return false;
-    var raw = input.value;
-    if (!raw || !raw.trim()) return ok;
-    var parsed;
-    try { parsed = JSON.parse(raw); }
-    catch (e) { return false; }
-    if (parsed === null) return ok;
-    var res = validateVariants(parsed);
-    if (res.ok) {
-      CW.setJsonHint(hint, input, true, "Valid JSON — sum " + res.sum + "/10000 (" + bpsToPercent(res.sum) + "%)");
-    } else {
-      CW.setJsonHint(hint, input, false, res.error);
+    if (!hint) return false;
+    if (!variantRows().length) {
+      CW.setJsonHint(hint, null, false, "add at least one variant");
+      return false;
     }
-    return res.ok;
+    clearVariantFieldMarks();
+    var checked = readAndValidateVariantRows(true);
+    if (checked.ok) {
+      CW.setJsonHint(hint, null, true, "");
+    } else {
+      CW.setJsonHint(hint, null, false, checked.error);
+    }
+    return checked.ok;
   }
 
   // Canonical event wiring lives in boot.js (mirrors flag-rules pattern).
@@ -490,6 +535,7 @@
   CW.syncVariantsBuilderFromInput = syncVariantsBuilderFromInput;
   CW.updateVariantPlaceholders = updateVariantPlaceholders;
   CW.resetVariantsBuilder = resetVariantsBuilder;
+  CW.clearVariantFieldMarks = clearVariantFieldMarks;
   CW.balanceVariantsBuilder = balanceVariantsBuilder;
   CW.recalcLastVariantWeight = recalcLastVariantWeight;
   CW.refreshLastRowLock = refreshLastRowLock;

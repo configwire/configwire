@@ -262,8 +262,9 @@
           <form id="experiment-form" aria-label="Experiment create or edit">
             <input id="exp-id" type="hidden" value="">
             <label>Name <input id="exp-name" type="text" required spellcheck="false"></label>
-            <label>Flag
-              <select id="exp-flag-select" aria-label="Experiment flag"></select>
+            <label>Target flag
+              <select id="exp-flag-select" aria-label="Target flag"></select>
+              <span class="muted">Which flag this experiment overrides. Each variant's Values (JSON) must include this flag's key.</span>
             </label>
             <label>Seed <input id="exp-seed" type="text" required spellcheck="false" placeholder="exp-seed-1"></label>
             <div class="rule-builder" aria-label="Variant builder">
@@ -308,15 +309,13 @@
               </div>
               <div class="form-actions">
                 <button type="button" id="exp-variant-add" class="btn secondary">Add variant</button>
-                <button type="button" id="exp-variants-apply" class="btn secondary">Validate weights</button>
                 <button type="button" id="exp-variants-balance" class="btn ghost">Even split</button>
               </div>
               <span id="exp-variants-hint" class="json-hint" role="status"></span>
             </div>
-            <label class="json-field-label" hidden>Variants (JSON, internal)
-              <input id="exp-variants" type="hidden"
-                value='[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}]'>
-            </label>
+            <!-- Hidden transport: builder rows are the visible source of truth. -->
+            <input id="exp-variants" type="hidden"
+              value='[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}]'>
             <label>Status
               <select id="exp-status">
                 <option value="draft">draft</option>

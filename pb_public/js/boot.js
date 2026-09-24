@@ -122,18 +122,10 @@
     CW.on("exp-flag-select", "change", function () {
       if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
     });
-    // exp-variants is a hidden transport (builder is the visible source of
-    // truth). Keep a null-guarded hint refresh; never sync the builder
-    // back from the hidden field here — save auto-applies builder to JSON.
-    CW.on("exp-variants", "input", function () {
-      if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
-    });
-    CW.on("exp-variants-apply", "click", function () {
-      if (CW.applyVariantsBuilderToVariants) CW.applyVariantsBuilderToVariants();
-    });
     CW.on("exp-variant-add", "click", function () {
       if (CW.addVariantRow) CW.addVariantRow("", 0, "");
       if (CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();
+      if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
     });
     CW.on("exp-variants-balance", "click", function () {
       if (CW.balanceVariantsBuilder) CW.balanceVariantsBuilder();
@@ -146,6 +138,7 @@
       if (!row) row = t.parentNode;
       if (row && row.parentNode) row.parentNode.removeChild(row);
       if (CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();
+      if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
     });
     CW.on("exp-variants-builder-rows", "input", function (ev) {
       var t = ev && ev.target ? ev.target : null;
@@ -154,8 +147,8 @@
         if (t.closest) w = t.closest(".exp-variant-weight");
         else if (t.className && String(t.className).indexOf("exp-variant-weight") !== -1) w = t;
       }
-      if (!w) return;
-      if (CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();
+      if (w && CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();
+      if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target && ev.target.closest ? ev.target.closest(".json-expand") : null;

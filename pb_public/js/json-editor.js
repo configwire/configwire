@@ -48,7 +48,6 @@
     updateJsonHint("flag-default");
     updateJsonHint("flag-rules-condition");
     updateJsonHint("flag-rules-value");
-    updateJsonHint("exp-variants");
   }
 
   var jsonEditorTarget = "flag-default";
@@ -126,9 +125,6 @@
         updateJsonHint(jsonEditorTarget);
         if (jsonEditorTarget === "flag-rules-condition" && CW.syncRuleBuilderFromCondition) {
           CW.syncRuleBuilderFromCondition();
-        }
-        if (jsonEditorTarget === "exp-variants" && CW.syncVariantsBuilderFromInput) {
-          CW.syncVariantsBuilderFromInput();
         }
       }
     }
