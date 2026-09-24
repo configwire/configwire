@@ -159,6 +159,43 @@
             <select id="exp-flag-select" aria-label="Experiment flag"></select>
           </label>
           <label>Seed <input id="exp-seed" type="text" required spellcheck="false" placeholder="exp-seed-1"></label>
+          <div class="rule-builder" aria-label="Variant builder">
+            <h4>Variants</h4>
+            <p class="muted">Weights are basis points and must sum to 10000 (5000 = 50%). Values is an optional per-flag override map keyed by flag key, e.g. {"launch_flag": true} — empty means fall back to the base rule value. Press Apply builder to JSON before creating.</p>
+            <div id="exp-variants-builder-rows" aria-label="Variant rows">
+              <div class="rule-builder exp-variant-row" aria-label="Variant 1">
+                <strong>Variant 1</strong>
+                <label><span>Name</span>
+                  <input class="exp-variant-name" type="text" value="control" spellcheck="false" aria-label="Variant 1 name">
+                </label>
+                <label>Weight (bps)
+                  <input class="exp-variant-weight" type="number" value="5000" min="0" max="10000" aria-label="Variant 1 weight bps">
+                </label>
+                <label>Values (JSON)
+                  <input class="exp-variant-values" type="text" value="" spellcheck="false" placeholder='{"launch_flag": true}' aria-label="Variant 1 values JSON">
+                </label>
+                <button type="button" class="btn ghost exp-variant-remove" aria-label="Remove variant 1">Remove</button>
+              </div>
+              <div class="rule-builder exp-variant-row" aria-label="Variant 2">
+                <strong>Variant 2</strong>
+                <label><span>Name</span>
+                  <input class="exp-variant-name" type="text" value="treatment" spellcheck="false" aria-label="Variant 2 name">
+                </label>
+                <label>Weight (bps)
+                  <input class="exp-variant-weight" type="number" value="5000" min="0" max="10000" aria-label="Variant 2 weight bps">
+                </label>
+                <label>Values (JSON)
+                  <input class="exp-variant-values" type="text" value="" spellcheck="false" placeholder='{"launch_flag": true}' aria-label="Variant 2 values JSON">
+                </label>
+                <button type="button" class="btn ghost exp-variant-remove" aria-label="Remove variant 2">Remove</button>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" id="exp-variant-add" class="btn secondary">Add variant</button>
+              <button type="button" id="exp-variants-apply" class="btn secondary">Apply builder to JSON</button>
+              <button type="button" id="exp-variants-balance" class="btn ghost">Even split</button>
+            </div>
+          </div>
           <label class="json-field-label">Variants (JSON)
             <span class="json-row">
               <input id="exp-variants" type="text" value='[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}]' spellcheck="false" size="48" aria-describedby="exp-variants-hint">
@@ -307,11 +344,11 @@
 <script src="/js/scope.js?v=8"></script>
 <script src="/js/flags.js?v=9"></script>
 <script src="/js/rules.js?v=10"></script>
-<script src="/js/experiments.js?v=8"></script>
+<script src="/js/experiments.js?v=9"></script>
 <script src="/js/keys.js?v=8"></script>
 <script src="/js/releases.js?v=8"></script>
 <script src="/js/stats.js?v=8"></script>
 <script src="/js/json-editor.js?v=9"></script>
-<script src="/js/boot.js?v=10"></script>
+<script src="/js/boot.js?v=11"></script>
 </body>
 </html>
