@@ -2,16 +2,17 @@
 #   curl -O https://raw.githubusercontent.com/configwire/configwire/main/compose.yml
 #   docker compose pull && docker compose up -d
 #   curl -s http://localhost:8090/hello
-# Local dev (run from configwire/):
-#   docker compose up --build -d
+# Local build (run from this dir, needs Dockerfile + source):
+#   docker build -t ghcr.io/configwire/configwire:latest .
+#   docker compose up -d
 # First superuser (same flags as README quickstart):
 #   docker compose exec configwire ./configwire superuser upsert admin@example.com password123 --dir /app/pb_data
 # Monorepo usage (run from repo root):
-#   docker compose -f configwire/compose.yml up --build -d
+#   docker build -t ghcr.io/configwire/configwire:latest ./configwire
+#   docker compose -f configwire/compose.yml up -d
 services:
   configwire:
     image: ghcr.io/configwire/configwire:latest
-    build: .
     ports:
       - "8090:8090"
     volumes:
