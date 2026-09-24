@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
+<meta name="theme-color" content="#1a1f2a">
 <title>ConfigWire Admin</title>
-<link rel="stylesheet" href="/styles.css?v=6">
+<link rel="stylesheet" href="/styles.css?v=8">
 <link rel="icon" type="image/png" href="/img/favicon.png">
 <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -20,13 +21,13 @@
     <span class="brand-text"><strong>ConfigWire</strong><small>Admin console</small></span>
   </div>
   <nav aria-label="Modules" id="sidebar-nav">
-    <a href="#/p/flags">Flags</a>
-    <a href="#/p/rules">Rules</a>
-    <a href="#/p/experiments">Experiments</a>
-    <a href="#/p/keys">SDK keys</a>
-    <a href="#/p/releases">Releases</a>
-    <a href="#/p/publish">Publish</a>
-    <a href="#/p/stats">Stats</a>
+    <a href="#/p/flags"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14V2"/><path d="M3 2.5h9.5l-2.5 3.5 2.5 3.5H3"/></svg><span>Flags</span></a>
+    <a href="#/p/rules"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h12"/><path d="M4.5 8h7"/><path d="M6.5 12h3"/></svg><span>Rules</span></a>
+    <a href="#/p/experiments"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h4"/><path d="M7 2v4.2L3.2 12a1.5 1.5 0 0 0 1.3 2.2h7a1.5 1.5 0 0 0 1.3-2.2L9 6.2V2"/></svg><span>Experiments</span></a>
+    <a href="#/p/keys"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H14"/><path d="M12 8v2.5"/><path d="M14 8v1.8"/></svg><span>SDK keys</span></a>
+    <a href="#/p/releases"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5v4a1 1 0 0 0 1 1h4"/><path d="M3.5 6.5 2.5 2.5l4 1"/><path d="M6 7 14 15"/><circle cx="11.5" cy="11.5" r="1.6"/></svg><span>Releases</span></a>
+    <a href="#/p/publish"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Publish</span></a>
+    <a href="#/p/stats"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 13.5h11"/><path d="M4 11V8"/><path d="M8 11V4.5"/><path d="M12 11V6.5"/></svg><span>Stats</span></a>
   </nav>
   <div class="sidebar-foot">
     <button id="logout-btn" type="button" class="btn ghost" hidden>Log out</button>
@@ -38,21 +39,25 @@
       <h1>ConfigWire Admin</h1>
       <p>Flags, releases, keys and stats for the selected scope.</p>
     </div>
-    <div class="topbar-meta" aria-hidden="true"><span class="dot"></span><span>single-binary · offline</span></div>
+    <div class="topbar-meta status-pill" aria-hidden="true"><span class="dot"></span><span>single-binary · offline</span></div>
   </header>
   <main id="main">
     <div id="toast" role="alert" aria-live="assertive" hidden></div>
 
     <section id="login-section" class="card auth" aria-label="Login">
-      <img class="login-banner" src="/img/banner.png" alt="ConfigWire — Real-Time Remote Configuration" width="400" height="218">
-      <h2>Superuser login</h2>
-      <p class="muted">Sign in with a superuser account to manage flags and releases.</p>
-      <form id="login-form">
-        <label>Email <input id="login-email" name="identity" type="email" autocomplete="username" required></label>
-        <label>Password <input id="login-password" name="password" type="password" autocomplete="current-password" required></label>
-        <button type="submit" class="btn primary">Log in</button>
-      </form>
-      <p id="login-error" role="alert" hidden></p>
+      <div class="login-banner-wrap" aria-hidden="true">
+        <img class="login-banner" src="/img/banner.png" alt="ConfigWire — Real-Time Remote Configuration" width="400" height="218">
+      </div>
+      <div class="auth-body">
+        <h2>Superuser login</h2>
+        <p class="muted">Sign in with a superuser account to manage flags and releases.</p>
+        <form id="login-form">
+          <label>Email <input id="login-email" name="identity" type="email" autocomplete="username" required></label>
+          <label>Password <input id="login-password" name="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit" class="btn primary">Log in</button>
+        </form>
+        <p id="login-error" role="alert" hidden></p>
+      </div>
     </section>
 
     <section id="admin-section" hidden>
@@ -263,17 +268,17 @@
     </section>
   </main>
 </div>
-<script src="/js/core.js?v=6"></script>
-<script src="/js/auth.js?v=6"></script>
-<script src="/js/router.js?v=6"></script>
-<script src="/js/scope.js?v=6"></script>
-<script src="/js/flags.js?v=6"></script>
-<script src="/js/rules.js?v=6"></script>
-<script src="/js/experiments.js?v=6"></script>
-<script src="/js/keys.js?v=6"></script>
-<script src="/js/releases.js?v=6"></script>
-<script src="/js/stats.js?v=6"></script>
-<script src="/js/json-editor.js?v=6"></script>
-<script src="/js/boot.js?v=6"></script>
+<script src="/js/core.js?v=8"></script>
+<script src="/js/auth.js?v=8"></script>
+<script src="/js/router.js?v=8"></script>
+<script src="/js/scope.js?v=8"></script>
+<script src="/js/flags.js?v=8"></script>
+<script src="/js/rules.js?v=8"></script>
+<script src="/js/experiments.js?v=8"></script>
+<script src="/js/keys.js?v=8"></script>
+<script src="/js/releases.js?v=8"></script>
+<script src="/js/stats.js?v=8"></script>
+<script src="/js/json-editor.js?v=8"></script>
+<script src="/js/boot.js?v=8"></script>
 </body>
 </html>
