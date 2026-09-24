@@ -16,7 +16,8 @@
  *   toast(.ok), login-*, admin-section, view-home/detail, project-*
  *   (.project-card, .project-card-stats), scope-bar/scope-hint, flag-*
  *   (.flag-default-label, #flag-rules-dialog/-list/-form, .rule-*), exp-*, experiment-*, key-* (#key-once),
- *   release-*, publish-*, stats-* (.stats-tiles/.stats-tile(-num/-label),
+ *   release-*, publish-*, setup-*, account-*(#account-list/-create-form/-result,
+ *   #view-account), stats-* (.stats-tiles/.stats-tile(-num/-label),
  *   .stats-guide/.stats-echo-quiet/.stats-count/.stats-split/.stats-chart
  *   (.is-empty)/.stats-bars/.stats-bar-row(-label/-track/-fill/-pct)/.stats-donut/
  *   .stats-empty/.stats-copy-row(.is-secondary)), json-* (.json-row/.json-hint
@@ -438,7 +439,8 @@ main {
 }
 
 #view-home[hidden],
-#view-detail[hidden] {
+#view-detail[hidden],
+#view-account[hidden] {
   display: none;
 }
 
@@ -1195,6 +1197,75 @@ td code {
   color: var(--danger);
   font-size: 13px;
   font-weight: 500;
+}
+
+#setup-error {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#setup-error[hidden],
+#setup-result[hidden] {
+  display: none;
+}
+
+#setup-result,
+#account-result {
+  color: var(--muted);
+  font-size: 13px;
+  min-height: 1em;
+}
+
+#account-list {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+}
+
+#account-list li {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+#account-list li code {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#account-list button {
+  padding: 0 var(--space-2);
+  height: 28px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+#account-create-form {
+  margin-top: var(--space-3);
+}
+
+#setup-form {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+#account-create-form label,
+#setup-form label {
+  min-width: 0;
+}
+
+#account-create-form label input,
+#setup-form label input {
+  width: 100%;
 }
 
 #publish-result,

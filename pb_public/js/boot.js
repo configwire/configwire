@@ -11,12 +11,36 @@
     try { CW.state.token = localStorage.getItem(CW.LS_KEY); } catch (e) { CW.state.token = null; }
     CW.loadPersistedScope();
     if (CW.state.token) { CW.setLoggedIn(true); CW.refreshAll(); }
+    else if (CW.checkSetup) { CW.checkSetup().catch(function () {}); }
 
     CW.on("login-form", "submit", function (ev) {
       ev.preventDefault();
       CW.login(CW.$("login-email").value, CW.$("login-password").value).catch(function () { /* shown inline */ });
     });
     CW.on("logout-btn", "click", CW.logout);
+    CW.on("setup-form", "submit", function (ev) {
+      if (CW.createSetup) CW.createSetup(ev).catch(function () { /* shown inline */ });
+      else ev.preventDefault();
+    });
+    CW.on("account-create-form", "submit", function (ev) {
+      if (CW.createAccount) CW.createAccount(ev).catch(function (e) { CW.toast(e.message); });
+      else ev.preventDefault();
+    });
+    CW.on("refresh-accounts", "click", function () {
+      if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
+    });
+    CW.on("account-list", "click", function (ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var pw = t && t.getAttribute ? t.getAttribute("data-account-password") : null;
+      if (pw) {
+        if (CW.changeAccountPassword) CW.changeAccountPassword(pw).catch(function (e) { CW.toast(e.message); });
+        return;
+      }
+      var del = t && t.getAttribute ? t.getAttribute("data-account-delete") : null;
+      if (del) {
+        if (CW.deleteAccount) CW.deleteAccount(del).catch(function (e) { CW.toast(e.message); });
+      }
+    });
     CW.on("refresh-scope", "click", CW.refreshAll);
     CW.on("back-to-projects", "click", function () {
       window.location.hash = "#/";
@@ -446,6 +470,12 @@
     get deleteExperiment() { return CW.deleteExperiment; },
     get setExperimentStatus() { return CW.setExperimentStatus; },
     get createKey() { return CW.createKey; }, get revokeKey() { return CW.revokeKey; },
+    get checkSetup() { return CW.checkSetup; }, get createSetup() { return CW.createSetup; },
+    get loadAccounts() { return CW.loadAccounts; }, get renderAccounts() { return CW.renderAccounts; },
+    get createAccount() { return CW.createAccount; },
+    get changeAccountPassword() { return CW.changeAccountPassword; },
+    get deleteAccount() { return CW.deleteAccount; },
+    get showAccount() { return CW.showAccount; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
     get promptCreateGroup() { return CW.promptCreateGroup; },
     get renameGroup() { return CW.renameGroup; },

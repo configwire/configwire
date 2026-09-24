@@ -8,6 +8,13 @@
 
   function parseHash() {
     var h = window.location.hash || "";
+    if (h === "#/p/account" || h.indexOf("#/p/account#") === 0 || h.indexOf("#/p/account/") === 0) {
+      var arest = h.slice("#/p/account".length);
+      var aanchor = "";
+      if (arest.charAt(0) === "#") aanchor = arest.slice(1);
+      else if (arest.charAt(0) === "/") aanchor = arest.slice(1);
+      return { view: "account", id: "", anchor: aanchor };
+    }
     if (h.indexOf("#/p/") === 0) {
       var rest = h.slice("#/p/".length);
       var anchor = "";
@@ -32,7 +39,9 @@
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
-    if (CW.state.view !== "detail" || !CW.state.projectId) {
+    var mods = ["flags", "experiments", "keys", "releases", "publish", "stats", "account"];
+    var showNav = (CW.state.view === "detail" && CW.state.projectId) || CW.state.view === "account";
+    if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
       for (var i = 0; i < links.length; i++) {
         links[i].setAttribute("tabindex", "-1");
@@ -43,9 +52,20 @@
     }
     nav.removeAttribute("aria-hidden");
     nav.style.display = "";
-    var mods = ["flags", "experiments", "keys", "releases", "publish", "stats"];
     for (var j = 0; j < links.length; j++) {
       var m = mods[j] || "";
+      if (m === "account") {
+        links[j].removeAttribute("tabindex");
+        links[j].removeAttribute("aria-disabled");
+        links[j].setAttribute("href", "#/p/account");
+        continue;
+      }
+      if (!CW.state.projectId) {
+        links[j].setAttribute("tabindex", "-1");
+        links[j].setAttribute("aria-disabled", "true");
+        links[j].setAttribute("href", "#/");
+        continue;
+      }
       links[j].removeAttribute("tabindex");
       links[j].removeAttribute("aria-disabled");
       links[j].setAttribute("href", "#/p/" + encodeURIComponent(CW.state.projectId) + "#" + m);
@@ -56,8 +76,10 @@
     CW.state.view = name;
     var home = CW.$("view-home");
     var detail = CW.$("view-detail");
+    var account = CW.$("view-account");
     if (home) home.hidden = name !== "home";
     if (detail) detail.hidden = name !== "detail";
+    if (account) account.hidden = name !== "account";
     syncSidebar();
   }
 
@@ -152,10 +174,17 @@
     }
   }
 
+  function showAccount() {
+    showView("account");
+    if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
+  }
+
   function route() {
     if (!CW.state.token) return;
     var r = parseHash();
-    if (r.view === "detail" && r.id && projectById(r.id)) {
+    if (r.view === "account") {
+      showAccount();
+    } else if (r.view === "detail" && r.id && projectById(r.id)) {
       // Avoid re-loading on pure in-page anchor hops to the same project.
       if (CW.state.view === "detail" && CW.state.projectId === r.id) {
         showView("detail");
@@ -185,6 +214,7 @@
   CW.loadDetailScope = loadDetailScope;
   CW.renderDetailHeader = renderDetailHeader;
   CW.showHome = showHome;
+  CW.showAccount = showAccount;
   CW.openProject = openProject;
   CW.route = route;
 })();

@@ -60,9 +60,10 @@
   }
 
   function setLoggedIn(on) {
-    $("login-section").hidden = on;
-    $("admin-section").hidden = !on;
-    $("logout-btn").hidden = !on;
+    if ($("login-section")) $("login-section").hidden = on;
+    if ($("setup-section")) $("setup-section").hidden = on ? true : $("setup-section").hidden;
+    if ($("admin-section")) $("admin-section").hidden = !on;
+    if ($("logout-btn")) $("logout-btn").hidden = !on;
   }
 
   function selectedEnv() {
