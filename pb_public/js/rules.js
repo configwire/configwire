@@ -87,68 +87,13 @@
     return '<span class="rule-value">' + CW.esc(trunc(raw, TRUNC_VALUE)) + "</span>";
   }
 
-  function renderRules() {
-    var list = CW.$("rule-list");
-    if (!CW.state.rules.length) { list.innerHTML = "<li>No rules for the selected flag.</li>"; return; }
-    list.innerHTML = CW.state.rules.map(function (r) {
-      var flagKey = CW.flagKeyById(r.flag) || r.flag || "";
-      return '<li class="rule-item">' +
-        '<span class="rule-prio">P' + CW.esc(r.priority) + "</span>" +
-        conditionHTML(r.condition) +
-        '<span class="rule-arrow" aria-hidden="true">→</span>' +
-        valueHTML(r.value) +
-        '<span class="rule-flag">' + CW.esc(flagKey) + "</span>" +
-        ' <button type="button" data-edit-rule="' + CW.esc(r.id) + '">edit</button>' +
-        ' <button type="button" data-delete-rule="' + CW.esc(r.id) + '">delete</button>' +
-        "</li>";
-    }).join("");
-  }
-
   function loadRules() {
-    var flagId = CW.$("rule-flag-select").value;
-    var q = "/api/collections/rules/records?perPage=200&sort=priority";
-    if (flagId) q += "&filter=" + encodeURIComponent('(flag="' + flagId + '")');
-    return CW.api(q).then(function (data) {
+    return CW.api("/api/collections/rules/records?perPage=200&sort=priority").then(function (data) {
       var items = data.items || [];
-      if (flagId) items = items.filter(function (r) { return r.flag === flagId; });
       CW.state.rules = items.slice().sort(function (a, b) { return (a.priority || 0) - (b.priority || 0); });
-      renderRules();
-    }, function () {
-      return CW.api("/api/collections/rules/records?perPage=200&sort=priority").then(function (data) {
-        var items = data.items || [];
-        if (flagId) items = items.filter(function (r) { return r.flag === flagId; });
-        CW.state.rules = items;
-        renderRules();
-      });
-    });
-  }
-
-  function saveRule(ev) {
-    if (ev) ev.preventDefault();
-    var flagId = CW.$("rule-flag-select").value;
-    if (!flagId) { CW.$("rule-result").textContent = "pick a flag first"; return Promise.resolve(); }
-    var cond = CW.parseJSONInput(CW.$("rule-condition").value, "condition");
-    if (!cond.ok) { CW.$("rule-result").textContent = cond.error; return Promise.resolve(); }
-    var val = CW.parseJSONInput(CW.$("rule-value").value, "value");
-    if (!val.ok) { CW.$("rule-result").textContent = val.error; return Promise.resolve(); }
-    var body = {
-      flag: flagId,
-      priority: parseInt(CW.$("rule-priority").value, 10) || 0,
-      condition: cond.value,
-      value: val.value,
-    };
-    var idEl = typeof document !== "undefined" ? document.getElementById("rule-id") : null;
-    var id = idEl ? String(idEl.value || "").trim() : "";
-    var req = id
-      ? CW.apiMut("PATCH", "/api/collections/rules/records/" + encodeURIComponent(id), body)
-      : CW.apiMut("POST", "/api/collections/rules/records", body);
-    return req.then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      CW.$("rule-result").textContent = ok
-        ? (id ? "rule saved: " + id : "rule created")
-        : "rule save failed (" + out.status + "): " + CW.serverMessage(out.data);
-      loadRules().catch(function () {});
-      return out;
+      CW.state.rulesLoaded = true;
+      if (CW.renderFlags) CW.renderFlags();
+      if (CW.renderFlagRulesList && CW.state.activeFlagRulesId) CW.renderFlagRulesList();
     });
   }
 
@@ -162,17 +107,16 @@
   }
 
   function updateRuleConditionHint() {
-    return CW.updateJsonHint("rule-condition");
+    return CW.updateJsonHint("flag-rules-condition");
   }
 
   function updateRuleValueHint() {
-    return CW.updateJsonHint("rule-value");
+    return CW.updateJsonHint("flag-rules-value");
   }
 
-  CW.renderRules = renderRules;
+  CW.conditionHTML = conditionHTML;
+  CW.valueHTML = valueHTML;
   CW.loadRules = loadRules;
-  CW.saveRule = saveRule;
-  CW.createRule = saveRule;
   CW.deleteRule = deleteRule;
   CW.updateRuleConditionHint = updateRuleConditionHint;
   CW.updateRuleValueHint = updateRuleValueHint;
