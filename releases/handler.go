@@ -5,8 +5,10 @@
 package releases
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -101,9 +103,22 @@ func callerAuthor(re *core.RequestEvent) string {
 }
 
 // Empty bodies -> 400 (BindBody alone would silently return nil);
-// malformed JSON or wrong field types -> 400.
+// malformed JSON or wrong field types -> 400. Body bytes are the
+// emptiness source of truth (ContentLength is -1 for chunked).
 func decodeBody(re *core.RequestEvent, dst any) error {
 	if re.Request.ContentLength == 0 {
+		return re.BadRequestError("empty body: expected a JSON object.", nil)
+	}
+	if re.Request.Body == nil {
+		return re.BadRequestError("empty body: expected a JSON object.", nil)
+	}
+	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 1<<20+1))
+	if err != nil {
+		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
+	}
+	// Restore for BindBody.
+	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	if len(bytes.TrimSpace(raw)) == 0 {
 		return re.BadRequestError("empty body: expected a JSON object.", nil)
 	}
 	if err := re.BindBody(dst); err != nil {

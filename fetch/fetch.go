@@ -37,11 +37,7 @@
 //   - attrs error policy: malformed attrs (invalid JSON, or valid JSON that
 //     is not an object) -> 400 documented; attrs longer than 8192 bytes ->
 //     414 documented. Missing attrs -> empty custom map (anonymous attrs).
-//   - exp override: when the ?exp= query param is present it OVERRIDES the
-//     stored experiment status passed to EvaluateWithExperiment (e.g.
-//     exp=draft forces the control path for QA); when absent each
-//     experiment's own stored status is used, so only stored-"running"
-//     experiments overlay.
+//   - exp override: ?exp= is ignored unless CONFIGWIRE_ENABLE_EXP_OVERRIDE==1.
 //   - Gzip: route binds apis.Gzip(), so Accept-Encoding: gzip responses
 //     carry Content-Encoding: gzip.
 //   - CORS: every fetch response (including 304) sets
@@ -148,6 +144,14 @@ func BuildContext(q url.Values) (eval.Context, error) {
 	}
 	ctx.CustomAttrs = m
 	return ctx, nil
+}
+
+// expOverride returns ?exp= only when CONFIGWIRE_ENABLE_EXP_OVERRIDE==1, else "".
+func expOverride(q url.Values) string {
+	if os.Getenv("CONFIGWIRE_ENABLE_EXP_OVERRIDE") != "1" {
+		return ""
+	}
+	return q.Get("exp")
 }
 
 // EtagMatches reports whether an If-None-Match header exactly equals the
@@ -352,7 +356,7 @@ func getConfig(re *core.RequestEvent) error {
 		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Release snapshot is corrupt.", "status": 500})
 	}
 
-	values, variants := EvaluateSnapshot(snap, ctx, re.Request.URL.Query().Get("exp"))
+	values, variants := EvaluateSnapshot(snap, ctx, expOverride(re.Request.URL.Query()))
 	setFetchCacheHeaders(re)
 	return re.JSON(http.StatusOK, map[string]any{
 		"version":  rel.GetInt("version"),
