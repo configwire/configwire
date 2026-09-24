@@ -74,7 +74,6 @@
       if (!btn) return;
       CW.copyStatsJson();
     });
-    CW.on("group-filter", "change", CW.renderFlags);
     CW.on("flag-form", "submit", CW.saveFlag);
     CW.on("flag-default", "input", CW.updateFlagDefaultHint);
     CW.on("flag-rules-condition", "input", function () {
@@ -192,7 +191,7 @@
     });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
-    CW.on("group-create-form", "submit", CW.createGroup);
+    CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
     CW.on("experiment-form", "submit", CW.saveExperiment);
     CW.on("experiment-reset", "click", function () {
       if (CW.resetExperimentForm) CW.resetExperimentForm();
@@ -265,7 +264,7 @@
       }
     });
 
-    CW.on("flag-tbody", "click", function (ev) {
+    function flagRowClick(ev) {
       var t = ev.target;
       var fr = t && t.getAttribute && t.getAttribute("data-flag-rules");
       if (fr) {
@@ -320,6 +319,24 @@
           }
         }
       }
+    }
+
+    CW.on("flag-folders", "click", function (ev) {
+      var t = ev.target;
+      var tg = t && t.getAttribute && t.getAttribute("data-toggle-group");
+      if (tg) { CW.toggleGroupCollapse(tg); return; }
+      var ag = t && t.getAttribute ? t.getAttribute("data-add-flag-group") : null;
+      if (ag !== null && ag !== undefined) { CW.addFlagToGroup(ag || ""); return; }
+      var eg = t && t.getAttribute && t.getAttribute("data-edit-group");
+      if (eg) { CW.renameGroup(eg).catch(function (e) { CW.toast(e.message); }); return; }
+      var dg = t && t.getAttribute && t.getAttribute("data-delete-group");
+      if (dg) { CW.deleteGroup(dg).catch(function (e) { CW.toast(e.message); }); return; }
+      flagRowClick(ev);
+    });
+    CW.on("flag-folders", "change", function (ev) {
+      var t = ev.target;
+      var mid = t && t.getAttribute && t.getAttribute("data-move-flag");
+      if (mid) { CW.moveFlag(mid, t.value || "").catch(function (e) { CW.toast(e.message); }); }
     });
 
     CW.on("flag-rules-list", "click", function (ev) {
@@ -430,7 +447,12 @@
     get setExperimentStatus() { return CW.setExperimentStatus; },
     get createKey() { return CW.createKey; }, get revokeKey() { return CW.revokeKey; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
-    get createGroup() { return CW.createGroup; },
+    get promptCreateGroup() { return CW.promptCreateGroup; },
+    get renameGroup() { return CW.renameGroup; },
+    get deleteGroup() { return CW.deleteGroup; },
+    get toggleGroupCollapse() { return CW.toggleGroupCollapse; },
+    get addFlagToGroup() { return CW.addFlagToGroup; },
+    get moveFlag() { return CW.moveFlag; },
     get deleteFlag() { return CW.deleteFlag; },
     get openFlagDialog() { return CW.openFlagDialog; },
     get closeFlagDialog() { return CW.closeFlagDialog; },

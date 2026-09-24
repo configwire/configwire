@@ -145,7 +145,7 @@
       CW.loadHomeStats().catch(function () {});
       // Preload current scope in the background so a card click is instant.
       loadEnvs().then(function () {
-        CW.loadFlags().catch(function (e) { CW.$("flag-tbody").innerHTML = "<tr><td colspan=5>" + CW.esc(e.message) + "</td></tr>"; });
+        CW.loadFlags().catch(function (e) { CW.$("flag-folders").innerHTML = "<p class=\"muted\">" + CW.esc(e.message) + "</p>"; });
         CW.loadReleases().catch(function (e) { CW.$("release-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
         CW.loadRules().catch(function (e) { CW.toast(e.message); });
         CW.loadExperiments().catch(function (e) { CW.$("experiment-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
