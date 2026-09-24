@@ -47,11 +47,14 @@
     return state.token ? { Authorization: state.token } : {};
   }
 
-  function toast(msg) {
+  function toast(msg, ok) {
     var el = $("toast");
     if (!el) return;
     el.textContent = msg;
     el.hidden = !msg;
+    // Success (ok===true) renders green via #toast.ok; everything else
+    // stays danger-red so errors are never mistaken for success.
+    el.classList.toggle("ok", ok === true);
   }
 
   function showLoginError(msg) {
@@ -986,7 +989,7 @@
         ? "project created: " + (out.data.name || out.data.id)
         : "project create failed (" + out.status + "): " + serverMessage(out.data);
       if (ok) {
-        toast("project created: " + (out.data.name || out.data.id));
+        toast("project created: " + (out.data.name || out.data.id), true);
         $("project-name").value = "";
         var newId = out.data.id;
         loadProjects().then(function () {
@@ -1018,7 +1021,7 @@
         ? "env created: " + (out.data.slug || out.data.id)
         : "env create failed (" + out.status + "): " + serverMessage(out.data);
       if (ok) {
-        toast("env created: " + (out.data.slug || out.data.id));
+        toast("env created: " + (out.data.slug || out.data.id), true);
         $("env-slug").value = "";
         loadEnvs().catch(function () {});
       }
@@ -1037,7 +1040,7 @@
         ? "group created: " + (out.data.name || out.data.id)
         : "group create failed (" + out.status + "): " + serverMessage(out.data);
       if (ok) {
-        toast("group created: " + (out.data.name || out.data.id));
+        toast("group created: " + (out.data.name || out.data.id), true);
         $("group-name").value = "";
         loadFlags().catch(function () {});
       }
@@ -1048,7 +1051,7 @@
   function deleteFlag(id) {
     return apiMut("DELETE", "/api/collections/flags/records/" + encodeURIComponent(id)).then(function (out) {
       var ok = out.status === 200 || out.status === 201 || out.status === 204;
-      toast(ok ? "flag deleted" : "flag delete failed (" + out.status + "): " + serverMessage(out.data));
+      toast(ok ? "flag deleted" : "flag delete failed (" + out.status + "): " + serverMessage(out.data), ok);
       loadFlags().catch(function () {});
       return out;
     });
@@ -1155,9 +1158,10 @@
   function revokeKey(id) {
     return apiMut("PATCH", "/api/collections/sdk_keys/records/" + encodeURIComponent(id), { revoked: true })
       .then(function (out) {
-        toast(out.status === 200 || out.status === 204
+        var keyOk = out.status === 200 || out.status === 204;
+        toast(keyOk
           ? "key revoked"
-          : "revoke failed (" + out.status + "): " + serverMessage(out.data));
+          : "revoke failed (" + out.status + "): " + serverMessage(out.data), keyOk);
         loadKeys().catch(function () {});
         return out;
       });
@@ -1295,13 +1299,13 @@
     on("key-copy", "click", function () {
       var v = $("key-once-value").textContent;
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(v).then(function () { toast("copied"); }, function () { toast("copy failed"); });
+        navigator.clipboard.writeText(v).then(function () { toast("copied", true); }, function () { toast("copy failed"); });
       } else {
         var ta = document.createElement("textarea");
         ta.value = v;
         document.body.appendChild(ta);
         ta.select();
-        try { document.execCommand("copy"); toast("copied"); }
+        try { document.execCommand("copy"); toast("copied", true); }
         catch (e) { toast("copy failed"); }
         document.body.removeChild(ta);
       }

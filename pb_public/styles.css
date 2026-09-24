@@ -213,6 +213,11 @@ button:focus-visible, .btn:focus-visible, a:focus-visible { outline: 2px solid v
   color: var(--danger);
 }
 #toast[hidden] { display: none; }
+#toast.ok {
+  border-color: var(--ok);
+  background: rgba(52, 211, 153, 0.1);
+  color: var(--ok);
+}
 
 /* ---- Tables & lists ---- */
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin-top: var(--space-2); }
