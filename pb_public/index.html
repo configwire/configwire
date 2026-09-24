@@ -7,7 +7,7 @@
   <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
   <meta name="theme-color" content="#1a1f2a">
   <title>ConfigWire Admin</title>
-  <link rel="stylesheet" href="/styles.css?v=16">
+  <link rel="stylesheet" href="/styles.css?v=17">
   <link rel="icon" type="image/png" href="/img/favicon.png">
   <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -61,6 +61,11 @@
           <path d="M8 11V4.5" />
           <path d="M12 11V6.5" />
         </svg><span>Stats</span></a>
+      <a href="#/p/account"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
+          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="8" cy="5" r="2.5" />
+          <path d="M2.5 13.5c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5" />
+        </svg><span>Account</span></a>
     </nav>
     <div class="sidebar-foot">
       <button id="logout-btn" type="button" class="btn ghost" hidden>Log out</button>
@@ -93,6 +98,23 @@
             <button type="submit" class="btn primary">Log in</button>
           </form>
           <p id="login-error" role="alert" hidden></p>
+        </div>
+      </section>
+
+      <section id="setup-section" class="card auth" aria-label="First-run setup" hidden>
+        <div class="auth-body">
+          <h2>Create admin account</h2>
+          <p class="muted">No superusers exist yet. Create the first admin account to get started.</p>
+          <form id="setup-form">
+            <label>Email <input id="setup-email" name="email" type="email" autocomplete="username" required></label>
+            <label>Password <input id="setup-password" name="password" type="password" autocomplete="new-password"
+                required minlength="8"></label>
+            <label>Confirm password <input id="setup-password-confirm" name="password-confirm" type="password"
+                autocomplete="new-password" required minlength="8"></label>
+            <button type="submit" class="btn primary">Create admin account</button>
+          </form>
+          <p id="setup-error" role="alert" hidden></p>
+          <p id="setup-result" role="status" hidden></p>
         </div>
       </section>
 
@@ -222,6 +244,27 @@
               </form>
               <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Not loaded.</div>
             </section>
+          </div>
+        </section>
+        <section id="view-account" aria-label="Account management" hidden>
+          <div class="card" aria-labelledby="account">
+            <div class="card-head">
+              <h2 id="account">Account</h2>
+              <div class="card-actions"><button id="refresh-accounts" type="button" class="btn ghost">Refresh
+                  admins</button></div>
+            </div>
+            <p class="muted">Manage superuser admin accounts.</p>
+            <ul id="account-list" aria-label="Admin accounts">
+              <li>Not loaded.</li>
+            </ul>
+            <h3>Admin create</h3>
+            <form id="account-create-form" aria-label="Admin create">
+              <label>Email <input id="account-email" type="email" autocomplete="off" required></label>
+              <label>Password <input id="account-password" type="password" autocomplete="new-password" required
+                  minlength="8"></label>
+              <button type="submit" class="btn primary">Create admin</button>
+            </form>
+            <p id="account-result" role="status"></p>
           </div>
         </section>
         <dialog id="experiment-dialog" aria-labelledby="experiment-dialog-title">
@@ -440,9 +483,10 @@
       </section>
     </main>
   </div>
-  <script src="/js/core.js?v=8"></script>
+  <script src="/js/core.js?v=9"></script>
   <script src="/js/auth.js?v=8"></script>
-  <script src="/js/router.js?v=10"></script>
+  <script src="/js/router.js?v=11"></script>
+  <script src="/js/account.js?v=1"></script>
   <script src="/js/scope.js?v=8"></script>
   <script src="/js/flags.js?v=14"></script>
   <script src="/js/rules.js?v=10"></script>
@@ -451,7 +495,7 @@
   <script src="/js/releases.js?v=8"></script>
   <script src="/js/stats.js?v=8"></script>
   <script src="/js/json-editor.js?v=9"></script>
-  <script src="/js/boot.js?v=19"></script>
+  <script src="/js/boot.js?v=20"></script>
 </body>
 
 </html>
