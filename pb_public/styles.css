@@ -411,7 +411,7 @@ td code { background: transparent; border: none; padding: 0; }
   grid-area: head;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
@@ -438,22 +438,24 @@ td code { background: transparent; border: none; padding: 0; }
   grid-area: actions;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: flex-end;
   gap: var(--space-2);
   flex-wrap: wrap;
+  min-width: 180px;
 }
 #experiment-list .exp-actions label {
   display: inline-flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--space-1);
+  width: 100%;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
 }
-#experiment-list .exp-actions select { min-width: 140px; }
-#experiment-list .exp-actions-buttons { margin-left: auto; display: inline-flex; gap: var(--space-2); flex-shrink: 0; }
+#experiment-list .exp-actions select { width: 100%; min-width: 0; }
+#experiment-list .exp-actions-buttons { display: inline-flex; gap: var(--space-2); flex-shrink: 0; width: 100%; justify-content: flex-end; }
 .badge {
   display: inline-block;
   font-size: 11px;
@@ -688,7 +690,7 @@ dialog#json-editor-dialog .muted { font-size: 13px; }
   #flag-rules-form .form-actions, #experiment-form .form-actions { flex-direction: column; align-items: stretch; }
   #flag-rules-form .form-actions button, #experiment-form .form-actions button { width: 100%; }
   #experiment-list li.exp-card { grid-template-columns: 1fr; grid-template-areas: "head" "meta" "variants" "actions"; }
-  #experiment-list .exp-actions-buttons { margin-left: 0; }
+  #experiment-list .exp-actions { min-width: 0; align-items: stretch; }
   section[aria-labelledby="stats"] form.inline-form { flex-direction: column; align-items: stretch; }
   section[aria-labelledby="stats"] form.inline-form button { width: 100%; }
   #stats-view .stats-chart { flex-direction: column; align-items: stretch; }
