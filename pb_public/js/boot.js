@@ -108,10 +108,17 @@
       CW.renderFlagGroupSelect();
       CW.updateFlagDefaultHint();
     });
+    CW.on("rule-reset", "click", function () {
+      CW.$("rule-id").value = "";
+      CW.$("rule-form").reset();
+      CW.updateRuleConditionHint();
+      CW.updateRuleValueHint();
+      CW.$("rule-result").textContent = "";
+    });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
     CW.on("group-create-form", "submit", CW.createGroup);
-    CW.on("rule-form", "submit", CW.createRule);
+    CW.on("rule-form", "submit", CW.saveRule);
     CW.on("experiment-form", "submit", CW.createExperiment);
     CW.on("key-form", "submit", CW.createKey);
     CW.on("key-copy", "click", function () {
@@ -176,8 +183,40 @@
       }
     });
 
-    CW.on("release-list", "click", function (ev) {
-      var v = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-rollback-version");
+    CW.on("rule-list", "click", function (ev) {
+      var t = ev.target;
+      var del = t && t.getAttribute && t.getAttribute("data-delete-rule");
+      if (del) {
+        if (!window.confirm("Delete this rule?")) return;
+        CW.deleteRule(del).catch(function (e) { CW.toast(e.message); });
+        return;
+      }
+      var rid = t && t.getAttribute && t.getAttribute("data-edit-rule");
+      if (rid) {
+        var found = null;
+        for (var i = 0; i < CW.state.rules.length; i++) {
+          if (CW.state.rules[i].id === rid) { found = CW.state.rules[i]; break; }
+        }
+        if (!found) { CW.toast("rule not found: " + rid); return; }
+        CW.$("rule-id").value = found.id;
+        CW.$("rule-priority").value = found.priority == null ? 0 : found.priority;
+        try {
+          CW.$("rule-condition").value = typeof found.condition === "string"
+            ? found.condition
+            : JSON.stringify(found.condition);
+        } catch (e) { CW.$("rule-condition").value = "{}"; }
+        try {
+          CW.$("rule-value").value = found.value === undefined
+            ? "null"
+            : JSON.stringify(found.value);
+        } catch (e) { CW.$("rule-value").value = "null"; }
+        CW.updateRuleConditionHint();
+        CW.updateRuleValueHint();
+        CW.$("rule-result").textContent = "editing " + found.id;
+      }
+    });
+
+    CW.on("release-list", "click", function (ev) {      var v = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-rollback-version");
       if (!v) return;
       CW.rollback(v, "rollback via admin UI").then(function (out) {
         CW.$("publish-result").textContent = out.status === 200
@@ -226,6 +265,8 @@
     get loadRules() { return CW.loadRules; }, get loadExperiments() { return CW.loadExperiments; },
     get loadKeys() { return CW.loadKeys; },
     get saveFlag() { return CW.saveFlag; }, get createRule() { return CW.createRule; },
+    get saveRule() { return CW.saveRule; },
+    get deleteRule() { return CW.deleteRule; },
     get createExperiment() { return CW.createExperiment; },
     get createKey() { return CW.createKey; }, get revokeKey() { return CW.revokeKey; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },

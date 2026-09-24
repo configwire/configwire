@@ -156,8 +156,9 @@
           <select id="rule-flag-select" aria-label="Rule flag"></select>
         </label>
         <ul id="rule-list" aria-label="Rules"><li>Not loaded.</li></ul>
-        <h3>Rule create</h3>
-        <form id="rule-form" aria-label="Rule create">
+        <h3>Rule create / edit</h3>
+        <form id="rule-form" aria-label="Rule create or edit">
+          <input id="rule-id" type="hidden" value="">
           <label>Priority <input id="rule-priority" type="number" value="0" required></label>
           <label class="json-field-label">Condition (JSON)
             <span class="json-row">
@@ -174,7 +175,8 @@
             <span id="rule-value-hint" class="json-hint" role="status"></span>
           </label>
           <div class="form-actions">
-            <button type="submit" class="btn primary">Create rule</button>
+            <button type="submit" id="rule-submit" class="btn primary">Save rule</button>
+            <button type="button" id="rule-reset" class="btn ghost">Clear</button>
           </div>
         </form>
         <p id="rule-result" role="status"></p>
