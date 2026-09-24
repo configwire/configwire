@@ -59,7 +59,6 @@
     CW.on("stats-since", "change", function () { CW.loadStats().catch(function () {}); });
     CW.on("refresh-flags", "click", function () { CW.loadFlags().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-releases", "click", function () { CW.loadReleases().catch(function (e) { CW.toast(e.message); }); });
-    CW.on("refresh-rules", "click", function () { CW.loadRules().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-experiments", "click", function () { CW.loadExperiments().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-keys", "click", function () { CW.loadKeys().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-stats", "click", function () {
@@ -76,11 +75,10 @@
       CW.copyStatsJson();
     });
     CW.on("group-filter", "change", CW.renderFlags);
-    CW.on("rule-flag-select", "change", function () { CW.loadRules().catch(function () {}); });
     CW.on("flag-form", "submit", CW.saveFlag);
     CW.on("flag-default", "input", CW.updateFlagDefaultHint);
-    CW.on("rule-condition", "input", CW.updateRuleConditionHint);
-    CW.on("rule-value", "input", CW.updateRuleValueHint);
+    CW.on("flag-rules-condition", "input", CW.updateFlagRuleHints);
+    CW.on("flag-rules-value", "input", CW.updateFlagRuleHints);
     CW.on("exp-variants", "input", CW.updateExpVariantsHint);
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target && ev.target.closest ? ev.target.closest(".json-expand") : null;
@@ -102,23 +100,16 @@
     CW.on("json-editor-save", "click", function () { CW.closeJsonEditor(true); });
     CW.on("json-editor-cancel", "click", function () { CW.closeJsonEditor(false); });
     CW.updateAllJsonHints();
+    if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
     CW.on("flag-reset", "click", function () {
       CW.$("flag-id").value = "";
       CW.$("flag-form").reset();
       CW.renderFlagGroupSelect();
       CW.updateFlagDefaultHint();
     });
-    CW.on("rule-reset", "click", function () {
-      CW.$("rule-id").value = "";
-      CW.$("rule-form").reset();
-      CW.updateRuleConditionHint();
-      CW.updateRuleValueHint();
-      CW.$("rule-result").textContent = "";
-    });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
     CW.on("group-create-form", "submit", CW.createGroup);
-    CW.on("rule-form", "submit", CW.saveRule);
     CW.on("experiment-form", "submit", CW.createExperiment);
     CW.on("key-form", "submit", CW.createKey);
     CW.on("key-copy", "click", function () {
@@ -138,10 +129,17 @@
 
     CW.on("flag-tbody", "click", function (ev) {
       var t = ev.target;
+      var fr = t && t.getAttribute && t.getAttribute("data-flag-rules");
+      if (fr) {
+        if (CW.openFlagRulesDialog) CW.openFlagRulesDialog(fr);
+        return;
+      }
       var del = t && t.getAttribute && t.getAttribute("data-delete-flag");
       if (del) {
-        if (!window.confirm("Delete this flag?")) return;
-        CW.deleteFlag(del).catch(function (e) { CW.toast(e.message); });
+        if (!window.confirm("Delete this flag and all its rules?")) return;
+        CW.deleteFlag(del).then(function () {
+          CW.loadRules().catch(function (e) { CW.toast(e.message); });
+        }).catch(function (e) { CW.toast(e.message); });
         return;
       }
       var k = t && t.getAttribute && t.getAttribute("data-stats-flag");
@@ -183,37 +181,52 @@
       }
     });
 
-    CW.on("rule-list", "click", function (ev) {
+    CW.on("flag-rules-list", "click", function (ev) {
       var t = ev.target;
-      var del = t && t.getAttribute && t.getAttribute("data-delete-rule");
+      var del = t && t.getAttribute && t.getAttribute("data-delete-flag-rule");
       if (del) {
         if (!window.confirm("Delete this rule?")) return;
-        CW.deleteRule(del).catch(function (e) { CW.toast(e.message); });
+        CW.deleteRule(del).then(function () {
+          if (CW.renderFlagRulesList) CW.renderFlagRulesList();
+          if (CW.renderFlags) CW.renderFlags();
+        }).catch(function (e) { CW.toast(e.message); });
         return;
       }
-      var rid = t && t.getAttribute && t.getAttribute("data-edit-rule");
+      var rid = t && t.getAttribute && t.getAttribute("data-edit-flag-rule");
       if (rid) {
         var found = null;
         for (var i = 0; i < CW.state.rules.length; i++) {
           if (CW.state.rules[i].id === rid) { found = CW.state.rules[i]; break; }
         }
         if (!found) { CW.toast("rule not found: " + rid); return; }
-        CW.$("rule-id").value = found.id;
-        CW.$("rule-priority").value = found.priority == null ? 0 : found.priority;
+        CW.$("flag-rules-flag-id").value = found.flag || CW.state.activeFlagRulesId || "";
+        CW.$("flag-rules-id").value = found.id;
+        CW.$("flag-rules-priority").value = found.priority == null ? 0 : found.priority;
         try {
-          CW.$("rule-condition").value = typeof found.condition === "string"
+          CW.$("flag-rules-condition").value = typeof found.condition === "string"
             ? found.condition
             : JSON.stringify(found.condition);
-        } catch (e) { CW.$("rule-condition").value = "{}"; }
+        } catch (e) { CW.$("flag-rules-condition").value = "{}"; }
         try {
-          CW.$("rule-value").value = found.value === undefined
+          CW.$("flag-rules-value").value = found.value === undefined
             ? "null"
             : JSON.stringify(found.value);
-        } catch (e) { CW.$("rule-value").value = "null"; }
-        CW.updateRuleConditionHint();
-        CW.updateRuleValueHint();
-        CW.$("rule-result").textContent = "editing " + found.id;
+        } catch (e2) { CW.$("flag-rules-value").value = "null"; }
+        if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
+        CW.$("flag-rules-result").textContent = "editing " + found.id;
       }
+    });
+    CW.on("flag-rules-form", "submit", function (ev) {
+      ev.preventDefault();
+      if (CW.saveFlagRule) CW.saveFlagRule(ev).catch(function (e) { CW.toast(e.message); });
+    });
+    CW.on("flag-rules-reset", "click", function () {
+      if (CW.resetFlagRuleForm) CW.resetFlagRuleForm();
+    });
+    CW.on("flag-rules-close", "click", function () {
+      if (CW.resetFlagRuleForm) CW.resetFlagRuleForm();
+      if (CW.closeFlagRulesDialog) CW.closeFlagRulesDialog();
+      else { var dlg = CW.$("flag-rules-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
 
     CW.on("release-list", "click", function (ev) {      var v = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-rollback-version");
@@ -264,14 +277,19 @@
     get loadProjects() { return CW.loadProjects; }, get loadEnvs() { return CW.loadEnvs; },
     get loadRules() { return CW.loadRules; }, get loadExperiments() { return CW.loadExperiments; },
     get loadKeys() { return CW.loadKeys; },
-    get saveFlag() { return CW.saveFlag; }, get createRule() { return CW.createRule; },
-    get saveRule() { return CW.saveRule; },
+    get saveFlag() { return CW.saveFlag; },
     get deleteRule() { return CW.deleteRule; },
     get createExperiment() { return CW.createExperiment; },
     get createKey() { return CW.createKey; }, get revokeKey() { return CW.revokeKey; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
     get createGroup() { return CW.createGroup; },
     get deleteFlag() { return CW.deleteFlag; },
+    get openFlagRulesDialog() { return CW.openFlagRulesDialog; },
+    get renderFlagRulesList() { return CW.renderFlagRulesList; },
+    get saveFlagRule() { return CW.saveFlagRule; },
+    get resetFlagRuleForm() { return CW.resetFlagRuleForm; },
+    get closeFlagRulesDialog() { return CW.closeFlagRulesDialog; },
+    get conditionHTML() { return CW.conditionHTML; }, get valueHTML() { return CW.valueHTML; },
     get publish() { return CW.publish; }, get rollback() { return CW.rollback; },
     get openProject() { return CW.openProject; }, get showHome() { return CW.showHome; },
     get route() { return CW.route; }, get parseHash() { return CW.parseHash; },

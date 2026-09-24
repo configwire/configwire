@@ -22,7 +22,6 @@
   </div>
   <nav aria-label="Modules" id="sidebar-nav">
     <a href="#/p/flags"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14V2"/><path d="M3 2.5h9.5l-2.5 3.5 2.5 3.5H3"/></svg><span>Flags</span></a>
-    <a href="#/p/rules"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h12"/><path d="M4.5 8h7"/><path d="M6.5 12h3"/></svg><span>Rules</span></a>
     <a href="#/p/experiments"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h4"/><path d="M7 2v4.2L3.2 12a1.5 1.5 0 0 0 1.3 2.2h7a1.5 1.5 0 0 0 1.3-2.2L9 6.2V2"/></svg><span>Experiments</span></a>
     <a href="#/p/keys"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="8" r="3"/><path d="M8.5 8H14"/><path d="M12 8v2.5"/><path d="M14 8v1.8"/></svg><span>SDK keys</span></a>
     <a href="#/p/releases"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5v4a1 1 0 0 0 1 1h4"/><path d="M3.5 6.5 2.5 2.5l4 1"/><path d="M6 7 14 15"/><circle cx="11.5" cy="11.5" r="1.6"/></svg><span>Releases</span></a>
@@ -150,38 +149,6 @@
         <p id="flag-result" role="status"></p>
       </section>
 
-      <section class="card" aria-labelledby="rules">
-        <div class="card-head"><h2 id="rules">Rules</h2><button id="refresh-rules" type="button" class="btn ghost">Refresh rules</button></div>
-        <label>Flag
-          <select id="rule-flag-select" aria-label="Rule flag"></select>
-        </label>
-        <ul id="rule-list" aria-label="Rules"><li>Not loaded.</li></ul>
-        <h3>Rule create / edit</h3>
-        <form id="rule-form" aria-label="Rule create or edit">
-          <input id="rule-id" type="hidden" value="">
-          <label>Priority <input id="rule-priority" type="number" value="0" required></label>
-          <label class="json-field-label">Condition (JSON)
-            <span class="json-row">
-              <input id="rule-condition" type="text" value='{"field":"platform","op":"==","value":"ios"}' spellcheck="false" size="40" aria-describedby="rule-condition-hint">
-              <button type="button" class="btn secondary json-expand" data-target="rule-condition" aria-haspopup="dialog" title="Open larger JSON editor">Expand</button>
-            </span>
-            <span id="rule-condition-hint" class="json-hint" role="status"></span>
-          </label>
-          <label class="json-field-label">Value (JSON)
-            <span class="json-row">
-              <input id="rule-value" type="text" value="true" spellcheck="false" aria-describedby="rule-value-hint">
-              <button type="button" class="btn secondary json-expand" data-target="rule-value" aria-haspopup="dialog" title="Open larger JSON editor">Expand</button>
-            </span>
-            <span id="rule-value-hint" class="json-hint" role="status"></span>
-          </label>
-          <div class="form-actions">
-            <button type="submit" id="rule-submit" class="btn primary">Save rule</button>
-            <button type="button" id="rule-reset" class="btn ghost">Clear</button>
-          </div>
-        </form>
-        <p id="rule-result" role="status"></p>
-      </section>
-
       <section class="card" aria-labelledby="experiments">
         <div class="card-head"><h2 id="experiments">Experiments</h2><button id="refresh-experiments" type="button" class="btn ghost">Refresh experiments</button></div>
         <ul id="experiment-list" aria-label="Experiments"><li>Not loaded.</li></ul>
@@ -255,6 +222,40 @@
       </section>
       </div>
       </section>
+      <dialog id="flag-rules-dialog" aria-labelledby="flag-rules-title">
+        <h3 id="flag-rules-title">Rules for flag</h3>
+        <p class="muted">Rules scoped to this flag. Create, edit and delete without leaving the flag row.</p>
+        <ul id="flag-rules-list" aria-label="Flag rules"><li>Not loaded.</li></ul>
+        <h4>Rule create / edit</h4>
+        <form id="flag-rules-form" aria-label="Flag rule create or edit">
+          <input id="flag-rules-flag-id" type="hidden" value="">
+          <input id="flag-rules-id" type="hidden" value="">
+          <label>Priority <input id="flag-rules-priority" type="number" value="0" required></label>
+          <label class="json-field-label">Condition (JSON)
+            <span class="json-row">
+              <input id="flag-rules-condition" type="text" value='{"field":"platform","op":"==","value":"ios"}' spellcheck="false" size="40" aria-describedby="flag-rules-condition-hint">
+              <button type="button" class="btn secondary json-expand" data-target="flag-rules-condition" aria-haspopup="dialog" title="Open larger JSON editor">Expand</button>
+            </span>
+            <span id="flag-rules-condition-hint" class="json-hint" role="status"></span>
+          </label>
+          <label class="json-field-label">Value (JSON)
+            <span class="json-row">
+              <input id="flag-rules-value" type="text" value="true" spellcheck="false" aria-describedby="flag-rules-value-hint">
+              <button type="button" class="btn secondary json-expand" data-target="flag-rules-value" aria-haspopup="dialog" title="Open larger JSON editor">Expand</button>
+            </span>
+            <span id="flag-rules-value-hint" class="json-hint" role="status"></span>
+          </label>
+          <div class="form-actions">
+            <button type="submit" id="flag-rules-submit" class="btn primary">Save rule</button>
+            <button type="button" id="flag-rules-reset" class="btn ghost">Clear</button>
+          </div>
+        </form>
+        <p id="flag-rules-result" role="status"></p>
+        <div class="dialog-actions">
+          <span class="dialog-spacer"></span>
+          <button type="button" id="flag-rules-close" class="btn ghost">Close</button>
+        </div>
+      </dialog>
       <dialog id="json-editor-dialog" aria-labelledby="json-editor-title">
         <h3 id="json-editor-title">Edit JSON</h3>
         <p class="muted" id="json-editor-subtitle">Larger editor with automatic JSON validation. Save writes back to the form.</p>
