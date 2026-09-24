@@ -180,7 +180,7 @@ code {
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gradient); display: inline-block; box-shadow: 0 0 8px rgba(94, 234, 212, 0.7); }
 
 main { padding: var(--space-6); max-width: 1200px; width: 100%; margin: 0 auto; }
-.grid { display: grid; grid-template-columns: 1fr; gap: var(--space-4); margin-top: var(--space-4); }
+.grid { display: grid; grid-template-columns: 1fr; gap: var(--space-6); margin-top: var(--space-4); }
 
 /* ---- Projects home (two-view app: home grid + per-project detail) ---- */
 .project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-top: var(--space-4); }
@@ -584,10 +584,6 @@ dialog#json-editor-dialog .muted { font-size: 13px; }
 .dialog-spacer { flex: 1 1 auto; }
 
 /* ---- Responsive ---- */
-@media (min-width: 901px) {
-  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-  .grid .card:first-child { grid-column: 1 / -1; }
-}
 @media (max-width: 900px) {
   .sidebar {
     position: static;
