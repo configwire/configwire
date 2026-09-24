@@ -59,9 +59,24 @@ func countProjectFlags(app core.App, project string) (int64, error) {
 }
 
 func registerConfigwireHooks(app core.App) {
-	// Releases are immutable: rollback republishes the old snapshot
-	// as a NEW row.
+	// Releases are immutable and publish-only: direct data-API writes are
+	// rejected; only publish/rollback handler saves (marked via
+	// releases.AllowInternalSave) pass the create/delete hooks. Updates
+	// are always denied: rollback republishes the old snapshot as a NEW row.
 	releasesImmutable := errors.New("releases are immutable: publish a new release instead")
+	releasesPublishOnly := apis.NewBadRequestError("releases are publish-only: use publish/rollback endpoints", nil)
+	app.OnRecordCreate("releases").BindFunc(func(e *core.RecordEvent) error {
+		if releases.IsInternalSave() {
+			return e.Next()
+		}
+		return releasesPublishOnly
+	})
+	app.OnRecordDelete("releases").BindFunc(func(e *core.RecordEvent) error {
+		if releases.IsInternalSave() {
+			return e.Next()
+		}
+		return releasesPublishOnly
+	})
 	app.OnRecordUpdate("releases").BindFunc(func(e *core.RecordEvent) error {
 		return releasesImmutable
 	})

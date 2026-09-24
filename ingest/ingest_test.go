@@ -159,21 +159,61 @@ func bodyString(e map[string]any) string {
 }
 
 func TestValidateBodyTsShapes(t *testing.T) {
-	rfs := bodyString(map[string]any{"kind": "fetch", "ts": "2026-09-22T10:00:00Z"})
+	now := time.Now().UTC()
+	rfs := bodyString(map[string]any{"kind": "fetch", "ts": now.Format(time.RFC3339Nano)})
 	events, aerr := ValidateBody([]byte(rfs))
 	if aerr != nil {
 		t.Fatalf("RFC3339 ts rejected: %v", aerr)
 	}
-	if events[0].Ts.Year() != 2026 {
+	if events[0].Ts.IsZero() {
 		t.Fatalf("bad ts parse: %v", events[0].Ts)
 	}
-	unix := bodyString(map[string]any{"kind": "exposure", "ts": 1726915200})
+	recentUnix := now.Add(-time.Hour).Unix()
+	unix := bodyString(map[string]any{"kind": "exposure", "ts": recentUnix})
 	events, aerr = ValidateBody([]byte(unix))
 	if aerr != nil {
 		t.Fatalf("unix ts rejected: %v", aerr)
 	}
-	if events[0].Ts.Unix() != 1726915200 {
+	if events[0].Ts.Unix() != recentUnix {
 		t.Fatalf("bad unix parse: %v", events[0].Ts)
+	}
+	// Absent/null ts still means server time (zero time here).
+	nullTs := bodyString(map[string]any{"kind": "fetch", "ts": nil})
+	events, aerr = ValidateBody([]byte(nullTs))
+	if aerr != nil {
+		t.Fatalf("null ts rejected: %v", aerr)
+	}
+	if !events[0].Ts.IsZero() {
+		t.Fatalf("null ts must decode to zero time, got %v", events[0].Ts)
+	}
+}
+
+func TestValidateBodyTsClamp(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		name string
+		ts   any
+	}{
+		{"future RFC3339", now.Add(MaxFutureSkew + time.Minute).Format(time.RFC3339Nano)},
+		{"future unix", now.Add(MaxFutureSkew + time.Minute).Unix()},
+		{"far-past RFC3339", now.Add(-MaxPastAge - 24*time.Hour).Format(time.RFC3339Nano)},
+		{"far-past unix", now.Add(-MaxPastAge - 24*time.Hour).Unix()},
+	} {
+		if _, aerr := ValidateBody([]byte(bodyString(map[string]any{"kind": "fetch", "ts": tc.ts}))); aerr == nil || aerr.Status != 400 {
+			t.Fatalf("%s must be 400, got %v", tc.name, aerr)
+		}
+	}
+	// Boundary: just inside the window passes.
+	for _, tc := range []struct {
+		name string
+		ts   any
+	}{
+		{"inside future", now.Add(MaxFutureSkew - time.Minute).Format(time.RFC3339Nano)},
+		{"inside past", now.Add(-MaxPastAge + 24*time.Hour).Format(time.RFC3339Nano)},
+	} {
+		if _, aerr := ValidateBody([]byte(bodyString(map[string]any{"kind": "fetch", "ts": tc.ts}))); aerr != nil {
+			t.Fatalf("%s must pass, got %v", tc.name, aerr)
+		}
 	}
 }
 

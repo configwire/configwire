@@ -78,6 +78,18 @@ const emptyReleaseEtag = "none"
 
 const allowHeaders = "X-ConfigWire-Key, If-None-Match"
 
+// fetchLimiter is a process-local per-key fixed-window limiter reused from
+// ingest (single binary, so process-local is acceptable).
+var fetchLimiter = ingest.NewLimiter()
+
+// setFetchCacheHeaders stamps private cache headers on fetch 200/304
+// responses. Private because responses vary per SDK key + encoding.
+func setFetchCacheHeaders(re *core.RequestEvent) {
+	h := re.Response.Header()
+	h.Set("Vary", "X-ConfigWire-Key, Accept-Encoding")
+	h.Set("Cache-Control", "private, max-age=0")
+}
+
 func corsOrigin() string {
 	if v := os.Getenv("CONFIGWIRE_CORS_ORIGIN"); v != "" {
 		return v
@@ -290,6 +302,9 @@ func getConfig(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
+	if !fetchLimiter.Allow(key.GetString("hash"), ingest.RateLimitFor(key)) {
+		return re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Rate limit exceeded.", "status": 429})
+	}
 	slug := re.Request.PathValue("env")
 	// Deterministic: the key's env IS the env, so a slug shared by
 	// several projects can never misroute here.
@@ -311,6 +326,7 @@ func getConfig(re *core.RequestEvent) error {
 		return err
 	}
 	if rel == nil {
+		setFetchCacheHeaders(re)
 		return re.JSON(http.StatusOK, map[string]any{
 			"version":  0,
 			"etag":     emptyReleaseEtag,
@@ -323,6 +339,7 @@ func getConfig(re *core.RequestEvent) error {
 	etag := rel.GetString("etag")
 	re.Response.Header().Set("ETag", etag)
 	if EtagMatches(re.Request.Header.Get("If-None-Match"), etag) {
+		setFetchCacheHeaders(re)
 		return re.NoContent(http.StatusNotModified)
 	}
 
@@ -336,6 +353,7 @@ func getConfig(re *core.RequestEvent) error {
 	}
 
 	values, variants := EvaluateSnapshot(snap, ctx, re.Request.URL.Query().Get("exp"))
+	setFetchCacheHeaders(re)
 	return re.JSON(http.StatusOK, map[string]any{
 		"version":  rel.GetInt("version"),
 		"etag":     etag,

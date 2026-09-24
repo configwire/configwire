@@ -54,6 +54,16 @@ const (
 	DefaultRateLimit = 60
 	// RateWindow is the fixed per-key rate-limit window.
 	RateWindow = time.Minute
+	// MaxFlagLen bounds flag keys in runes (chars); over-limit → 400.
+	MaxFlagLen = 128
+	// MaxVariantLen bounds variant names in runes (chars); over-limit → 400.
+	MaxVariantLen = 64
+	// MaxUserHashLen bounds opaque user hashes in runes (chars); over-limit → 400.
+	MaxUserHashLen = 128
+	// MaxFutureSkew tolerates clock skew for future ts; beyond → 400.
+	MaxFutureSkew = 5 * time.Minute
+	// MaxPastAge bounds how far back ts may lie; older → 400.
+	MaxPastAge = 90 * 24 * time.Hour
 )
 
 // EventIn is one validated ingest event with server-normalized timestamp.
@@ -156,6 +166,18 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	if r.Kind != "fetch" && r.Kind != "exposure" {
 		return ev, badRequest("invalid kind: must be \"fetch\" or \"exposure\".")
 	}
+	if len([]rune(r.Flag)) > MaxFlagLen {
+		return ev, badRequest("flag too long: max 128 chars.")
+	}
+	if len([]rune(r.Variant)) > MaxVariantLen {
+		return ev, badRequest("variant too long: max 64 chars.")
+	}
+	if len([]rune(r.UserHash)) > MaxUserHashLen {
+		return ev, badRequest("userHash too long: max 128 chars.")
+	}
+	if strings.IndexByte(r.Flag, 0) >= 0 || strings.IndexByte(r.Variant, 0) >= 0 || strings.IndexByte(r.UserHash, 0) >= 0 {
+		return ev, badRequest("NUL byte in flag/variant/userHash is forbidden.")
+	}
 	ts, aerr := parseTs(r.Ts)
 	if aerr != nil {
 		return ev, aerr
@@ -165,7 +187,7 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 }
 
 // parseTs accepts absent/null (zero time = server time), RFC3339 strings,
-// and unix-seconds numbers (int or float). Anything else → 400.
+// and unix-seconds numbers. Out-of-window non-zero ts → 400.
 func parseTs(raw json.RawMessage) (time.Time, *apiError) {
 	t := strings.TrimSpace(string(raw))
 	if t == "" || t == "null" {
@@ -179,14 +201,25 @@ func parseTs(raw json.RawMessage) (time.Time, *apiError) {
 				return time.Time{}, badRequest("invalid ts: must be RFC3339 or unix seconds.")
 			}
 		}
-		return parsed.UTC(), nil
+		return clampTs(parsed.UTC())
 	}
 	var f float64
 	if err := json.Unmarshal(raw, &f); err == nil {
 		sec, nsec := int64(f), int64((f-float64(int64(f)))*1e9)
-		return time.Unix(sec, nsec).UTC(), nil
+		return clampTs(time.Unix(sec, nsec).UTC())
 	}
 	return time.Time{}, badRequest("invalid ts: must be RFC3339 or unix seconds.")
+}
+
+func clampTs(ts time.Time) (time.Time, *apiError) {
+	now := time.Now().UTC()
+	if ts.After(now.Add(MaxFutureSkew)) {
+		return time.Time{}, badRequest("invalid ts: timestamp too far in the future.")
+	}
+	if ts.Before(now.Add(-MaxPastAge)) {
+		return time.Time{}, badRequest("invalid ts: timestamp too far in the past.")
+	}
+	return ts, nil
 }
 
 // ResolveUserHash picks the storable hash: an explicit userHash wins;

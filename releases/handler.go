@@ -27,6 +27,46 @@ import (
 // scope: ConfigWire runs as one binary.
 var writeMu sync.Mutex
 
+// internalMu guards internalDepth: the count of in-flight publish/rollback
+// saves that the main.go releases hooks must allow through. Direct data-API
+// creates/deletes have depth 0 and are rejected as publish-only; handler
+// saves wrap app.Save via internalSave (depth 1) and pass.
+var (
+	internalMu    sync.Mutex
+	internalDepth int
+)
+
+// AllowInternalSave marks the enclosed save as handler-internal; the
+// returned func clears the mark. Callers must defer the result around
+// exactly one app.Save.
+func AllowInternalSave() func() {
+	internalMu.Lock()
+	internalDepth++
+	internalMu.Unlock()
+	return func() {
+		internalMu.Lock()
+		internalDepth--
+		internalMu.Unlock()
+	}
+}
+
+// IsInternalSave reports whether the current goroutine's save was marked
+// handler-internal. The main.go releases hooks consult it to tell
+// publish/rollback writes apart from direct data-API writes.
+func IsInternalSave() bool {
+	internalMu.Lock()
+	defer internalMu.Unlock()
+	return internalDepth > 0
+}
+
+// internalSave persists one releases row bypassing the publish-only hook
+// deny (which rejects depth-0 direct writes).
+func internalSave(app core.App, rec *core.Record) error {
+	done := AllowInternalSave()
+	defer done()
+	return app.Save(rec)
+}
+
 // Register mounts the admin releases routes. All routes bind
 // RequireSuperuserAuth: missing/invalid auth -> 401, SDK keys -> 401
 // (they are not superuser tokens), non-superuser auth -> 403.
@@ -135,7 +175,7 @@ func postPublish(re *core.RequestEvent) error {
 	rec.Set("author", callerAuthor(re))
 	rec.Set("note", req.Note)
 	rec.Set("env", env.Id)
-	if err := re.App.Save(rec); err != nil {
+	if err := internalSave(re.App, rec); err != nil {
 		return err
 	}
 
@@ -255,7 +295,7 @@ func rollbackToNewRow(app core.App, src *core.Record, note, author string, fromV
 	rec.Set("author", author)
 	rec.Set("note", note)
 	rec.Set("env", envID)
-	if err := app.Save(rec); err != nil {
+	if err := internalSave(app, rec); err != nil {
 		return 0, "", err
 	}
 
