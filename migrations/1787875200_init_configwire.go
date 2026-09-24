@@ -128,7 +128,13 @@ func createConfigwireCollections(app core.App) error {
 
 	rules := newConfigwireCollection("rules", colRules)
 	rules.Fields.Add(
-		relation("flag", colFlags, true),
+		&core.RelationField{
+			Name:          "flag",
+			CollectionId:  colFlags,
+			MaxSelect:     1,
+			Required:      true,
+			CascadeDelete: true,
+		},
 		&core.NumberField{Name: "priority", OnlyInt: true},
 		&core.JSONField{Name: "condition", Required: true},
 		&core.JSONField{Name: "value"},

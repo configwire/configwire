@@ -107,6 +107,20 @@ func registerConfigwireHooks(app core.App) {
 		}
 		return e.Next()
 	})
+	app.OnRecordDelete("flags").BindFunc(func(e *core.RecordEvent) error {
+		records, err := e.App.FindAllRecords("rules")
+		if err != nil {
+			return err
+		}
+		for _, r := range records {
+			if r.GetString("flag") == e.Record.Id {
+				if err := e.App.Delete(r); err != nil {
+					return err
+				}
+			}
+		}
+		return e.Next()
+	})
 
 	// Environment slugs are unique per project (composite uniqueness on
 	// (project, slug): two projects may each own "dev", but one project
