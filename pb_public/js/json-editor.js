@@ -128,6 +128,9 @@
         if (jsonEditorTarget === "flag-rules-condition" && CW.syncRuleBuilderFromCondition) {
           CW.syncRuleBuilderFromCondition();
         }
+        if (jsonEditorTarget === "exp-variants" && CW.syncVariantsBuilderFromInput) {
+          CW.syncVariantsBuilderFromInput();
+        }
       }
     }
     if (dlg && dlg.open) dlg.close();

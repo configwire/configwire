@@ -119,7 +119,40 @@
       if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
     });
     CW.on("flag-rules-value", "input", CW.updateFlagRuleHints);
-    CW.on("exp-variants", "input", CW.updateExpVariantsHint);
+    CW.on("exp-flag-select", "change", function () {
+      if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
+    });
+    CW.on("exp-variants", "input", function () {
+      if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
+      if (!CW.syncVariantsBuilderFromInput) return;
+      var raw = CW.$("exp-variants");
+      raw = raw ? raw.value : "";
+      var parsed;
+      try { parsed = JSON.parse(raw); } catch (e) { return; }
+      if (CW.validateVariants) {
+        var res;
+        try { res = CW.validateVariants(parsed); } catch (e2) { return; }
+        if (!res || !res.ok) return;
+      }
+      CW.syncVariantsBuilderFromInput();
+    });
+    CW.on("exp-variants-apply", "click", function () {
+      if (CW.applyVariantsBuilderToVariants) CW.applyVariantsBuilderToVariants();
+    });
+    CW.on("exp-variant-add", "click", function () {
+      if (CW.addVariantRow) CW.addVariantRow("", 0, "");
+    });
+    CW.on("exp-variants-balance", "click", function () {
+      if (CW.balanceVariantsBuilder) CW.balanceVariantsBuilder();
+      if (CW.applyVariantsBuilderToVariants) CW.applyVariantsBuilderToVariants();
+    });
+    CW.on("exp-variants-builder-rows", "click", function (ev) {
+      var t = ev && ev.target && ev.target.closest ? ev.target.closest(".exp-variant-remove") : null;
+      if (!t) return;
+      var row = t.closest ? t.closest(".exp-variant-row") : null;
+      if (!row) row = t.parentNode;
+      if (row && row.parentNode) row.parentNode.removeChild(row);
+    });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target && ev.target.closest ? ev.target.closest(".json-expand") : null;
       if (t && t.getAttribute) {
@@ -140,6 +173,7 @@
     CW.on("json-editor-save", "click", function () { CW.closeJsonEditor(true); });
     CW.on("json-editor-cancel", "click", function () { CW.closeJsonEditor(false); });
     CW.updateAllJsonHints();
+    if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
     if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
     if (CW.resetRuleBuilder) CW.resetRuleBuilder();
     if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
@@ -353,5 +387,12 @@
     get applyRuleBuilderToCondition() { return CW.applyRuleBuilderToCondition; },
     get updateRuleBuilderVisibility() { return CW.updateRuleBuilderVisibility; },
     get resetRuleBuilder() { return CW.resetRuleBuilder; },
+    get applyVariantsBuilderToVariants() { return CW.applyVariantsBuilderToVariants; },
+    get syncVariantsBuilderFromInput() { return CW.syncVariantsBuilderFromInput; },
+    get updateVariantPlaceholders() { return CW.updateVariantPlaceholders; },
+    get validateVariants() { return CW.validateVariants; },
+    get addVariantRow() { return CW.addVariantRow; },
+    get balanceVariantsBuilder() { return CW.balanceVariantsBuilder; },
+    get resetVariantsBuilder() { return CW.resetVariantsBuilder; },
   };
 })();
