@@ -10,13 +10,13 @@
  * JS contract: every #id / .class referenced by js/*.js is styled below —
  *   toast(.ok), login-*, admin-section, view-home/detail, project-*
  *   (.project-card, .project-card-stats), scope-bar/scope-hint, flag-*
- *   (.flag-default-label), rule-*, exp-*, experiment-*, key-* (#key-once),
+ *   (.flag-default-label, #flag-rules-dialog/-list/-form, .rule-*), exp-*, experiment-*, key-* (#key-once),
  *   release-*, publish-*, stats-* (.stats-tiles/.stats-tile(-num/-label),
  *   .stats-guide/.stats-echo-quiet/.stats-count/.stats-split/.stats-chart
  *   (.is-empty)/.stats-bars/.stats-bar-row(-label/-track/-fill/-pct)/.stats-donut/
  *   .stats-empty/.stats-copy-row(.is-secondary)), json-* (.json-row/.json-hint
  *   (.ok/.err)/.json-expand/.json-field-label/.invalid/.valid),
- *   dialog#json-editor-dialog (.dialog-actions/.dialog-spacer),
+ *   dialog#json-editor-dialog/#flag-rules-dialog (.dialog-actions/.dialog-spacer),
  *   .card(.card-head)/.grid/.btn(.primary/.secondary/.ghost/.danger)/
  *   .badge(.ok/.revoked)/.table-wrap/.inline-form/.form-actions/.muted/.dot */
 :root {
@@ -316,8 +316,8 @@ tbody tr { transition: background 120ms ease; }
 tbody tr:hover { background: rgba(59, 130, 246, 0.09); }
 tbody tr:last-child td { border-bottom: none; }
 td code { background: transparent; border: none; padding: 0; }
-#release-list, #rule-list, #experiment-list, #key-list { list-style: none; margin: var(--space-2) 0; padding: 0; }
-#release-list li, #rule-list li, #experiment-list li, #key-list li {
+#release-list, #flag-rules-list, #experiment-list, #key-list { list-style: none; margin: var(--space-2) 0; padding: 0; }
+#release-list li, #flag-rules-list li, #experiment-list li, #key-list li {
   margin-bottom: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
@@ -328,13 +328,13 @@ td code { background: transparent; border: none; padding: 0; }
   gap: var(--space-2);
   flex-wrap: wrap;
 }
-/* ---- Rules list: human-readable cards (scoped to #rule-list only).
- * Renderer contract (js/rules.js renderRules): ul#rule-list holds
+/* ---- Rules list: human-readable cards (scoped to #flag-rules-list only).
+ * Renderer contract (js/flags.js renderFlagRulesList): ul#flag-rules-list holds
  * li.rule-item rows (.rule-prio + .rule-cond|code + .rule-arrow +
- * .rule-value[.is-true|.is-false] + .rule-flag), or the single
- * <li>No rules for the selected flag.</li> empty state. */
-#rule-list li.rule-item { gap: var(--space-3); min-width: 0; }
-#rule-list .rule-prio {
+ * .rule-value[.is-true|.is-false] + .rule-actions), or the single
+ * <li>No rules for this flag.</li> empty state. */
+#flag-rules-list li.rule-item { gap: var(--space-3); min-width: 0; }
+#flag-rules-list .rule-prio {
   display: inline-block;
   flex-shrink: 0;
   font-size: 11px;
@@ -347,22 +347,22 @@ td code { background: transparent; border: none; padding: 0; }
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-#rule-list .rule-cond {
+#flag-rules-list .rule-cond {
   flex: 1 1 140px;
   min-width: 0;
   font-size: 13px;
   color: var(--text);
   overflow-wrap: anywhere;
 }
-#rule-list code {
+#flag-rules-list code {
   flex: 1 1 140px;
   min-width: 0;
   font-size: 12px;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-#rule-list .rule-arrow { flex-shrink: 0; color: var(--muted-dim); }
-#rule-list .rule-value {
+#flag-rules-list .rule-arrow { flex-shrink: 0; color: var(--muted-dim); }
+#flag-rules-list .rule-value {
   display: inline-block;
   flex-shrink: 0;
   max-width: 100%;
@@ -377,20 +377,13 @@ td code { background: transparent; border: none; padding: 0; }
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-#rule-list .rule-value.is-true {
+#flag-rules-list .rule-value.is-true {
   color: var(--mint);
   border-color: rgba(94, 234, 212, 0.4);
   background: rgba(94, 234, 212, 0.1);
 }
-#rule-list .rule-value.is-false { color: var(--muted); }
-#rule-list .rule-flag {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--muted-dim);
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-#release-list button, #flag-tbody button, #key-list button {
+#flag-rules-list .rule-value.is-false { color: var(--muted); }
+#release-list button, #flag-tbody button, #key-list button, #flag-rules-list button {
   padding: var(--space-1) var(--space-2);
   font-size: 12px;
   font-weight: 500;
@@ -398,7 +391,8 @@ td code { background: transparent; border: none; padding: 0; }
   border-color: var(--border);
   color: var(--text);
 }
-#release-list button:hover, #flag-tbody button:hover, #key-list button:hover { border-color: var(--accent); background: rgba(59, 130, 246, 0.14); filter: none; }
+#release-list button:hover, #flag-tbody button:hover, #key-list button:hover, #flag-rules-list button:hover { border-color: var(--accent); background: rgba(59, 130, 246, 0.14); filter: none; }
+#flag-rules-list .rule-actions { margin-left: auto; display: inline-flex; gap: var(--space-2); flex-shrink: 0; }
 .badge {
   display: inline-block;
   font-size: 11px;
@@ -415,7 +409,7 @@ td code { background: transparent; border: none; padding: 0; }
 .badge.revoked { color: var(--danger); border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.1); }
 
 #login-error { color: var(--danger); }
-#publish-result, #flag-result, #rule-result, #experiment-result, #key-result, #stats-view { color: var(--muted); }
+#publish-result, #flag-result, #flag-rules-result, #experiment-result, #key-result, #stats-view { color: var(--muted); }
 #stats-view { margin-top: var(--space-2); }
 #stats-view strong { color: var(--text); }
 
@@ -536,11 +530,11 @@ section[aria-labelledby="stats"] form.inline-form button { flex-shrink: 0; }
 #flag-form label input, #flag-form label select { width: 100%; }
 #flag-form .flag-default-label { grid-column: 1 / -1; }
 #flag-form .form-actions { grid-column: 1 / -1; display: flex; gap: var(--space-2); }
-#rule-form { display: grid; grid-template-columns: 140px 1fr; gap: var(--space-3); align-items: start; }
-#rule-form label { min-width: 0; }
-#rule-form label input, #rule-form label select { width: 100%; }
-#rule-form .json-field-label, #rule-form .form-actions { grid-column: 1 / -1; }
-#rule-form .form-actions { display: flex; gap: var(--space-2); }
+#flag-rules-form { display: grid; grid-template-columns: 140px 1fr; gap: var(--space-3); align-items: start; }
+#flag-rules-form label { min-width: 0; }
+#flag-rules-form label input, #flag-rules-form label select { width: 100%; }
+#flag-rules-form .json-field-label, #flag-rules-form .form-actions { grid-column: 1 / -1; }
+#flag-rules-form .form-actions { display: flex; gap: var(--space-2); }
 #experiment-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); align-items: start; }
 #experiment-form label { min-width: 0; }
 #experiment-form label input, #experiment-form label select { width: 100%; }
@@ -555,7 +549,7 @@ section[aria-labelledby="stats"] form.inline-form button { flex-shrink: 0; }
 .json-hint.err { color: var(--danger); }
 input.invalid, textarea.invalid { border-color: var(--danger); }
 input.valid, textarea.valid { border-color: rgba(94, 234, 212, 0.55); }
-dialog#json-editor-dialog {
+dialog#json-editor-dialog, dialog#flag-rules-dialog {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -564,7 +558,11 @@ dialog#json-editor-dialog {
   padding: var(--space-4);
   width: min(640px, 92vw);
 }
-dialog#json-editor-dialog::backdrop { background: rgba(8, 11, 18, 0.7); backdrop-filter: blur(2px); }
+dialog#flag-rules-dialog { width: min(760px, 94vw); max-height: 88dvh; overflow-y: auto; }
+dialog#json-editor-dialog::backdrop, dialog#flag-rules-dialog::backdrop { background: rgba(8, 11, 18, 0.7); backdrop-filter: blur(2px); }
+dialog#flag-rules-dialog h3 { margin: 0 0 var(--space-1); font-size: 16px; color: var(--text); }
+dialog#flag-rules-dialog h4 { margin: var(--space-4) 0 var(--space-2); font-size: 13px; color: var(--muted); font-weight: 600; }
+#flag-rules-result { color: var(--muted); margin: var(--space-2) 0 0; min-height: 1em; }
 dialog#json-editor-dialog h3 { margin: 0 0 var(--space-1); font-size: 15px; color: var(--text); }
 dialog#json-editor-dialog .muted { font-size: 13px; }
 #json-editor-text {
@@ -616,9 +614,9 @@ dialog#json-editor-dialog .muted { font-size: 13px; }
   #flag-form { grid-template-columns: 1fr; }
   #flag-form .form-actions { flex-direction: column; align-items: stretch; }
   #flag-form .form-actions button { width: 100%; }
-  #rule-form, #experiment-form { grid-template-columns: 1fr; }
-  #rule-form .form-actions, #experiment-form .form-actions { flex-direction: column; align-items: stretch; }
-  #rule-form .form-actions button, #experiment-form .form-actions button { width: 100%; }
+  #flag-rules-form, #experiment-form { grid-template-columns: 1fr; }
+  #flag-rules-form .form-actions, #experiment-form .form-actions { flex-direction: column; align-items: stretch; }
+  #flag-rules-form .form-actions button, #experiment-form .form-actions button { width: 100%; }
   section[aria-labelledby="stats"] form.inline-form { flex-direction: column; align-items: stretch; }
   section[aria-labelledby="stats"] form.inline-form button { width: 100%; }
   #stats-view .stats-chart { flex-direction: column; align-items: stretch; }

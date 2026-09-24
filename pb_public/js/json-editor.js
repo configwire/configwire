@@ -46,16 +46,16 @@
 
   function updateAllJsonHints() {
     updateJsonHint("flag-default");
-    updateJsonHint("rule-condition");
-    updateJsonHint("rule-value");
+    updateJsonHint("flag-rules-condition");
+    updateJsonHint("flag-rules-value");
     updateJsonHint("exp-variants");
   }
 
   var jsonEditorTarget = "flag-default";
   var jsonEditorLabels = {
     "flag-default": "defaultValue",
-    "rule-condition": "condition",
-    "rule-value": "value",
+    "flag-rules-condition": "condition",
+    "flag-rules-value": "value",
     "exp-variants": "variants",
   };
 
