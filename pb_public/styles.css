@@ -842,6 +842,107 @@ td code {
   font-size: 13px;
 }
 
+#flag-folders {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+#flag-folders[hidden] {
+  display: none;
+}
+
+#flag-folders .folder {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+#flag-folders .folder-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+}
+
+#flag-folders .folder-toggle {
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+#flag-folders .folder-toggle:hover {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text);
+  filter: none;
+}
+
+#flag-folders .folder-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+#flag-folders .folder-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+#flag-folders .table-wrap {
+  margin-top: 0;
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0;
+}
+
+#flag-folders table {
+  table-layout: fixed;
+}
+
+#flag-folders th:nth-child(1),
+#flag-folders td:nth-child(1) {
+  width: 22%;
+}
+
+#flag-folders th:nth-child(2),
+#flag-folders td:nth-child(2) {
+  width: 12%;
+}
+
+#flag-folders th:nth-child(3),
+#flag-folders td:nth-child(3) {
+  width: 20%;
+}
+
+#flag-folders th:nth-child(4),
+#flag-folders td:nth-child(4) {
+  width: 20%;
+}
+
+#flag-folders th:nth-child(5),
+#flag-folders td:nth-child(5) {
+  width: 26%;
+}
+
+#flag-folders td {
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+#flag-folders select {
+  max-width: 160px;
+}
+
 /* ---- Empty-state helpers ---- */
 .empty-state {
   padding: var(--space-8) var(--space-4);
@@ -927,8 +1028,9 @@ td code {
 }
 
 #release-list button,
-#flag-tbody button,
 #key-list button,
+#flag-folders .folder-actions button,
+#flag-folders tbody button,
 #flag-rules-list button,
 #experiment-list .exp-actions-buttons button {
   padding: 0 var(--space-2);
@@ -941,8 +1043,9 @@ td code {
 }
 
 #release-list button:hover,
-#flag-tbody button:hover,
 #key-list button:hover,
+#flag-folders .folder-actions button:hover,
+#flag-folders tbody button:hover,
 #flag-rules-list button:hover,
 #experiment-list .exp-actions-buttons button:hover {
   border-color: var(--accent);

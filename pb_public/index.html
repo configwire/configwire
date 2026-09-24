@@ -7,7 +7,7 @@
   <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
   <meta name="theme-color" content="#1a1f2a">
   <title>ConfigWire Admin</title>
-  <link rel="stylesheet" href="/styles.css?v=15">
+  <link rel="stylesheet" href="/styles.css?v=16">
   <link rel="icon" type="image/png" href="/img/favicon.png">
   <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -140,37 +140,12 @@
             <section class="card" aria-labelledby="flags">
               <div class="card-head">
                 <h2 id="flags">Flags</h2>
-                <div class="card-actions"><button id="flag-add-btn" type="button" class="btn primary">Add
+                <div class="card-actions"><button id="group-add-btn" type="button" class="btn secondary">+
+                    group</button><button id="flag-add-btn" type="button" class="btn primary">Add
                     flag</button><button id="refresh-flags" type="button" class="btn ghost">Refresh flags</button></div>
               </div>
-              <label>Group filter
-                <select id="group-filter">
-                  <option value="">(all groups)</option>
-                </select>
-              </label>
-              <form id="group-create-form" class="inline-form" aria-label="Group create">
-                <label>New group <input id="group-name" type="text" required maxlength="128" spellcheck="false"
-                    placeholder="group name"></label>
-                <button type="submit" class="btn primary">Add group</button>
-              </form>
-              <p id="group-result" role="status"></p>
-              <div class="table-wrap">
-                <table id="flag-table" aria-label="Flags">
-                  <thead>
-                    <tr>
-                      <th>Key</th>
-                      <th>Type</th>
-                      <th>Group</th>
-                      <th>Default</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="flag-tbody">
-                    <tr>
-                      <td colspan="5">Not loaded.</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div id="flag-folders">
+                <p class="muted">Not loaded.</p>
               </div>
             </section>
 
@@ -467,16 +442,16 @@
   </div>
   <script src="/js/core.js?v=8"></script>
   <script src="/js/auth.js?v=8"></script>
-  <script src="/js/router.js?v=8"></script>
+  <script src="/js/router.js?v=10"></script>
   <script src="/js/scope.js?v=8"></script>
-  <script src="/js/flags.js?v=10"></script>
+  <script src="/js/flags.js?v=14"></script>
   <script src="/js/rules.js?v=10"></script>
   <script src="/js/experiments.js?v=11"></script>
   <script src="/js/keys.js?v=8"></script>
   <script src="/js/releases.js?v=8"></script>
   <script src="/js/stats.js?v=8"></script>
   <script src="/js/json-editor.js?v=9"></script>
-  <script src="/js/boot.js?v=13"></script>
+  <script src="/js/boot.js?v=19"></script>
 </body>
 
 </html>
