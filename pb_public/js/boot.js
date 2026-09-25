@@ -99,20 +99,10 @@
       CW.copyStatsJson();
     });
     CW.on("flag-form", "submit", CW.saveFlag);
-    // Immediate-dirty: typing/editing fires no API call yet, so the
-    // save-success markUnpublished hooks never run until after save.
-    // Mark publish dirty on any keystroke/select change so Publish enables
-    // at once, and arm each create/save form's primary submit so it starts
-    // disabled, enables on its own input/change, and returns to disabled
-    // after its successful save (via markFormClean at each save site).
-    // Form-level listeners rely on input/change bubbling from child fields.
-    function markDirtyInput() { if (CW.markUnpublished) CW.markUnpublished(); }
-    CW.on("flag-form", "input", markDirtyInput);
-    CW.on("flag-form", "change", markDirtyInput);
-    CW.on("flag-rules-form", "input", markDirtyInput);
-    CW.on("flag-rules-form", "change", markDirtyInput);
-    CW.on("experiment-form", "input", markDirtyInput);
-    CW.on("experiment-form", "change", markDirtyInput);
+    // Drafts are now the unpublished signal: staging a draft marks publish
+    // dirty via refreshDraftChrome, so no keystroke-level zero-arg dirty
+    // markers. Per-form armed gating stays (submit enables on input = the
+    // pre-stage signal; staging calls markFormClean on success).
     if (CW.armDirtyForm) {
       ["flag-form", "flag-rules-form", "experiment-form",
         "env-create-form", "project-create-form", "account-create-form"
@@ -270,8 +260,9 @@
       var eid = t && t.getAttribute && t.getAttribute("data-edit-experiment");
       if (eid) {
         var found = null;
-        for (var i = 0; i < CW.state.experiments.length; i++) {
-          if (CW.state.experiments[i].id === eid) { found = CW.state.experiments[i]; break; }
+        var expList = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
+        for (var i = 0; i < expList.length; i++) {
+          if (expList[i].id === eid) { found = expList[i]; break; }
         }
         if (!found) { CW.toast("experiment not found: " + eid); return; }
         if (CW.openExperimentDialog) CW.openExperimentDialog(found);
@@ -351,11 +342,12 @@
       }
       var fid = t && t.getAttribute && t.getAttribute("data-edit-flag");
       if (fid) {
-        for (var i = 0; i < CW.state.flags.length; i++) {
-          if (CW.state.flags[i].id === fid) {
-            if (CW.openFlagDialog) CW.openFlagDialog(CW.state.flags[i]);
+        var flagList = CW.drafts ? CW.drafts.mergedFlags() : CW.state.flags;
+        for (var i = 0; i < flagList.length; i++) {
+          if (flagList[i].id === fid) {
+            if (CW.openFlagDialog) CW.openFlagDialog(flagList[i]);
             else {
-              var f = CW.state.flags[i];
+              var f = flagList[i];
               CW.$("flag-id").value = f.id;
               CW.$("flag-key").value = f.key || "";
               CW.$("flag-description").value = f.description || "";
@@ -404,8 +396,9 @@
       var rid = t && t.getAttribute && t.getAttribute("data-edit-flag-rule");
       if (rid) {
         var found = null;
-        for (var i = 0; i < CW.state.rules.length; i++) {
-          if (CW.state.rules[i].id === rid) { found = CW.state.rules[i]; break; }
+        var ruleList = CW.drafts ? CW.drafts.mergedRules() : CW.state.rules;
+        for (var i = 0; i < ruleList.length; i++) {
+          if (ruleList[i].id === rid) { found = ruleList[i]; break; }
         }
         if (!found) { CW.toast("rule not found: " + rid); return; }
         CW.$("flag-rules-flag-id").value = found.flag || CW.state.activeFlagRulesId || "";
@@ -442,6 +435,14 @@
 
     CW.on("release-list", "click", function (ev) {      var v = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-rollback-version");
       if (!v) return;
+      if (CW.state.applying) return;
+      var hasDrafts = false;
+      try {
+        if (CW.drafts && typeof CW.drafts.hasDrafts === "function") hasDrafts = !!CW.drafts.hasDrafts();
+        else if (CW.unpublishedSummary) hasDrafts = CW.unpublishedSummary().total > 0;
+        else hasDrafts = !!CW.state.unpublishedChanges;
+      } catch (e) { hasDrafts = !!CW.state.unpublishedChanges; }
+      if (hasDrafts) { CW.toast("discard or publish drafts first"); return; }
       CW.rollback(v, "rollback via admin UI").then(function (out) {
         CW.$("publish-result").textContent = out.status === 200
           ? "rolled back: now v" + out.data.version
@@ -457,21 +458,66 @@
 
     CW.on("publish-form", "submit", function (ev) {
       ev.preventDefault();
-      var base = parseInt(CW.$("publish-base").value, 10);
-      CW.publish(CW.$("publish-note").value, base).then(function (out) {
-        if (out.status === 200) {
-          CW.$("publish-result").textContent = "published v" + out.data.version + " etag " + out.data.etag;
-          if (CW.markPublished) CW.markPublished();
-        } else if (out.status === 409) {
-          CW.$("publish-result").textContent = "stale baseVersion (409): currentVersion is " +
-            out.data.currentVersion + " — refreshed latest, retry publish. " + CW.serverMessage(out.data);
-        } else {
-          CW.$("publish-result").textContent = "publish failed (" + out.status + "): " + CW.serverMessage(out.data);
-        }
-        CW.loadReleases().then(function () {
-          if (out.status !== 200 && CW.markUnpublished) CW.markUnpublished();
-        }).catch(function () {});
-      });
+      if (CW.state.applying) return;
+      var note = CW.$("publish-note").value;
+      if (CW.setApplying) CW.setApplying(true);
+      else CW.state.applying = true;
+      function finishApply() {
+        if (CW.setApplying) CW.setApplying(false);
+        else CW.state.applying = false;
+      }
+      function applyFailed(err) {
+        finishApply();
+        try {
+          if (CW.drafts && CW.drafts.persistDrafts) CW.drafts.persistDrafts();
+        } catch (e) { /* kept in memory */ }
+        CW.$("publish-result").textContent = (err && err.message) || "draft apply failed";
+      }
+      var applied = null;
+      try {
+        applied = CW.applyDrafts ? CW.applyDrafts() : Promise.resolve(null);
+      } catch (e) { applyFailed(e); return; }
+      applied.then(function () {
+        var base = null;
+        try { base = CW.latestVersion(); }
+        catch (e) { base = parseInt(CW.$("publish-base").value, 10); }
+        CW.$("publish-base").value = base;
+        CW.publish(note, base).then(function (out) {
+          finishApply();
+          if (out.status === 200) {
+            CW.$("publish-result").textContent = "published v" + out.data.version + " etag " + out.data.etag;
+            if (CW.markPublished) CW.markPublished();
+          } else if (out.status === 409) {
+            CW.$("publish-result").textContent = "stale baseVersion (409): currentVersion is " +
+              out.data.currentVersion + " — refreshed latest, retry publish. " + CW.serverMessage(out.data);
+          } else {
+            CW.$("publish-result").textContent = "publish failed (" + out.status + "): " + CW.serverMessage(out.data);
+          }
+          CW.loadReleases().then(function () {
+            if (out.status !== 200 && CW.markUnpublished) CW.markUnpublished();
+          }).catch(function () {});
+        }, function (e) {
+          finishApply();
+          CW.$("publish-result").textContent = "publish failed: " + ((e && e.message) || e);
+        });
+      }, applyFailed);
+    });
+
+    CW.on("discard-unpublished", "click", function () {
+      if (CW.state.applying) return;
+      if (!window.confirm("Discard all local drafts? Nothing was published; server values unchanged.")) return;
+      try {
+        if (CW.drafts && typeof CW.drafts.draftClearAll === "function") CW.drafts.draftClearAll();
+        if (CW.clearUnpublished) CW.clearUnpublished();
+        if (CW.drafts && typeof CW.drafts.refreshDraftChrome === "function") {
+          try { CW.drafts.refreshDraftChrome(); }
+          catch (e2) { if (CW.setPublishState) CW.setPublishState(false); }
+        } else if (CW.setPublishState) CW.setPublishState(false);
+      } catch (e) {
+        if (CW.clearUnpublished) CW.clearUnpublished();
+        if (CW.setPublishState) CW.setPublishState(false);
+      }
+      CW.$("publish-result").textContent = "local drafts discarded";
     });
 
     // HTMX: inject the BARE superuser token on every HTMX-driven request so

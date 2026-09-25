@@ -218,6 +218,7 @@
                 <label>baseVersion (auto-filled) <input id="publish-base" name="baseVersion" type="number"
                     min="0" required></label>
                 <button type="submit" class="btn primary" disabled>Publish new version</button>
+                <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard changes</button>
               </form>
               <p id="publish-result" role="status"></p>
             </section>
@@ -334,7 +335,7 @@
               </select>
             </label>
             <div class="form-actions">
-              <button type="submit" id="experiment-submit" class="btn primary">Save experiment</button>
+              <button type="submit" id="experiment-submit" class="btn primary">Save draft</button>
               <button type="button" id="experiment-reset" class="btn ghost">Clear</button>
             </div>
           </form>
@@ -378,7 +379,7 @@
               <textarea id="flag-description" rows="3" maxlength="1024" spellcheck="true"></textarea>
             </label>
             <div class="form-actions">
-              <button type="submit" id="flag-submit" class="btn primary">Save flag</button>
+              <button type="submit" id="flag-submit" class="btn primary">Save draft</button>
               <button type="button" id="flag-reset" class="btn ghost">Clear</button>
             </div>
           </form>
@@ -454,7 +455,7 @@
               <span id="flag-rules-value-hint" class="json-hint" role="status"></span>
             </label>
             <div class="form-actions">
-              <button type="submit" id="flag-rules-submit" class="btn primary">Save rule</button>
+              <button type="submit" id="flag-rules-submit" class="btn primary">Save draft</button>
               <button type="button" id="flag-rules-reset" class="btn ghost">Clear</button>
             </div>
           </form>
@@ -480,6 +481,7 @@
   <script src="/js/router.js?v=11"></script>
   <script src="/js/account.js?v=1"></script>
   <script src="/js/scope.js?v=8"></script>
+  <script src="/js/drafts.js?v=1"></script>
   <script src="/js/flags.js?v=16"></script>
   <script src="/js/rules.js?v=11"></script>
   <script src="/js/experiments.js?v=12"></script>

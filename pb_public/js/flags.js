@@ -13,12 +13,13 @@
   }
 
   function ruleCountFor(flagId) {
-    if (!Array.isArray(CW.state.rules)) return null;
+    var rules = CW.drafts ? CW.drafts.mergedRules() : CW.state.rules;
+    if (!Array.isArray(rules)) return null;
     // Fallback to plain "rules" label until rules have loaded at least once.
     if (!CW.state.rulesLoaded && CW.state.rules.length === 0) return null;
     var n = 0;
-    for (var i = 0; i < CW.state.rules.length; i++) {
-      if (CW.state.rules[i] && CW.state.rules[i].flag === flagId) n++;
+    for (var i = 0; i < rules.length; i++) {
+      if (rules[i] && rules[i].flag === flagId) n++;
     }
     return n;
   }
@@ -31,18 +32,27 @@
   }
 
   function flagsInGroup(gid) {
-    return CW.state.flags.filter(function (f) { return f && (f.group || "") === (gid || ""); });
+    var list = CW.drafts ? CW.drafts.mergedFlags() : CW.state.flags;
+    return list.filter(function (f) { return f && (f.group || "") === (gid || ""); });
   }
 
   function sortedGroupIds() {
-    return Object.keys(CW.state.groups).sort(function (a, b) {
-      var na = (CW.state.groups[a] || "").toLowerCase();
-      var nb = (CW.state.groups[b] || "").toLowerCase();
+    var groups = CW.drafts ? CW.drafts.mergedGroups() : CW.state.groups;
+    return Object.keys(groups).sort(function (a, b) {
+      var na = (groups[a] || "").toLowerCase();
+      var nb = (groups[b] || "").toLowerCase();
       return na < nb ? -1 : na > nb ? 1 : 0;
     });
   }
 
+  function groupNameById(id) {
+    var groups = CW.drafts ? CW.drafts.mergedGroups() : CW.state.groups;
+    return groups[id];
+  }
+
   function isUnpub(kind, id) {
+    // Drafts are the unpublished signal; legacy markers stay as fallback.
+    try { if (CW.drafts && CW.drafts.isDraft(kind, id)) return true; } catch (e) { /* ignore */ }
     try { return !!(CW.isUnpublished && CW.isUnpublished(kind, id)); }
     catch (e) { return false; }
   }
@@ -54,7 +64,7 @@
     var moveOpts = '<option value="">(no group)</option>' +
       sortedGroupIds().map(function (id) {
         return '<option value="' + CW.esc(id) + '"' + (f.group === id ? " selected" : "") + ">" +
-          CW.esc(CW.state.groups[id]) + "</option>";
+          CW.esc(groupNameById(id)) + "</option>";
       }).join("");
     return '<tr' + (unpub ? ' class="is-unpublished"' : "") + "><td>" + CW.esc(f.key) +
       (unpub ? ' <span class="badge unpublished">Unpublished</span>' : "") + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
@@ -100,7 +110,7 @@
     var box = CW.$("flag-folders");
     if (!box) return;
     var ids = sortedGroupIds();
-    var html = ids.map(function (id) { return folderHTML(id, CW.state.groups[id] || id); }).join("");
+    var html = ids.map(function (id) { return folderHTML(id, groupNameById(id) || id); }).join("");
     var none = flagsInGroup("");
     if (none.length || !ids.length) html += folderHTML("", "(no group)");
     box.innerHTML = html || '<p class="muted">No flags for this project.</p>';
@@ -120,17 +130,21 @@
   }
 
   function moveFlag(id, gid) {
-    return CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(id), { group: gid || null }).then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      CW.toast(ok ? "flag moved" : "flag move failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished("flag", id, flagKeyById(id) || id);
-      loadFlags().catch(function () {});
-      return out;
+    // Local-only: stage a flag-update draft, zero server writes.
+    var label = flagKeyById(id) || id;
+    CW.drafts.draftStage("flag", {
+      op: "update",
+      body: { group: gid || null },
+      baseId: id,
+      label: label,
     });
+    CW.toast("draft staged: " + label, true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function renderFlagSelects() {
-    var opts = CW.state.flags.map(function (f) {
+    var opts = CW.drafts.mergedFlags().map(function (f) {
       return '<option value="' + CW.esc(f.id) + '">' + CW.esc(f.key) + "</option>";
     }).join("");
     var xs = CW.$("exp-flag-select");
@@ -146,12 +160,13 @@
   function renderFlagGroupSelect() {
     var sel = CW.$("flag-group");
     if (!sel) return;
+    var groups = CW.drafts.mergedGroups();
     var cur = sel.value;
     sel.innerHTML = '<option value="">(no group)</option>' +
-      Object.keys(CW.state.groups).map(function (id) {
-        return '<option value="' + CW.esc(id) + '">' + CW.esc(CW.state.groups[id]) + "</option>";
+      Object.keys(groups).map(function (id) {
+        return '<option value="' + CW.esc(id) + '">' + CW.esc(groups[id]) + "</option>";
       }).join("");
-    if (cur && CW.state.groups[cur]) sel.value = cur;
+    if (cur && groups[cur]) sel.value = cur;
     else sel.value = "";
   }
 
@@ -177,6 +192,16 @@
         });
         renderGroups();
         renderFlags();
+        // Drafts survive reloads (pure selectors); restore this scope's
+        // persisted drafts before rendering so merged state shows at once.
+        if (CW.drafts) {
+          try { CW.drafts.restoreDrafts(); } catch (e) { /* best-effort */ }
+          renderGroups();
+          renderFlags();
+          if (CW.setPublishState) {
+            try { CW.setPublishState(CW.drafts.hasDrafts()); } catch (e2) { /* best-effort */ }
+          }
+        }
       }, function () { renderFlags(); }); // flags still render if groups missing
     });
   }
@@ -196,35 +221,27 @@
     var group = CW.$("flag-group").value || "";
     if (group) body.group = group;
     else if (id) body.group = null;
-    var req = id
-      ? CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(id), body)
-      : CW.apiMut("POST", "/api/collections/flags/records", body);
-    return req.then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      if (ok) {
-        CW.toast("flag saved: " + (out.data.key || out.data.id), true);
-        CW.$("flag-result").textContent = "";
-        if (CW.markUnpublished) CW.markUnpublished("flag", (out.data && (out.data.id || out.data.key)) || id || body.key, (out.data && out.data.key) || body.key);
-        if (CW.markFormClean) CW.markFormClean("flag-form");
-        closeFlagDialog();
-      } else {
-        CW.$("flag-result").textContent = "flag save failed (" + out.status + "): " + CW.serverMessage(out.data);
-        if (out.status === 409) CW.$("flag-result").textContent += " — refresh and retry";
-      }
-      loadFlags().catch(function () {});
-      return out;
-    });
+    // Local-only: stage the full POST/PATCH body as a draft (group-omission
+    // quirk preserved: create omits group unless set, update sets null).
+    if (id) {
+      CW.drafts.draftStage("flag", { op: "update", body: body, baseId: id, label: body.key });
+    } else {
+      CW.drafts.draftStage("flag", { op: "create", body: body, label: body.key });
+    }
+    CW.toast("draft staged: " + body.key, true);
+    CW.$("flag-result").textContent = "";
+    if (CW.markFormClean) CW.markFormClean("flag-form");
+    closeFlagDialog();
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function deleteFlag(id) {
     var delKey = flagKeyById(id) || id;
-    return CW.apiMut("DELETE", "/api/collections/flags/records/" + encodeURIComponent(id)).then(function (out) {
-      var ok = out.status === 200 || out.status === 201 || out.status === 204;
-      CW.toast(ok ? "flag deleted" : "flag delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished("flag", id, delKey + " deleted");
-      loadFlags().catch(function () {});
-      return out;
-    });
+    CW.drafts.draftStage("flag", { op: "delete", body: {}, baseId: id, label: delKey + " deleted" });
+    CW.toast("draft staged: " + delKey + " deleted", true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function promptCreateGroup() {
@@ -233,83 +250,65 @@
     if (name == null) return Promise.resolve();
     name = name.trim();
     if (!name) { CW.toast("group name is required"); return Promise.resolve(); }
-    return CW.apiMut("POST", "/api/collections/groups/records", { name: name, project: CW.state.projectId }).then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      groupStatus(ok
-        ? "group created: " + (out.data.name || out.data.id)
-        : "group create failed (" + out.status + "): " + CW.serverMessage(out.data));
-      if (ok) {
-        CW.toast("group created: " + (out.data.name || out.data.id), true);
-        if (CW.markUnpublished) CW.markUnpublished("group", out.data.id || name, out.data.name || name);
-        loadFlags().catch(function () {});
-      }
-      return out;
+    CW.drafts.draftStage("group", {
+      op: "create",
+      body: { name: name, project: CW.state.projectId },
+      label: name,
     });
+    groupStatus("group staged: " + name);
+    CW.toast("draft staged: " + name, true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function renameGroup(id) {
-    var cur = CW.state.groups[id] || "";
+    var groups = CW.drafts.mergedGroups();
+    var cur = groups[id] || "";
     var name = window.prompt("Rename group", cur);
     if (name == null) return Promise.resolve();
     name = name.trim();
     if (!name) { groupStatus("group name is required"); return Promise.resolve(); }
     if (name === cur) return Promise.resolve();
-    return CW.apiMut("PATCH", "/api/collections/groups/records/" + encodeURIComponent(id), { name: name }).then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      groupStatus(ok
-        ? "group renamed: " + (out.data.name || out.data.id)
-        : "group rename failed (" + out.status + "): " + CW.serverMessage(out.data));
-      if (ok) {
-        CW.toast("group renamed: " + (out.data.name || out.data.id), true);
-        if (CW.markUnpublished) CW.markUnpublished("group", out.data.id || id, out.data.name || name);
-        loadFlags().catch(function () {});
-      }
-      return out;
-    });
+    CW.drafts.draftStage("group", { op: "update", body: { name: name }, baseId: id, label: name });
+    groupStatus("group staged: " + name);
+    CW.toast("draft staged: " + name, true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function deleteGroup(id) {
-    var name = CW.state.groups[id] || id;
-    var inGroup = CW.state.flags.filter(function (f) { return f && f.group === id; });
+    var groups = CW.drafts.mergedGroups();
+    var name = groups[id] || id;
+    var inGroup = CW.drafts.mergedFlags().filter(function (f) { return f && f.group === id; });
     var msg = inGroup.length
       ? 'Delete group "' + name + '" with ' + inGroup.length + (inGroup.length === 1 ? " flag" : " flags") + "? Its flags will be ungrouped."
       : 'Delete group "' + name + '"?';
     if (!window.confirm(msg)) return Promise.resolve();
-    // Ungroup flags first so the delete never leaves dangling group refs
-    // (flags.group is an optional, non-cascade relation).
-    var clear = inGroup.reduce(function (p, f) {
-      return p.then(function () {
-        return CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(f.id), { group: null }).then(
-          function () {},
-          function () {}
-        );
-      });
-    }, Promise.resolve());
-    return clear.then(function () {
-      return CW.apiMut("DELETE", "/api/collections/groups/records/" + encodeURIComponent(id));
-    }).then(function (out) {
-      var ok = out.status === 200 || out.status === 201 || out.status === 204;
-      groupStatus(ok
-        ? "group deleted: " + name
-        : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data));
-      CW.toast(ok ? "group deleted" : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished("group", id, name);
-      loadFlags().catch(function () {});
-      return out;
+    // Local-only: snapshot member ids so apply-time can ungroup them first
+    // (flags.group is an optional, non-cascade relation). No server writes.
+    var memberIds = inGroup.map(function (f) { return f.id; }).filter(function (fid) {
+      return fid !== undefined && fid !== null && fid !== "";
     });
+    CW.drafts.draftStage("group", { op: "delete", body: {}, baseId: id, memberIds: memberIds, label: name });
+    groupStatus("group staged: " + name + " deleted");
+    CW.toast("draft staged: " + name + " deleted", true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function flagKeyById(id) {
-    for (var i = 0; i < CW.state.flags.length; i++) {
-      if (CW.state.flags[i].id === id) return CW.state.flags[i].key;
+    var list = CW.drafts ? CW.drafts.mergedFlags() : CW.state.flags;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === id) return list[i].key;
     }
     return "";
   }
 
   function flagRulesForActive() {
     var flagId = CW.state.activeFlagRulesId || "";
-    if (!Array.isArray(CW.state.rules)) return [];
-    return CW.state.rules.filter(function (r) { return r && r.flag === flagId; })
+    var rules = CW.drafts ? CW.drafts.mergedRules() : CW.state.rules;
+    if (!Array.isArray(rules)) return [];
+    return rules.filter(function (r) { return r && r.flag === flagId; })
       .slice().sort(function (a, b) { return (a.priority || 0) - (b.priority || 0); });
   }
 
@@ -416,30 +415,21 @@
       value: val.value,
     };
     var id = (CW.$("flag-rules-id") && String(CW.$("flag-rules-id").value || "").trim()) || "";
-    var req = id
-      ? CW.apiMut("PATCH", "/api/collections/rules/records/" + encodeURIComponent(id), body)
-      : CW.apiMut("POST", "/api/collections/rules/records", body);
-    return req.then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      CW.$("flag-rules-result").textContent = ok
-        ? (id ? "rule saved: " + id : "rule created")
-        : "rule save failed (" + out.status + "): " + CW.serverMessage(out.data);
-      if (ok) {
-        var fid = CW.$("flag-rules-flag-id");
-        if (fid) fid.value = flagId;
-        CW.state.activeFlagRulesId = flagId;
-        if (CW.markUnpublished) {
-          var _rk = flagKeyById(flagId) || flagId;
-          CW.markUnpublished("rule", (out.data && out.data.id) || id || "new", "rule for " + _rk);
-          CW.markUnpublished("flag", flagId, _rk);
-        }
-        if (CW.markFormClean) CW.markFormClean("flag-rules-form");
-      }
-      return CW.loadRules().then(function () {
-        renderFlags();
-        renderFlagRulesList();
-      }, function () { renderFlagRulesList(); }).then(function () { return out; });
-    });
+    // Local-only: stage the full POST/PATCH body as a draft.
+    if (id) {
+      CW.drafts.draftStage("rule", { op: "update", body: body, baseId: id, label: "rule for " + (flagKeyById(flagId) || flagId) });
+      CW.$("flag-rules-result").textContent = "rule staged: " + id;
+    } else {
+      var stagedKey = CW.drafts.draftStage("rule", { op: "create", body: body, label: "rule for " + (flagKeyById(flagId) || flagId) });
+      CW.$("flag-rules-result").textContent = "rule staged: " + stagedKey;
+    }
+    var fid = CW.$("flag-rules-flag-id");
+    if (fid) fid.value = flagId;
+    CW.state.activeFlagRulesId = flagId;
+    if (CW.markFormClean) CW.markFormClean("flag-rules-form");
+    CW.toast("draft staged: rule for " + (flagKeyById(flagId) || flagId), true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function updateFlagDefaultHint() {

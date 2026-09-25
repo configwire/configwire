@@ -92,19 +92,22 @@
       items = items || [];
       CW.state.rules = items.slice().sort(function (a, b) { return (a.priority || 0) - (b.priority || 0); });
       CW.state.rulesLoaded = true;
+      if (CW.drafts) {
+        try { CW.drafts.restoreDrafts(); } catch (e) { /* best-effort */ }
+      }
       if (CW.renderFlags) CW.renderFlags();
       if (CW.renderFlagRulesList && CW.state.activeFlagRulesId) CW.renderFlagRulesList();
+      if (CW.drafts && CW.setPublishState) {
+        try { CW.setPublishState(CW.drafts.hasDrafts()); } catch (e2) { /* best-effort */ }
+      }
     });
   }
 
   function deleteRule(id) {
-    return CW.apiMut("DELETE", "/api/collections/rules/records/" + encodeURIComponent(id)).then(function (out) {
-      var ok = out.status === 200 || out.status === 201 || out.status === 204;
-      CW.toast(ok ? "rule deleted" : "rule delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished("rule", id, "rule deleted");
-      loadRules().catch(function () {});
-      return out;
-    });
+    CW.drafts.draftStage("rule", { op: "delete", body: {}, baseId: id, label: "rule deleted" });
+    CW.toast("draft staged: rule deleted", true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function updateRuleConditionHint() {

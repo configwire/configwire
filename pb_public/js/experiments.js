@@ -5,15 +5,17 @@
   var CW = window.CW;
 
   function isExpUnpub(id) {
+    try { if (CW.drafts && CW.drafts.isDraft("experiment", id)) return true; } catch (e) { /* ignore */ }
     try { return !!(CW.isUnpublished && CW.isUnpublished("experiment", id)); }
     catch (e) { return false; }
   }
 
   function expNameById(id) {
-    if (Array.isArray(CW.state.experiments)) {
-      for (var i = 0; i < CW.state.experiments.length; i++) {
-        if (CW.state.experiments[i] && CW.state.experiments[i].id === id) {
-          return CW.state.experiments[i].name || id;
+    var list = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
+    if (Array.isArray(list)) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && list[i].id === id) {
+          return list[i].name || id;
         }
       }
     }
@@ -22,8 +24,9 @@
 
   function renderExperiments() {
     var list = CW.$("experiment-list");
-    if (!CW.state.experiments.length) { list.innerHTML = "<li>No experiments.</li>"; return; }
-    list.innerHTML = CW.state.experiments.map(function (x) {
+    var items = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
+    if (!items.length) { list.innerHTML = "<li>No experiments.</li>"; return; }
+    list.innerHTML = items.map(function (x) {
       var variants = Array.isArray(x.variants) ? x.variants : [];
       var summary = variants.map(function (v) {
         var w = (v && typeof v.weightBps === "number" && isFinite(v.weightBps)) ? v.weightBps : 0;
@@ -59,7 +62,13 @@
         items = items.filter(function (x) { return flagIds[x.flag]; });
       }
       CW.state.experiments = items;
+      if (CW.drafts) {
+        try { CW.drafts.restoreDrafts(); } catch (e) { /* best-effort */ }
+      }
       renderExperiments();
+      if (CW.drafts && CW.setPublishState) {
+        try { CW.setPublishState(CW.drafts.hasDrafts()); } catch (e2) { /* best-effort */ }
+      }
     });
   }
 
@@ -88,24 +97,19 @@
     };
     var flagId = CW.$("exp-flag-select").value;
     if (flagId) body.flag = flagId;
-    var req = id
-      ? CW.apiMut("PATCH", "/api/collections/experiments/records/" + encodeURIComponent(id), body)
-      : CW.apiMut("POST", "/api/collections/experiments/records", body);
-    return req.then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      if (ok) {
-        CW.toast((id ? "experiment saved: " : "experiment created: ") + (out.data.name || out.data.id), true);
-        var resEl = CW.$("experiment-result");
-        if (resEl) resEl.textContent = "";
-        if (CW.markUnpublished) CW.markUnpublished("experiment", (out.data && (out.data.id || out.data.name)) || id || body.name, (out.data && out.data.name) || body.name);
-        if (CW.markFormClean) CW.markFormClean("experiment-form");
-        closeExperimentDialog();
-      } else {
-        CW.$("experiment-result").textContent = "experiment save failed (" + out.status + "): " + CW.serverMessage(out.data);
-      }
-      loadExperiments().catch(function () {});
-      return out;
-    });
+    // Local-only: stage the full POST/PATCH body as a draft.
+    if (id) {
+      CW.drafts.draftStage("experiment", { op: "update", body: body, baseId: id, label: body.name });
+    } else {
+      CW.drafts.draftStage("experiment", { op: "create", body: body, label: body.name });
+    }
+    CW.toast("draft staged: " + body.name, true);
+    var resEl = CW.$("experiment-result");
+    if (resEl) resEl.textContent = "";
+    if (CW.markFormClean) CW.markFormClean("experiment-form");
+    closeExperimentDialog();
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function createExperiment(ev) {
@@ -114,23 +118,22 @@
 
   function deleteExperiment(id) {
     var delName = expNameById(id);
-    return CW.apiMut("DELETE", "/api/collections/experiments/records/" + encodeURIComponent(id)).then(function (out) {
-      var ok = out.status === 200 || out.status === 201 || out.status === 204;
-      CW.toast(ok ? "experiment deleted" : "experiment delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished("experiment", id, delName);
-      loadExperiments().catch(function () {});
-      return out;
-    });
+    CW.drafts.draftStage("experiment", { op: "delete", body: {}, baseId: id, label: delName });
+    CW.toast("draft staged: " + delName + " deleted", true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   function setExperimentStatus(id, status) {
-    return CW.apiMut("PATCH", "/api/collections/experiments/records/" + encodeURIComponent(id), { status: status }).then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      CW.toast(ok ? "experiment status: " + status : "experiment status failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished("experiment", (out.data && out.data.id) || id, (out.data && out.data.name) || expNameById(id));
-      loadExperiments().catch(function () {});
-      return out;
+    CW.drafts.draftStage("experiment", {
+      op: "update",
+      body: { status: status },
+      baseId: id,
+      label: expNameById(id),
     });
+    CW.toast("draft staged: experiment status: " + status, true);
+    CW.drafts.refreshDraftChrome();
+    return Promise.resolve({ status: 200, data: {} });
   }
 
   // Variants builder is the source of truth: saveExperiment auto-applies
@@ -447,10 +450,11 @@
     }
     if (!key) key = "launch_flag";
     var example = "true";
-    if (CW.state && Array.isArray(CW.state.flags) && sel && sel.value) {
+    var flagList = CW.drafts ? CW.drafts.mergedFlags() : (CW.state && CW.state.flags);
+    if (Array.isArray(flagList) && sel && sel.value) {
       var i, f;
-      for (i = 0; i < CW.state.flags.length; i++) {
-        f = CW.state.flags[i];
+      for (i = 0; i < flagList.length; i++) {
+        f = flagList[i];
         if (f && f.id === sel.value) {
           if (f.type === "number") example = "1";
           else if (f.type === "string") example = '"on"';
