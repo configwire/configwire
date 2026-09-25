@@ -6,13 +6,99 @@
 
   function renderReleases() {
     var list = CW.$("release-list");
+    if (!list) return;
     if (!CW.state.releases.length) { list.innerHTML = "<li>No releases for this env.</li>"; return; }
-    list.innerHTML = CW.state.releases.map(function (r) {
-      return "<li>v" + CW.esc(r.version) + " etag " + CW.esc(r.etag) +
-        (r.note ? " — " + CW.esc(r.note) : "") +
+    if (typeof CW.state.releasesExpanded === "undefined") CW.state.releasesExpanded = false;
+    var expanded = !!CW.state.releasesExpanded;
+    var visible = expanded ? CW.state.releases : CW.state.releases.slice(0, 3);
+    var html = visible.map(function (r, idx) {
+      var base = "<li>v" + CW.esc(r.version) + " etag " + CW.esc(r.etag) +
+        (r.note ? " — " + CW.esc(r.note) : "");
+      if (idx === 0) {
+        return base + ' <span class="badge ok">current</span>' +
+          ' <button type="button" data-view-release="' + CW.esc(r.id) + '">view</button></li>';
+      }
+      return base +
+        ' <button type="button" data-view-release="' + CW.esc(r.id) + '">view</button>' +
         ' <button type="button" data-rollback-version="' + CW.esc(r.version) + '">rollback to v' +
         CW.esc(r.version) + "</button></li>";
     }).join("");
+    if (CW.state.releases.length > 3) {
+      var hidden = CW.state.releases.length - 3;
+      html += '<li><button type="button" id="releases-toggle">' +
+        (expanded ? "show less" : "show " + hidden + " more") + "</button></li>";
+    }
+    list.innerHTML = html;
+    var tog = CW.$("releases-toggle");
+    if (tog) {
+      tog.addEventListener("click", function () { toggleReleasesExpanded(); });
+    }
+  }
+
+  function toggleReleasesExpanded() {
+    if (typeof CW.state.releasesExpanded === "undefined") CW.state.releasesExpanded = false;
+    CW.state.releasesExpanded = !CW.state.releasesExpanded;
+    renderReleases();
+  }
+
+  function findReleaseById(id) {
+    var items = CW.state.releases || [];
+    for (var i = 0; i < items.length; i++) {
+      if (String(items[i].id) === String(id)) return items[i];
+    }
+    return null;
+  }
+
+  function openReleaseDialog(releaseOrId) {
+    var rec = null;
+    if (releaseOrId && typeof releaseOrId === "object") {
+      rec = releaseOrId;
+    } else {
+      rec = findReleaseById(releaseOrId);
+    }
+    if (!rec) return;
+    var dlg = CW.$("release-dialog");
+    if (!dlg) return;
+    var title = CW.$("release-dialog-title");
+    if (title) title.textContent = "Release v" + rec.version;
+    var dl = CW.$("release-detail");
+    if (dl) {
+      dl.innerHTML = "";
+      var keys = Object.keys(rec);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (k === "expand" || k === "collectionId" || k === "collectionName") continue;
+        var dt = document.createElement("dt");
+        dt.textContent = k;
+        dl.appendChild(dt);
+        var dd = document.createElement("dd");
+        var val = rec[k];
+        if (val !== null && typeof val === "object") {
+          var pre = document.createElement("pre");
+          var code = document.createElement("code");
+          try {
+            code.textContent = JSON.stringify(val, null, 2);
+          } catch (e) {
+            code.textContent = String(val);
+          }
+          pre.appendChild(code);
+          dd.appendChild(pre);
+        } else {
+          dd.textContent = (val === undefined || val === null) ? "" : String(val);
+        }
+        dl.appendChild(dd);
+      }
+    }
+    if (dlg.open) return;
+    try {
+      if (typeof dlg.showModal === "function") dlg.showModal();
+      else dlg.setAttribute("open", "");
+    } catch (e) { /* already open */ }
+  }
+
+  function closeReleaseDialog() {
+    var dlg = CW.$("release-dialog");
+    if (dlg && dlg.open) dlg.close();
   }
 
   function latestVersion() {
@@ -729,6 +815,9 @@
   }
 
   CW.renderReleases = renderReleases;
+  CW.toggleReleasesExpanded = toggleReleasesExpanded;
+  CW.openReleaseDialog = openReleaseDialog;
+  CW.closeReleaseDialog = closeReleaseDialog;
   CW.loadReleases = loadReleases;
   CW.publish = publish;
   CW.rollback = rollback;

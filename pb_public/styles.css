@@ -1912,7 +1912,8 @@ dialog#cw-dialog,
 dialog#json-editor-dialog,
 dialog#flag-rules-dialog,
 dialog#flag-dialog,
-dialog#experiment-dialog {
+dialog#experiment-dialog,
+dialog#release-dialog {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -1953,6 +1954,48 @@ dialog#experiment-dialog {
   overflow-y: auto;
 }
 
+dialog#release-dialog {
+  width: min(560px, 92vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+#release-detail {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+#release-detail dt {
+  color: var(--muted);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+#release-detail dd {
+  margin: 0;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+#release-detail dd pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#release-detail dd pre code {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 dialog#cw-dialog {
   width: min(440px, 92vw);
 }
@@ -1961,7 +2004,8 @@ dialog#cw-dialog::backdrop,
 dialog#json-editor-dialog::backdrop,
 dialog#flag-rules-dialog::backdrop,
 dialog#flag-dialog::backdrop,
-dialog#experiment-dialog::backdrop {
+dialog#experiment-dialog::backdrop,
+dialog#release-dialog::backdrop {
   background: rgba(8, 11, 18, 0.75);
   backdrop-filter: blur(4px);
 }
@@ -1969,7 +2013,8 @@ dialog#experiment-dialog::backdrop {
 dialog#cw-dialog h3,
 dialog#flag-rules-dialog h3,
 dialog#flag-dialog h3,
-dialog#experiment-dialog h3 {
+dialog#experiment-dialog h3,
+dialog#release-dialog h3 {
   margin: 0 0 var(--space-1);
   font-size: 17px;
   color: var(--text);
@@ -2278,7 +2323,8 @@ dialog#json-editor-dialog .muted {
   dialog#json-editor-dialog,
   dialog#flag-rules-dialog,
   dialog#flag-dialog,
-  dialog#experiment-dialog {
+  dialog#experiment-dialog,
+  dialog#release-dialog {
     padding: var(--space-4);
   }
 }

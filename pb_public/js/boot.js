@@ -231,6 +231,14 @@
       if (CW.closeFlagDialog) CW.closeFlagDialog();
       else { var dlg = CW.$("flag-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
+    CW.on("release-dialog-close", "click", function () {
+      if (CW.closeReleaseDialog) CW.closeReleaseDialog();
+      else { var dlg = CW.$("release-dialog"); if (dlg && dlg.open) dlg.close(); }
+    });
+    CW.on("release-dialog-ok", "click", function () {
+      if (CW.closeReleaseDialog) CW.closeReleaseDialog();
+      else { var dlg = CW.$("release-dialog"); if (dlg && dlg.open) dlg.close(); }
+    });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
@@ -489,7 +497,22 @@
       else { var dlg = CW.$("flag-rules-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
 
-    CW.on("release-list", "click", function (ev) {      var v = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-rollback-version");
+    CW.on("release-list", "click", function (ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var viewId = null;
+      if (t) {
+        if (t.closest) {
+          var vb = t.closest("[data-view-release]");
+          if (vb && vb.getAttribute) viewId = vb.getAttribute("data-view-release");
+        } else if (t.getAttribute) {
+          viewId = t.getAttribute("data-view-release");
+        }
+      }
+      if (viewId) {
+        if (CW.openReleaseDialog) CW.openReleaseDialog(viewId);
+        return;
+      }
+      var v = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-rollback-version");
       if (!v) return;
       if (CW.state.applying) return;
       var hasDrafts = false;
