@@ -121,7 +121,7 @@
     if (!sel) return;
     var cur = sel.value;
     var flagList = CW.drafts ? CW.drafts.mergedFlags() : CW.state.flags;
-    var keys = flagList.map(function (f) { return f.key; })
+    var keys = flagList.filter(function (f) { return f && !f._draftDeleted; }).map(function (f) { return f.key; })
       .filter(function (k) { return !!k; }).sort();
     var html = '<option value="">All flags</option>' + keys.map(function (k) {
       return '<option value="' + CW.esc(k) + '">' + CW.esc(k) + "</option>";

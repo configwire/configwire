@@ -24,9 +24,9 @@
  *   (.ok/.err)/.json-expand/.json-field-label/.invalid/.valid),
  *   dialog#json-editor-dialog/#flag-rules-dialog (.dialog-actions/.dialog-spacer),
  *   .card(.card-head)/.grid/.btn(.primary/.secondary/.ghost/.danger)/
- *   .badge(.ok/.revoked/.unpublished)/.table-wrap/.inline-form/.form-actions/.muted/.dot
- *   dirty tracking: tr.is-unpublished, .rule-item.is-unpublished, .exp-card.is-unpublished,
- *   .folder.is-unpublished, section.card.is-dirty/.has-unpublished, #unpublished-list,
+ *   .badge(.ok/.revoked/.unpublished/.deleted)/.table-wrap/.inline-form/.form-actions/.muted/.dot
+ *   dirty tracking: tr.is-unpublished/.is-deleted, .rule-item.is-unpublished/.is-deleted, .exp-card.is-unpublished/.is-deleted,
+ *   .folder.is-unpublished/.is-deleted, section.card.is-dirty/.has-unpublished, #unpublished-list,
  *   #publish-hint.is-dirty, #sidebar-nav a .badge.unpublished */
 :root {
   color-scheme: dark;
@@ -2188,6 +2188,12 @@ dialog#json-editor-dialog .muted {
   background: rgba(251, 191, 36, 0.08);
 }
 
+.badge.deleted {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.08);
+}
+
 tr.is-unpublished,
 #flag-rules-list li.rule-item.is-unpublished,
 #experiment-list li.exp-card.is-unpublished,
@@ -2195,6 +2201,16 @@ tr.is-unpublished,
   background: rgba(251, 191, 36, 0.06);
   border-color: rgba(251, 191, 36, 0.45);
   box-shadow: inset 3px 0 0 var(--warn);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+tr.is-deleted,
+#flag-rules-list li.rule-item.is-deleted,
+#experiment-list li.exp-card.is-deleted,
+#flag-folders .folder.is-deleted {
+  background: rgba(248, 113, 113, 0.06);
+  border-color: rgba(248, 113, 113, 0.45);
+  box-shadow: inset 3px 0 0 var(--danger);
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
@@ -2234,6 +2250,10 @@ section.card.has-unpublished {
   height: 6px;
   border-radius: 999px;
   background: var(--warn);
+}
+
+#unpublished-list li[data-op="delete"]::before {
+  background: var(--danger);
 }
 
 #sidebar-nav a .badge.unpublished {

@@ -10,6 +10,16 @@
     catch (e) { return false; }
   }
 
+  function isExpDeleted(id, obj) {
+    if (obj && obj._draftDeleted) return true;
+    try {
+      if (CW.drafts && typeof CW.drafts.draftOp === "function") {
+        return CW.drafts.draftOp("experiment", id) === "delete";
+      }
+    } catch (e) { /* ignore */ }
+    return false;
+  }
+
   function expNameById(id) {
     var list = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
     if (Array.isArray(list)) {
@@ -40,10 +50,10 @@
       var opts = statuses.map(function (s) {
         return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
       }).join("");
-      return '<li class="exp-card' + (isExpUnpub(x.id) ? " is-unpublished" : "") + '">' +
+      return '<li class="exp-card' + (isExpDeleted(x.id, x) ? " is-deleted" : (isExpUnpub(x.id) ? " is-unpublished" : "")) + '">' +
         '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
         '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" +
-        (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "") + "</div>" +
+        (isExpDeleted(x.id, x) ? ' <span class="badge deleted">Deleted</span>' : (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "")) + "</div>" +
         '<div class="exp-meta">flag <code>' + CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
         "</code> · seed <code>" + CW.esc(x.seed) + "</code></div>" +
         '<div class="exp-variants">' + summary + "</div>" +

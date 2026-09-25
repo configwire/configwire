@@ -198,6 +198,19 @@
     return Object.prototype.hasOwnProperty.call(CW.state.drafts[kind] || {}, String(id));
   }
 
+  // Op lookup for renderers: distinguishes delete (red tombstone) from
+  // create/update (amber unpublished). Returns op string or null.
+  function draftOp(kind, id) {
+    ensureScope();
+    if (!kind || DRAFT_KINDS.indexOf(kind) < 0) return null;
+    if (id === undefined || id === null || id === "") return null;
+    var bucket = CW.state.drafts[kind] || {};
+    var key = String(id);
+    if (!Object.prototype.hasOwnProperty.call(bucket, key)) return null;
+    var e = bucket[key] || {};
+    return e.op || null;
+  }
+
   function hasDrafts() {
     ensureScope();
     var i, bucket, k;
@@ -253,7 +266,12 @@
       if (e.op === "update") {
         if (byId[keys[ki]]) byId[keys[ki]] = applyBody(byId[keys[ki]], e.body);
       } else if (e.op === "delete") {
-        delete byId[keys[ki]];
+        if (byId[keys[ki]]) {
+          var tomb = applyBody(byId[keys[ki]], {});
+          tomb._draftDeleted = true;
+          tomb._draftOp = "delete";
+          byId[keys[ki]] = tomb;
+        }
       }
     }
     return byId;
@@ -310,7 +328,9 @@
     var validFlagIds = {};
     var mf = mergedFlags();
     var i;
-    for (i = 0; i < mf.length; i++) validFlagIds[mf[i].id] = true;
+    for (i = 0; i < mf.length; i++) {
+      if (mf[i] && !mf[i]._draftDeleted) validFlagIds[mf[i].id] = true;
+    }
     var out = [];
     var k;
     for (k in byId) {
@@ -332,7 +352,9 @@
     var validFlagIds = {};
     var mf = mergedFlags();
     var i;
-    for (i = 0; i < mf.length; i++) validFlagIds[mf[i].id] = true;
+    for (i = 0; i < mf.length; i++) {
+      if (mf[i] && !mf[i]._draftDeleted) validFlagIds[mf[i].id] = true;
+    }
     var out = [];
     var seen = {};
     // Server order first (loadExperiments already project-filtered at load).
@@ -382,6 +404,7 @@
     mergedExperiments: mergedExperiments,
     resolveFlagId: resolveFlagId,
     isDraft: isDraft,
+    draftOp: draftOp,
     hasDrafts: hasDrafts,
     refreshDraftChrome: refreshDraftChrome,
   };

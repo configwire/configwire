@@ -19,7 +19,7 @@
     if (!CW.state.rulesLoaded && CW.state.rules.length === 0) return null;
     var n = 0;
     for (var i = 0; i < rules.length; i++) {
-      if (rules[i] && rules[i].flag === flagId) n++;
+      if (rules[i] && rules[i].flag === flagId && !rules[i]._draftDeleted) n++;
     }
     return n;
   }
@@ -57,19 +57,40 @@
     catch (e) { return false; }
   }
 
+  function draftOpOf(kind, id) {
+    try {
+      if (CW.drafts && typeof CW.drafts.draftOp === "function") return CW.drafts.draftOp(kind, id);
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  function isDeleted(kind, id, obj) {
+    if (obj && obj._draftDeleted) return true;
+    return draftOpOf(kind, id) === "delete";
+  }
+
+  function selectableGroupIds() {
+    return sortedGroupIds().filter(function (id) { return draftOpOf("group", id) !== "delete"; });
+  }
+
   function folderRowHTML(f) {
     var count = ruleCountFor(f.id);
     var rulesLabel = count == null ? "rules" : "rules (" + count + ")";
-    var unpub = isUnpub("flag", f.id);
+    var deleted = isDeleted("flag", f.id, f);
+    var unpub = deleted || isUnpub("flag", f.id);
+    var rowClass = deleted ? ' class="is-deleted"' : (unpub ? ' class="is-unpublished"' : "");
+    var badge = deleted
+      ? ' <span class="badge deleted">Deleted</span>'
+      : (unpub ? ' <span class="badge unpublished">Unpublished</span>' : "");
     var moveOpts = '<option value="">(no group)</option>' +
-      sortedGroupIds().map(function (id) {
+      selectableGroupIds().map(function (id) {
         return '<option value="' + CW.esc(id) + '"' + (f.group === id ? " selected" : "") + ">" +
           CW.esc(groupNameById(id)) + "</option>";
       }).join("");
-    return '<tr' + (unpub ? ' class="is-unpublished"' : "") + "><td>" + CW.esc(f.key) +
-      (unpub ? ' <span class="badge unpublished">Unpublished</span>' : "") + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
+    var moveDisabled = deleted ? " disabled" : "";
+    return '<tr' + rowClass + "><td>" + CW.esc(f.key) + badge + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
       "<td><code>" + CW.esc(JSON.stringify(f.defaultValue)) + "</code></td>" +
-      '<td><select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group">' +
+      '<td><select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group"' + moveDisabled + ">" +
       moveOpts + "</select></td>" +
       '<td><button type="button" data-flag-rules="' + CW.esc(f.id) + '">' + CW.esc(rulesLabel) + "</button> " +
       '<button type="button" data-stats-flag="' + CW.esc(f.key) + '">stats</button> ' +
@@ -80,7 +101,8 @@
   function folderHTML(gid, name) {
     var key = gid || "__none";
     var flags = flagsInGroup(gid);
-    var groupDirty = isUnpub("group", gid);
+    var groupDeleted = gid ? isDeleted("group", gid, null) : false;
+    var groupDirty = groupDeleted || isUnpub("group", gid);
     if (!groupDirty) {
       for (var gi = 0; gi < flags.length; gi++) {
         if (flags[gi] && isUnpub("flag", flags[gi].id)) { groupDirty = true; break; }
@@ -97,11 +119,13 @@
         '<button type="button" data-edit-group="' + CW.esc(gid) + '">edit</button> ' +
         '<button type="button" data-delete-group="' + CW.esc(gid) + '">delete</button>'
       : '<button type="button" data-add-flag-group="">+ flag</button>';
-    return '<section class="folder' + (groupDirty ? " is-unpublished" : "") + '">' +
+    return '<section class="folder' + (groupDeleted ? " is-deleted" : (groupDirty ? " is-unpublished" : "")) + '">' +
       '<div class="folder-head"><button type="button" class="folder-toggle" data-toggle-group="' + CW.esc(key) +
       '" aria-expanded="' + String(!collapsed) + '" aria-label="Toggle ' + CW.esc(name) + '">' +
       (collapsed ? "&#9656;" : "&#9662;") + "</button>" +
-      '<span class="folder-name">' + CW.esc(name) + '</span> <span class="muted">(' + flags.length +
+      '<span class="folder-name">' + CW.esc(name) + "</span>" +
+      (groupDeleted ? ' <span class="badge deleted">Deleted</span>' : "") +
+      ' <span class="muted">(' + flags.length +
       (flags.length === 1 ? " flag" : " flags") + ")</span>" +
       '<span class="folder-actions">' + groupBtns + "</span></div>" + body + "</section>";
   }
@@ -144,7 +168,9 @@
   }
 
   function renderFlagSelects() {
-    var opts = CW.drafts.mergedFlags().map(function (f) {
+    var opts = CW.drafts.mergedFlags().filter(function (f) {
+      return f && !f._draftDeleted && draftOpOf("flag", f.id) !== "delete";
+    }).map(function (f) {
       return '<option value="' + CW.esc(f.id) + '">' + CW.esc(f.key) + "</option>";
     }).join("");
     var xs = CW.$("exp-flag-select");
@@ -163,7 +189,7 @@
     var groups = CW.drafts.mergedGroups();
     var cur = sel.value;
     sel.innerHTML = '<option value="">(no group)</option>' +
-      Object.keys(groups).map(function (id) {
+      Object.keys(groups).filter(function (id) { return draftOpOf("group", id) !== "delete"; }).map(function (id) {
         return '<option value="' + CW.esc(id) + '">' + CW.esc(groups[id]) + "</option>";
       }).join("");
     if (cur && groups[cur]) sel.value = cur;
@@ -279,7 +305,7 @@
   function deleteGroup(id) {
     var groups = CW.drafts.mergedGroups();
     var name = groups[id] || id;
-    var inGroup = CW.drafts.mergedFlags().filter(function (f) { return f && f.group === id; });
+    var inGroup = CW.drafts.mergedFlags().filter(function (f) { return f && f.group === id && !f._draftDeleted; });
     var msg = inGroup.length
       ? 'Delete group "' + name + '" with ' + inGroup.length + (inGroup.length === 1 ? " flag" : " flags") + "? Its flags will be ungrouped."
       : 'Delete group "' + name + '"?';
@@ -337,9 +363,13 @@
     if (!items.length) { list.innerHTML = "<li>No rules for this flag.</li>"; return; }
     list.innerHTML = items.map(function (r) {
       var runpub = isUnpub("rule", r.id);
-      return '<li class="rule-item' + (runpub ? " is-unpublished" : "") + '">' +
-        '<span class="rule-prio">P' + CW.esc(r.priority) + "</span>" +
-        (runpub ? ' <span class="badge unpublished">Unpublished</span>' : "") +
+      var rdeleted = isDeleted("rule", r.id, r);
+      var rclass = rdeleted ? " is-deleted" : (runpub ? " is-unpublished" : "");
+      var rbadge = rdeleted
+        ? ' <span class="badge deleted">Deleted</span>'
+        : (runpub ? ' <span class="badge unpublished">Unpublished</span>' : "");
+      return '<li class="rule-item' + rclass + '">' +
+        '<span class="rule-prio">P' + CW.esc(r.priority) + "</span>" + rbadge +
         dialogConditionHTML(r.condition) +
         '<span class="rule-arrow" aria-hidden="true">→</span>' +
         dialogValueHTML(r.value) +

@@ -170,9 +170,10 @@
           var entry = items[j].entry;
           var label = entry.label || items[j].key;
           var isNew = isDraftTempId(kind, items[j].key) || isDraftTempId(kind, entry.tempId);
+          var isDel = entry.op === "delete";
           rows.push('<li data-unpublished-kind="' + CW.esc(kind) + '" data-unpublished-id="' +
-            CW.esc(items[j].key) + '">' + CW.esc(kind) + ": " + CW.esc(label) +
-            (isNew ? " (new)" : "") + "</li>");
+            CW.esc(items[j].key) + '" data-op="' + CW.esc(entry.op || "") + '">' + CW.esc(kind) + ": " + CW.esc(label) +
+            (isNew ? " (new)" : (isDel ? " (deleted)" : "")) + "</li>");
         }
       }
     } else {
