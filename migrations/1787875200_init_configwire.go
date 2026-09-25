@@ -113,7 +113,7 @@ func createConfigwireCollections(app core.App) error {
 			Required: true,
 			Min:      1,
 			Max:      128,
-			Pattern:  `^[A-Za-z_][A-Za-z0-9_]*$`,
+			Pattern:  `^[A-Za-z_][A-Za-z0-9_.-]*$`,
 		},
 		&core.SelectField{
 			Name:      "type",
