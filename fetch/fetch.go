@@ -61,6 +61,7 @@ import (
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
+	"github.com/pocketbase/dbx"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -273,23 +274,24 @@ func rawBytes(v any) ([]byte, bool) {
 }
 
 // latestRelease returns the env's max-version release row (nil when the env
-// has no release yet). Latest-release-per-env = max version row.
+// has no release yet). The DB filters by env and returns the top row of a
+// version-desc ordering, so cost is one indexed lookup instead of a
+// full-table scan; the returned row is the same max-version row as before.
 func latestRelease(app core.App, envID string) (*core.Record, error) {
-	recs, err := app.FindAllRecords("releases")
+	recs, err := app.FindRecordsByFilter(
+		"releases",
+		"env = {:env}",
+		"-version",
+		1, 0,
+		dbx.Params{"env": envID},
+	)
 	if err != nil {
 		return nil, err
 	}
-	var best *core.Record
-	bestV := -1
-	for _, r := range recs {
-		if r.GetString("env") != envID {
-			continue
-		}
-		if v := r.GetInt("version"); v > bestV {
-			bestV, best = v, r
-		}
+	if len(recs) == 0 {
+		return nil, nil
 	}
-	return best, nil
+	return recs[0], nil
 }
 
 func setCORS(re *core.RequestEvent) {
