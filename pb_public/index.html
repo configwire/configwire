@@ -180,27 +180,6 @@
               </ul>
             </section>
 
-            <section class="card" aria-labelledby="keys">
-              <div class="card-head">
-                <h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh
-                  keys</button>
-              </div>
-              <ul id="key-list" aria-label="SDK keys">
-                <li>Not loaded.</li>
-              </ul>
-              <h3>New key</h3>
-              <form id="key-form" aria-label="SDK key create">
-                <label>rateLimit (req/60s) <input id="key-ratelimit" type="number" min="1" value="60"></label>
-                <button type="submit" class="btn primary">Create key</button>
-              </form>
-              <p id="key-result" role="status"></p>
-              <div id="key-once" hidden>
-                <p><strong>New key (shown once — copy now):</strong></p>
-                <code id="key-once-value"></code>
-                <button id="key-copy" type="button" class="btn secondary">Copy</button>
-              </div>
-            </section>
-
             <section class="card" aria-labelledby="releases">
               <div class="card-head">
                 <h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh
@@ -221,6 +200,27 @@
                 <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard changes</button>
               </form>
               <p id="publish-result" role="status"></p>
+            </section>
+
+            <section class="card" aria-labelledby="keys">
+              <div class="card-head">
+                <h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh
+                  keys</button>
+              </div>
+              <ul id="key-list" aria-label="SDK keys">
+                <li>Not loaded.</li>
+              </ul>
+              <h3>New key</h3>
+              <form id="key-form" aria-label="SDK key create">
+                <label>rateLimit (req/60s) <input id="key-ratelimit" type="number" min="1" value="60"></label>
+                <button type="submit" class="btn primary">Create key</button>
+              </form>
+              <p id="key-result" role="status"></p>
+              <div id="key-once" hidden>
+                <p><strong>New key (shown once — copy now):</strong></p>
+                <code id="key-once-value"></code>
+                <button id="key-copy" type="button" class="btn secondary">Copy</button>
+              </div>
             </section>
 
             <section class="card" aria-labelledby="stats">
