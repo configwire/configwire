@@ -126,7 +126,7 @@ yields exactly one `200` plus one `409` (process-local write mutex).
 Ref: `:21-27`.
 
 Publish validation failures then `400`: empty project
-(`nothing to publish`), bad key shape (`^[A-Za-z_][A-Za-z0-9_]*$`,
+(`nothing to publish`), bad key shape (`^[A-Za-z_][A-Za-z0-9_.-]*$`,
 1-128 chars), over 1000 flags/project, bad flag type (must be
 `number|string|bool|json`), default or rule value not coercible to the
 flag type, bad rule condition shape (unknown field/op, missing value
