@@ -99,6 +99,25 @@
       CW.copyStatsJson();
     });
     CW.on("flag-form", "submit", CW.saveFlag);
+    // Immediate-dirty: typing/editing fires no API call yet, so the
+    // save-success markUnpublished hooks never run until after save.
+    // Mark publish dirty on any keystroke/select change so Publish enables
+    // at once, and arm each create/save form's primary submit so it starts
+    // disabled, enables on its own input/change, and returns to disabled
+    // after its successful save (via markFormClean at each save site).
+    // Form-level listeners rely on input/change bubbling from child fields.
+    function markDirtyInput() { if (CW.markUnpublished) CW.markUnpublished(); }
+    CW.on("flag-form", "input", markDirtyInput);
+    CW.on("flag-form", "change", markDirtyInput);
+    CW.on("flag-rules-form", "input", markDirtyInput);
+    CW.on("flag-rules-form", "change", markDirtyInput);
+    CW.on("experiment-form", "input", markDirtyInput);
+    CW.on("experiment-form", "change", markDirtyInput);
+    if (CW.armDirtyForm) {
+      ["flag-form", "flag-rules-form", "experiment-form",
+        "env-create-form", "project-create-form", "account-create-form"
+      ].forEach(function (id) { CW.armDirtyForm(id); });
+    }
     CW.on("flag-type", "change", function () {
       if (CW.syncFlagDefaultForType) CW.syncFlagDefaultForType();
       else if (CW.updateFlagDefaultHint) CW.updateFlagDefaultHint();
@@ -209,6 +228,7 @@
         CW.renderFlagGroupSelect();
         CW.updateFlagDefaultHint();
       }
+      if (CW.markFormClean) CW.markFormClean("flag-form");
     });
     CW.on("flag-add-btn", "click", function () {
       if (CW.openFlagDialog) CW.openFlagDialog(null);
@@ -230,6 +250,7 @@
         if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
         CW.$("experiment-result").textContent = "";
       }
+      if (CW.markFormClean) CW.markFormClean("experiment-form");
     });
     CW.on("experiment-add-btn", "click", function () {
       if (CW.openExperimentDialog) CW.openExperimentDialog(null);
@@ -411,6 +432,7 @@
     });
     CW.on("flag-rules-reset", "click", function () {
       if (CW.resetFlagRuleForm) CW.resetFlagRuleForm();
+      if (CW.markFormClean) CW.markFormClean("flag-rules-form");
     });
     CW.on("flag-rules-close", "click", function () {
       if (CW.resetFlagRuleForm) CW.resetFlagRuleForm();
@@ -439,13 +461,16 @@
       CW.publish(CW.$("publish-note").value, base).then(function (out) {
         if (out.status === 200) {
           CW.$("publish-result").textContent = "published v" + out.data.version + " etag " + out.data.etag;
+          if (CW.markPublished) CW.markPublished();
         } else if (out.status === 409) {
           CW.$("publish-result").textContent = "stale baseVersion (409): currentVersion is " +
             out.data.currentVersion + " — refreshed latest, retry publish. " + CW.serverMessage(out.data);
         } else {
           CW.$("publish-result").textContent = "publish failed (" + out.status + "): " + CW.serverMessage(out.data);
         }
-        CW.loadReleases().catch(function () {});
+        CW.loadReleases().then(function () {
+          if (out.status !== 200 && CW.markUnpublished) CW.markUnpublished();
+        }).catch(function () {});
       });
     });
 
@@ -500,6 +525,8 @@
     get closeFlagRulesDialog() { return CW.closeFlagRulesDialog; },
     get conditionHTML() { return CW.conditionHTML; }, get valueHTML() { return CW.valueHTML; },
     get publish() { return CW.publish; }, get rollback() { return CW.rollback; },
+    get markUnpublished() { return CW.markUnpublished; }, get markPublished() { return CW.markPublished; },
+    get armDirtyForm() { return CW.armDirtyForm; }, get markFormClean() { return CW.markFormClean; },
     get openProject() { return CW.openProject; }, get showHome() { return CW.showHome; },
     get route() { return CW.route; }, get parseHash() { return CW.parseHash; },
     get renderProjectCards() { return CW.renderProjectCards; },

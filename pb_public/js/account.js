@@ -102,6 +102,7 @@
         CW.toast("admin created: " + (out.data.email || email), true);
         CW.$("account-email").value = "";
         CW.$("account-password").value = "";
+        if (CW.markFormClean) CW.markFormClean("account-create-form");
       } else {
         CW.toast(CW.$("account-result").textContent);
       }

@@ -217,11 +217,12 @@
               <div class="card-head">
                 <h2 id="publish">Publish</h2>
               </div>
+              <p id="publish-hint" class="muted" role="status">No unpublished changes</p>
               <form id="publish-form">
                 <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
                 <label>baseVersion (auto-filled from latest) <input id="publish-base" name="baseVersion" type="number"
                     min="0" required></label>
-                <button type="submit" class="btn primary">Publish new version</button>
+                <button type="submit" class="btn primary" disabled>Publish new version</button>
               </form>
               <p id="publish-result" role="status"></p>
             </section>

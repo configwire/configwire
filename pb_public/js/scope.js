@@ -98,6 +98,7 @@
       if (ok) {
         CW.toast("project created: " + (out.data.name || out.data.id), true);
         CW.$("project-name").value = "";
+        if (CW.markFormClean) CW.markFormClean("project-create-form");
         var newId = out.data.id;
         loadProjects().then(function () {
           if (newId) { CW.state.projectId = newId; CW.persistScope(); }
@@ -130,6 +131,7 @@
       if (ok) {
         CW.toast("env created: " + (out.data.slug || out.data.id), true);
         CW.$("env-slug").value = "";
+        if (CW.markFormClean) CW.markFormClean("env-create-form");
         loadEnvs().catch(function () {});
       }
       return out;

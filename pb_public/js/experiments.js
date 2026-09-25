@@ -80,6 +80,7 @@
         CW.toast((id ? "experiment saved: " : "experiment created: ") + (out.data.name || out.data.id), true);
         var resEl = CW.$("experiment-result");
         if (resEl) resEl.textContent = "";
+        if (CW.markFormClean) CW.markFormClean("experiment-form");
         closeExperimentDialog();
       } else {
         CW.$("experiment-result").textContent = "experiment save failed (" + out.status + "): " + CW.serverMessage(out.data);

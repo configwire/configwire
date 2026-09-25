@@ -110,6 +110,7 @@
     return CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(id), { group: gid || null }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
       CW.toast(ok ? "flag moved" : "flag move failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      if (ok && CW.markUnpublished) CW.markUnpublished();
       loadFlags().catch(function () {});
       return out;
     });
@@ -190,6 +191,8 @@
       if (ok) {
         CW.toast("flag saved: " + (out.data.key || out.data.id), true);
         CW.$("flag-result").textContent = "";
+        if (CW.markUnpublished) CW.markUnpublished();
+        if (CW.markFormClean) CW.markFormClean("flag-form");
         closeFlagDialog();
       } else {
         CW.$("flag-result").textContent = "flag save failed (" + out.status + "): " + CW.serverMessage(out.data);
@@ -204,6 +207,7 @@
     return CW.apiMut("DELETE", "/api/collections/flags/records/" + encodeURIComponent(id)).then(function (out) {
       var ok = out.status === 200 || out.status === 201 || out.status === 204;
       CW.toast(ok ? "flag deleted" : "flag delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      if (ok && CW.markUnpublished) CW.markUnpublished();
       loadFlags().catch(function () {});
       return out;
     });
@@ -222,6 +226,7 @@
         : "group create failed (" + out.status + "): " + CW.serverMessage(out.data));
       if (ok) {
         CW.toast("group created: " + (out.data.name || out.data.id), true);
+        if (CW.markUnpublished) CW.markUnpublished();
         loadFlags().catch(function () {});
       }
       return out;
@@ -242,6 +247,7 @@
         : "group rename failed (" + out.status + "): " + CW.serverMessage(out.data));
       if (ok) {
         CW.toast("group renamed: " + (out.data.name || out.data.id), true);
+        if (CW.markUnpublished) CW.markUnpublished();
         loadFlags().catch(function () {});
       }
       return out;
@@ -273,6 +279,7 @@
         ? "group deleted: " + name
         : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data));
       CW.toast(ok ? "group deleted" : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      if (ok && CW.markUnpublished) CW.markUnpublished();
       loadFlags().catch(function () {});
       return out;
     });
@@ -405,6 +412,8 @@
         var fid = CW.$("flag-rules-flag-id");
         if (fid) fid.value = flagId;
         CW.state.activeFlagRulesId = flagId;
+        if (CW.markUnpublished) CW.markUnpublished();
+        if (CW.markFormClean) CW.markFormClean("flag-rules-form");
       }
       return CW.loadRules().then(function () {
         renderFlags();

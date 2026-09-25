@@ -1296,12 +1296,17 @@ td code {
 }
 
 #publish-result,
+#publish-hint,
 #flag-result,
 #flag-rules-result,
 #experiment-result,
 #key-result,
 #stats-view {
   color: var(--muted);
+}
+
+#publish-hint {
+  margin: 0 0 var(--space-2);
 }
 
 #stats-view {
