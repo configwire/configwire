@@ -41,6 +41,44 @@
     renderReleases();
   }
 
+  var RELEASE_FIELD_ORDER = ["id", "author", "env", "etag", "version", "note", "snapshot"];
+  var RELEASE_FIELD_LABELS = {
+    id: "ID",
+    author: "Author",
+    env: "Env",
+    etag: "Etag",
+    version: "Version",
+    note: "Note",
+    snapshot: "Snapshot"
+  };
+
+  function releaseFieldLabel(k) {
+    if (Object.prototype.hasOwnProperty.call(RELEASE_FIELD_LABELS, k)) return RELEASE_FIELD_LABELS[k];
+    return String(k);
+  }
+
+  function appendReleaseField(dl, k, val) {
+    var dt = document.createElement("dt");
+    dt.textContent = releaseFieldLabel(k);
+    dl.appendChild(dt);
+    var dd = document.createElement("dd");
+    if (k === "snapshot") dd.className = "release-snapshot";
+    if (val !== null && typeof val === "object") {
+      var pre = document.createElement("pre");
+      var code = document.createElement("code");
+      try {
+        code.textContent = JSON.stringify(val, null, 2);
+      } catch (e) {
+        code.textContent = String(val);
+      }
+      pre.appendChild(code);
+      dd.appendChild(pre);
+    } else {
+      dd.textContent = (val === undefined || val === null) ? "" : String(val);
+    }
+    dl.appendChild(dd);
+  }
+
   function findReleaseById(id) {
     var items = CW.state.releases || [];
     for (var i = 0; i < items.length; i++) {
@@ -64,29 +102,20 @@
     var dl = CW.$("release-detail");
     if (dl) {
       dl.innerHTML = "";
-      var keys = Object.keys(rec);
-      for (var i = 0; i < keys.length; i++) {
-        var k = keys[i];
+      var seen = {};
+      var i, k;
+      for (i = 0; i < RELEASE_FIELD_ORDER.length; i++) {
+        k = RELEASE_FIELD_ORDER[i];
+        seen[k] = true;
+        if (!Object.prototype.hasOwnProperty.call(rec, k)) continue;
+        appendReleaseField(dl, k, rec[k]);
+      }
+      var rest = Object.keys(rec);
+      for (i = 0; i < rest.length; i++) {
+        k = rest[i];
+        if (seen[k]) continue;
         if (k === "expand" || k === "collectionId" || k === "collectionName") continue;
-        var dt = document.createElement("dt");
-        dt.textContent = k;
-        dl.appendChild(dt);
-        var dd = document.createElement("dd");
-        var val = rec[k];
-        if (val !== null && typeof val === "object") {
-          var pre = document.createElement("pre");
-          var code = document.createElement("code");
-          try {
-            code.textContent = JSON.stringify(val, null, 2);
-          } catch (e) {
-            code.textContent = String(val);
-          }
-          pre.appendChild(code);
-          dd.appendChild(pre);
-        } else {
-          dd.textContent = (val === undefined || val === null) ? "" : String(val);
-        }
-        dl.appendChild(dd);
+        appendReleaseField(dl, k, rec[k]);
       }
     }
     if (dlg.open) return;
