@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -72,19 +73,9 @@ func checkFlagKey(key string) error {
 //
 //	SELECT COUNT(*) FROM flags WHERE project = '<projectId>'
 //
-// Implemented via FindAllRecords + in-Go filter (no extra deps by design).
+// Filtered COUNT(*) at the DB layer (no full-table scan by design).
 func countProjectFlags(app core.App, project string) (int64, error) {
-	records, err := app.FindAllRecords("flags")
-	if err != nil {
-		return 0, err
-	}
-	var n int64
-	for _, r := range records {
-		if r.GetString("project") == project {
-			n++
-		}
-	}
-	return n, nil
+	return app.CountRecords("flags", dbx.HashExp{"project": project})
 }
 
 func registerConfigwireHooks(app core.App) {
