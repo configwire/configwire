@@ -60,7 +60,7 @@ import (
 
 // Flag key shape mirrors the main.go hook so the dry assemble
 // rejects exactly what the write path would reject.
-var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 
 const (
 	maxFlagKeyLength   = 128
@@ -412,7 +412,7 @@ func ValidateSnapshot(snap Snapshot) error {
 	}
 	for _, f := range snap.Flags {
 		if len(f.Key) == 0 || len(f.Key) > maxFlagKeyLength || !flagKeyPattern.MatchString(f.Key) {
-			return fmt.Errorf("invalid flag key %q: must match ^[A-Za-z_][A-Za-z0-9_]*$ and be 1-128 chars", f.Key)
+			return fmt.Errorf("invalid flag key %q: must match ^[A-Za-z_][A-Za-z0-9_.-]*$ and be 1-128 chars", f.Key)
 		}
 		if !validFlagTypes[f.Type] {
 			return fmt.Errorf("invalid flag type %q for flag %q: must be number|string|bool|json", f.Type, f.Key)

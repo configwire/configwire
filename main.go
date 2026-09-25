@@ -27,7 +27,7 @@ import (
 // code (not collection options) so they apply to every write path
 // (API, dashboard, server-side e.App saves).
 
-var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 
 const (
 	maxFlagKeyLength   = 128
@@ -36,7 +36,7 @@ const (
 
 func checkFlagKey(key string) error {
 	if len(key) == 0 || len(key) > maxFlagKeyLength || !flagKeyPattern.MatchString(key) {
-		return errors.New("invalid flag key: must match ^[A-Za-z_][A-Za-z0-9_]*$ and be 1-128 chars")
+		return errors.New("invalid flag key: must match ^[A-Za-z_][A-Za-z0-9_.-]*$ and be 1-128 chars")
 	}
 	return nil
 }
