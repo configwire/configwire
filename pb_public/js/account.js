@@ -112,37 +112,40 @@
   }
 
   function changeAccountPassword(id) {
-    var pw = window.prompt("New password for this admin (min 8 characters):", "");
-    if (pw === null) return Promise.resolve(); // cancelled
-    if (pw.length < 8) {
-      CW.$("account-result").textContent = "password must be at least 8 characters";
-      return Promise.resolve();
-    }
-    return CW.apiMut("POST", "/api/v1/admin/account/" + encodeURIComponent(id) + "/password", { password: pw })
-      .then(function (out) {
-        var ok = out.status === 200 || out.status === 204;
-        CW.$("account-result").textContent = ok
-          ? "password changed"
-          : "password change failed (" + out.status + "): " + CW.serverMessage(out.data);
-        CW.toast(CW.$("account-result").textContent, ok);
-        if (ok) loadAccounts().catch(function () {});
-        return out;
-      });
+    return CW.promptDialog("New password for this admin (min 8 characters):", "", { title: "Change password", okText: "Change", inputType: "password", required: true, minLength: 8 }).then(function (pw) {
+      if (pw === null) return; // cancelled
+      if (pw.length < 8) {
+        CW.$("account-result").textContent = "password must be at least 8 characters";
+        return;
+      }
+      return CW.apiMut("POST", "/api/v1/admin/account/" + encodeURIComponent(id) + "/password", { password: pw })
+        .then(function (out) {
+          var ok = out.status === 200 || out.status === 204;
+          CW.$("account-result").textContent = ok
+            ? "password changed"
+            : "password change failed (" + out.status + "): " + CW.serverMessage(out.data);
+          CW.toast(CW.$("account-result").textContent, ok);
+          if (ok) loadAccounts().catch(function () {});
+          return out;
+        });
+    });
   }
 
   function deleteAccount(id) {
-    if (!window.confirm("Delete this admin account?")) return Promise.resolve();
-    return CW.apiMut("DELETE", "/api/v1/admin/account/" + encodeURIComponent(id))
-      .then(function (out) {
-        var ok = out.status === 200 || out.status === 204;
-        // Blocked for last user: surface the server message verbatim.
-        CW.$("account-result").textContent = ok
-          ? "admin deleted"
-          : "delete failed (" + out.status + "): " + CW.serverMessage(out.data);
-        CW.toast(CW.$("account-result").textContent, ok);
-        if (ok) loadAccounts().catch(function () {});
-        return out;
-      });
+    return CW.confirmDialog("Delete this admin account?", { title: "Delete admin", okText: "Delete", danger: true }).then(function (ok) {
+      if (!ok) return;
+      return CW.apiMut("DELETE", "/api/v1/admin/account/" + encodeURIComponent(id))
+        .then(function (out) {
+          var ok = out.status === 200 || out.status === 204;
+          // Blocked for last user: surface the server message verbatim.
+          CW.$("account-result").textContent = ok
+            ? "admin deleted"
+            : "delete failed (" + out.status + "): " + CW.serverMessage(out.data);
+          CW.toast(CW.$("account-result").textContent, ok);
+          if (ok) loadAccounts().catch(function () {});
+          return out;
+        });
+    });
   }
 
   CW.checkSetup = checkSetup;

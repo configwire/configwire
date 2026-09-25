@@ -4,6 +4,10 @@
 
   var CW = window.CW;
 
+  function cwConfirm(m, o) {
+    return CW.confirmDialog(m, o);
+  }
+
   // ---- wiring ----
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -253,8 +257,10 @@
       var t = ev.target;
       var del = t && t.getAttribute && t.getAttribute("data-delete-experiment");
       if (del) {
-        if (!window.confirm("Delete this experiment?")) return;
-        CW.deleteExperiment(del).catch(function (e) { CW.toast(e.message); });
+        cwConfirm("Delete this experiment?", {title: "Delete experiment", okText: "Delete", danger: true}).then(function (ok) {
+          if (!ok) return;
+          CW.deleteExperiment(del).catch(function (e) { CW.toast(e.message); });
+        });
         return;
       }
       var eid = t && t.getAttribute && t.getAttribute("data-edit-experiment");
@@ -326,10 +332,12 @@
       }
       var del = t && t.getAttribute && t.getAttribute("data-delete-flag");
       if (del) {
-        if (!window.confirm("Delete this flag and all its rules?")) return;
-        CW.deleteFlag(del).then(function () {
-          CW.loadRules().catch(function (e) { CW.toast(e.message); });
-        }).catch(function (e) { CW.toast(e.message); });
+        cwConfirm("Delete this flag and all its rules?", {title: "Delete flag", okText: "Delete", danger: true}).then(function (ok) {
+          if (!ok) return;
+          CW.deleteFlag(del).then(function () {
+            CW.loadRules().catch(function (e) { CW.toast(e.message); });
+          }).catch(function (e) { CW.toast(e.message); });
+        });
         return;
       }
       var k = t && t.getAttribute && t.getAttribute("data-stats-flag");
@@ -432,11 +440,13 @@
       var t = ev.target;
       var del = t && t.getAttribute && t.getAttribute("data-delete-flag-rule");
       if (del) {
-        if (!window.confirm("Delete this rule?")) return;
-        CW.deleteRule(del).then(function () {
-          if (CW.renderFlagRulesList) CW.renderFlagRulesList();
-          if (CW.renderFlags) CW.renderFlags();
-        }).catch(function (e) { CW.toast(e.message); });
+        cwConfirm("Delete this rule?", {title: "Delete rule", okText: "Delete", danger: true}).then(function (ok) {
+          if (!ok) return;
+          CW.deleteRule(del).then(function () {
+            if (CW.renderFlagRulesList) CW.renderFlagRulesList();
+            if (CW.renderFlags) CW.renderFlags();
+          }).catch(function (e) { CW.toast(e.message); });
+        });
         return;
       }
       var rid = t && t.getAttribute && t.getAttribute("data-edit-flag-rule");
@@ -551,19 +561,22 @@
 
     CW.on("discard-unpublished", "click", function () {
       if (CW.state.applying) return;
-      if (!window.confirm("Discard all local drafts? Nothing was published; server values unchanged.")) return;
-      try {
-        if (CW.drafts && typeof CW.drafts.draftClearAll === "function") CW.drafts.draftClearAll();
-        if (CW.clearUnpublished) CW.clearUnpublished();
-        if (CW.drafts && typeof CW.drafts.refreshDraftChrome === "function") {
-          try { CW.drafts.refreshDraftChrome(); }
-          catch (e2) { if (CW.setPublishState) CW.setPublishState(false); }
-        } else if (CW.setPublishState) CW.setPublishState(false);
-      } catch (e) {
-        if (CW.clearUnpublished) CW.clearUnpublished();
-        if (CW.setPublishState) CW.setPublishState(false);
-      }
-      CW.$("publish-result").textContent = "local drafts discarded";
+      cwConfirm("Discard all local drafts? Nothing was published; server values unchanged.", {title: "Discard drafts", okText: "Discard", danger: true}).then(function (ok) {
+        if (!ok) return;
+        try {
+          if (CW.drafts && typeof CW.drafts.draftClearAll === "function") CW.drafts.draftClearAll();
+          if (CW.clearUnpublished) CW.clearUnpublished();
+          if (CW.drafts && typeof CW.drafts.refreshDraftChrome === "function") {
+            try { CW.drafts.refreshDraftChrome(); }
+            catch (e2) { if (CW.setPublishState) CW.setPublishState(false); }
+          } else if (CW.setPublishState) CW.setPublishState(false);
+        } catch (e) {
+          if (CW.clearUnpublished) CW.clearUnpublished();
+          if (CW.setPublishState) CW.setPublishState(false);
+        }
+        CW.$("publish-result").textContent = "local drafts discarded";
+      });
+      return;
     });
 
     // HTMX: inject the BARE superuser token on every HTMX-driven request so

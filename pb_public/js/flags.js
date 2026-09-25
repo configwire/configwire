@@ -277,34 +277,36 @@
 
   function promptCreateGroup() {
     if (!CW.state.projectId) { CW.toast("select a project first"); return Promise.resolve(); }
-    var name = window.prompt("New group name");
-    if (name == null) return Promise.resolve();
-    name = name.trim();
-    if (!name) { CW.toast("group name is required"); return Promise.resolve(); }
-    CW.drafts.draftStage("group", {
-      op: "create",
-      body: { name: name, project: CW.state.projectId },
-      label: name,
+    return CW.promptDialog("New group name", "", { title: "New group", okText: "Create", placeholder: "Group name", required: true }).then(function (name) {
+      if (name == null) return;
+      name = name.trim();
+      if (!name) { CW.toast("group name is required"); return; }
+      CW.drafts.draftStage("group", {
+        op: "create",
+        body: { name: name, project: CW.state.projectId },
+        label: name,
+      });
+      groupStatus("group staged: " + name);
+      CW.toast("draft staged: " + name, true);
+      CW.drafts.refreshDraftChrome();
+      return { status: 200, data: {} };
     });
-    groupStatus("group staged: " + name);
-    CW.toast("draft staged: " + name, true);
-    CW.drafts.refreshDraftChrome();
-    return Promise.resolve({ status: 200, data: {} });
   }
 
   function renameGroup(id) {
     var groups = CW.drafts.mergedGroups();
     var cur = groups[id] || "";
-    var name = window.prompt("Rename group", cur);
-    if (name == null) return Promise.resolve();
-    name = name.trim();
-    if (!name) { groupStatus("group name is required"); return Promise.resolve(); }
-    if (name === cur) return Promise.resolve();
-    CW.drafts.draftStage("group", { op: "update", body: { name: name }, baseId: id, label: name });
-    groupStatus("group staged: " + name);
-    CW.toast("draft staged: " + name, true);
-    CW.drafts.refreshDraftChrome();
-    return Promise.resolve({ status: 200, data: {} });
+    return CW.promptDialog("Rename group", cur, { title: "Rename group", okText: "Rename", required: true }).then(function (name) {
+      if (name == null) return;
+      name = name.trim();
+      if (!name) { groupStatus("group name is required"); return; }
+      if (name === cur) return;
+      CW.drafts.draftStage("group", { op: "update", body: { name: name }, baseId: id, label: name });
+      groupStatus("group staged: " + name);
+      CW.toast("draft staged: " + name, true);
+      CW.drafts.refreshDraftChrome();
+      return { status: 200, data: {} };
+    });
   }
 
   function deleteGroup(id) {
@@ -314,17 +316,19 @@
     var msg = inGroup.length
       ? 'Delete group "' + name + '" with ' + inGroup.length + (inGroup.length === 1 ? " flag" : " flags") + "? Its flags will be ungrouped."
       : 'Delete group "' + name + '"?';
-    if (!window.confirm(msg)) return Promise.resolve();
-    // Local-only: snapshot member ids so apply-time can ungroup them first
-    // (flags.group is an optional, non-cascade relation). No server writes.
-    var memberIds = inGroup.map(function (f) { return f.id; }).filter(function (fid) {
-      return fid !== undefined && fid !== null && fid !== "";
+    return CW.confirmDialog(msg, { title: "Delete group", okText: "Delete", danger: true }).then(function (ok) {
+      if (!ok) return;
+      // Local-only: snapshot member ids so apply-time can ungroup them first
+      // (flags.group is an optional, non-cascade relation). No server writes.
+      var memberIds = inGroup.map(function (f) { return f.id; }).filter(function (fid) {
+        return fid !== undefined && fid !== null && fid !== "";
+      });
+      CW.drafts.draftStage("group", { op: "delete", body: {}, baseId: id, memberIds: memberIds, label: name });
+      groupStatus("group staged: " + name + " deleted");
+      CW.toast("draft staged: " + name + " deleted", true);
+      CW.drafts.refreshDraftChrome();
+      return { status: 200, data: {} };
     });
-    CW.drafts.draftStage("group", { op: "delete", body: {}, baseId: id, memberIds: memberIds, label: name });
-    groupStatus("group staged: " + name + " deleted");
-    CW.toast("draft staged: " + name + " deleted", true);
-    CW.drafts.refreshDraftChrome();
-    return Promise.resolve({ status: 200, data: {} });
   }
 
   function flagKeyById(id) {
