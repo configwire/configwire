@@ -262,6 +262,17 @@
             <p id="account-result" role="status"></p>
           </div>
         </section>
+        <dialog id="cw-dialog" role="alertdialog" aria-labelledby="cw-dialog-title" aria-describedby="cw-dialog-message">
+          <h3 id="cw-dialog-title">Confirm</h3>
+          <p id="cw-dialog-message"></p>
+          <input id="cw-dialog-input" type="text" hidden>
+          <p id="cw-dialog-error" class="json-hint" role="status" hidden></p>
+          <div class="dialog-actions">
+            <span class="dialog-spacer"></span>
+            <button type="button" id="cw-dialog-cancel" class="btn ghost">Cancel</button>
+            <button type="button" id="cw-dialog-ok" class="btn primary">OK</button>
+          </div>
+        </dialog>
         <dialog id="experiment-dialog" aria-labelledby="experiment-dialog-title">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
             <div>
@@ -477,19 +488,20 @@
     </main>
   </div>
   <script src="/js/core.js?v=10"></script>
+  <script src="/js/dialog.js?v=1"></script>
   <script src="/js/auth.js?v=8"></script>
   <script src="/js/router.js?v=11"></script>
-  <script src="/js/account.js?v=1"></script>
+  <script src="/js/account.js?v=2"></script>
   <script src="/js/scope.js?v=8"></script>
   <script src="/js/drafts.js?v=1"></script>
-  <script src="/js/flags.js?v=18"></script>
+  <script src="/js/flags.js?v=19"></script>
   <script src="/js/rules.js?v=11"></script>
   <script src="/js/experiments.js?v=12"></script>
   <script src="/js/keys.js?v=8"></script>
   <script src="/js/releases.js?v=10"></script>
   <script src="/js/stats.js?v=8"></script>
   <script src="/js/json-editor.js?v=9"></script>
-  <script src="/js/boot.js?v=22"></script>
+  <script src="/js/boot.js?v=23"></script>
 </body>
 
 </html>

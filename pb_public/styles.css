@@ -1908,6 +1908,7 @@ textarea.valid {
 }
 
 /* ---- Dialogs ---- */
+dialog#cw-dialog,
 dialog#json-editor-dialog,
 dialog#flag-rules-dialog,
 dialog#flag-dialog,
@@ -1952,6 +1953,11 @@ dialog#experiment-dialog {
   overflow-y: auto;
 }
 
+dialog#cw-dialog {
+  width: min(440px, 92vw);
+}
+
+dialog#cw-dialog::backdrop,
 dialog#json-editor-dialog::backdrop,
 dialog#flag-rules-dialog::backdrop,
 dialog#flag-dialog::backdrop,
@@ -1960,6 +1966,7 @@ dialog#experiment-dialog::backdrop {
   backdrop-filter: blur(4px);
 }
 
+dialog#cw-dialog h3,
 dialog#flag-rules-dialog h3,
 dialog#flag-dialog h3,
 dialog#experiment-dialog h3 {
@@ -2061,6 +2068,35 @@ dialog#json-editor-dialog .muted {
 
 .dialog-spacer {
   flex: 1 1 auto;
+}
+
+#cw-dialog-message {
+  margin: 0 0 var(--space-3);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#cw-dialog-input {
+  width: 100%;
+  margin: 0 0 var(--space-1);
+}
+
+#cw-dialog-input[hidden] {
+  display: none;
+}
+
+#cw-dialog-error.err {
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--danger);
+}
+
+#cw-dialog-error[hidden] {
+  display: none;
 }
 
 /* ---- Responsive ---- */
@@ -2238,6 +2274,7 @@ dialog#json-editor-dialog .muted {
     width: 100%;
   }
 
+  dialog#cw-dialog,
   dialog#json-editor-dialog,
   dialog#flag-rules-dialog,
   dialog#flag-dialog,
