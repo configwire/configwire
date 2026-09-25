@@ -34,8 +34,8 @@
   }
 
   function loadExperiments() {
-    return CW.api("/api/collections/experiments/records?perPage=200").then(function (data) {
-      var items = data.items || [];
+    return CW.apiAll("/api/collections/experiments/records").then(function (items) {
+      items = items || [];
       if (CW.state.projectId) {
         var flagIds = {};
         CW.state.flags.forEach(function (f) { flagIds[f.id] = true; });

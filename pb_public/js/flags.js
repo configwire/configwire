@@ -143,11 +143,10 @@
 
   function loadFlags() {
     var pid = CW.state.projectId;
-    var tryFiltered = pid
-      ? CW.api("/api/collections/flags/records?perPage=200&filter=" + encodeURIComponent('(project="' + pid + '")'))
-      : CW.api("/api/collections/flags/records?perPage=200");
-    return tryFiltered.then(function (data) {
-      var items = data.items || [];
+    var fq = "/api/collections/flags/records?perPage=200";
+    if (pid) fq += "&filter=" + encodeURIComponent('(project="' + pid + '")');
+    return CW.apiAll(fq).then(function (fetched) {
+      var items = fetched || [];
       // Client-side filter: strict match only — legacy unscoped rows must
       // not leak across projects (groups carry a required project relation).
       if (pid) items = items.filter(function (f) { return f.project === pid; });
@@ -156,9 +155,9 @@
       });
       var gq = "/api/collections/groups/records?perPage=200";
       if (pid) gq += "&filter=" + encodeURIComponent('(project="' + pid + '")');
-      return CW.api(gq).then(function (g) {
+      return CW.apiAll(gq).then(function (gitems) {
         CW.state.groups = {};
-        (g.items || []).forEach(function (gr) {
+        (gitems || []).forEach(function (gr) {
           if (pid && gr.project !== pid) return;
           CW.state.groups[gr.id] = gr.name || gr.id;
         });

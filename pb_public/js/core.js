@@ -119,6 +119,72 @@
     });
   }
 
+  var LIST_RE = /\/api\/collections\/[^/?#]+\/records(?:[?#]|$)/;
+  var PAGE_GUARD = 1100;
+
+  function withPage(path, page) {
+    var hash = "";
+    var hIdx = path.indexOf("#");
+    if (hIdx >= 0) { hash = path.slice(hIdx); path = path.slice(0, hIdx); }
+    var qIdx = path.indexOf("?");
+    var base = qIdx >= 0 ? path.slice(0, qIdx) : path;
+    var qs = qIdx >= 0 ? path.slice(qIdx + 1) : "";
+    var parts = [];
+    if (qs) {
+      var pairs = qs.split("&");
+      for (var i = 0; i < pairs.length; i++) {
+        if (pairs[i] === "") continue;
+        var eq = pairs[i].indexOf("=");
+        var k = eq >= 0 ? pairs[i].slice(0, eq) : pairs[i];
+        try { k = decodeURIComponent(k); } catch (e) { /* keep raw */ }
+        if (k === "page" || k === "perPage") continue;
+        parts.push(pairs[i]);
+      }
+    }
+    parts.push("perPage=200");
+    parts.push("page=" + page);
+    return base + "?" + parts.join("&") + hash;
+  }
+
+  function apiAll(path) {
+    if (!LIST_RE.test(path)) return api(path);
+    var out = [];
+    var page = 0;
+    var totalPages = Infinity;
+    var guard = 0;
+    function failWithStatus(err, url) {
+      var m = /\((\d{3})\)/.exec(String(err && err.message));
+      if (m) throw new Error("request failed (" + m[1] + "): " + url);
+      throw err;
+    }
+    function next() {
+      guard++;
+      if (guard > PAGE_GUARD) {
+        return Promise.reject(new Error("request failed: paging guard tripped (>1100 pages): " + path));
+      }
+      page++;
+      if (page > totalPages) return Promise.resolve(out);
+      var url = withPage(path, page);
+      return api(url).then(function (data) {
+        var items = data && data.items;
+        if (items == null) throw new Error("request failed: list page missing items: " + url);
+        if (!Array.isArray(items)) {
+          throw new Error("request failed: list page items not an array: " + url);
+        }
+        var pp = (data && data.perPage) || 200;
+        for (var i = 0; i < items.length; i++) out.push(items[i]);
+        if (data && typeof data.totalPages === "number" && isFinite(data.totalPages)) {
+          totalPages = data.totalPages;
+        } else if (items.length < pp) {
+          totalPages = page;
+        }
+        if (items.length < pp || page >= totalPages) return out;
+        return next();
+      }, function (err) { failWithStatus(err, url); });
+    }
+    return next();
+  }
+
   function logoutRef() {
     // Late-bound to avoid load-order coupling: auth.js registers CW.logout.
     if (CW.logout) return CW.logout();
@@ -161,5 +227,6 @@
   CW.esc = esc;
   CW.serverMessage = serverMessage;
   CW.api = api;
+  CW.apiAll = apiAll;
   CW.apiMut = apiMut;
 })();

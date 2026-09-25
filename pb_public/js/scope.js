@@ -51,8 +51,8 @@
   }
 
   function loadProjects() {
-    return CW.api("/api/collections/projects/records?perPage=200").then(function (data) {
-      CW.state.projects = (data.items || []).slice().sort(function (a, b) {
+    return CW.apiAll("/api/collections/projects/records?perPage=200").then(function (items) {
+      CW.state.projects = (items || []).slice().sort(function (a, b) {
         return (a.name || "") < (b.name || "") ? -1 : 1;
       });
       if (CW.state.projectId && !CW.state.projects.some(function (p) { return p.id === CW.state.projectId; })) {
@@ -67,14 +67,14 @@
   function loadEnvs() {
     if (!CW.state.projectId) { CW.state.envs = []; CW.state.envId = null; renderProjectEnv(); return Promise.resolve(); }
     var filter = "?perPage=200&filter=" + encodeURIComponent('(project="' + CW.state.projectId + '")');
-    return CW.api("/api/collections/environments/records" + filter).then(function (data) {
-      CW.state.envs = (data.items || []).slice().sort(function (a, b) {
+    return CW.apiAll("/api/collections/environments/records" + filter).then(function (items) {
+      CW.state.envs = (items || []).slice().sort(function (a, b) {
         return (a.slug || "") < (b.slug || "") ? -1 : 1;
       });
     }, function () {
       // Fallback: fetch all then filter client-side when the API filter fails.
-      return CW.api("/api/collections/environments/records?perPage=200").then(function (data) {
-        CW.state.envs = (data.items || []).filter(function (e) { return e.project === CW.state.projectId; });
+      return CW.apiAll("/api/collections/environments/records?perPage=200").then(function (items) {
+        CW.state.envs = (items || []).filter(function (e) { return e.project === CW.state.projectId; });
       });
     }).then(function () {
       if (CW.state.envId && !CW.state.envs.some(function (e) { return e.id === CW.state.envId; })) CW.state.envId = null;

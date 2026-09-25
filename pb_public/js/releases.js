@@ -23,8 +23,8 @@
 
   function loadReleases() {
     // Fetch all then filter client-side by selected env relation; sort -version.
-    return CW.api("/api/collections/releases/records?perPage=200&sort=-version").then(function (data) {
-      var items = data.items || [];
+    return CW.apiAll("/api/collections/releases/records?perPage=200&sort=-version").then(function (items) {
+      items = items || [];
       if (CW.state.envId) items = items.filter(function (r) { return r.env === CW.state.envId; });
       CW.state.releases = items.slice().sort(function (a, b) { return b.version - a.version; });
       renderReleases();

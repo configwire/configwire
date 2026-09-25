@@ -88,8 +88,8 @@
   }
 
   function loadRules() {
-    return CW.api("/api/collections/rules/records?perPage=200&sort=priority").then(function (data) {
-      var items = data.items || [];
+    return CW.apiAll("/api/collections/rules/records?sort=priority").then(function (items) {
+      items = items || [];
       CW.state.rules = items.slice().sort(function (a, b) { return (a.priority || 0) - (b.priority || 0); });
       CW.state.rulesLoaded = true;
       if (CW.renderFlags) CW.renderFlags();

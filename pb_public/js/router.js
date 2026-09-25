@@ -105,23 +105,36 @@
     }).join("");
   }
 
-  // Home aggregates via the existing perPage=200 reads (no new backend).
-  // Keys are owned per-project through env->project, same as loadKeys.
+  // Home aggregates GLOBAL stats via a per-project paged loop (CW.apiAll)
+  // merged client-side, so the grid stays correct past 200 rows per
+  // collection. Bucketing is unchanged: flags/envs count by project,
+  // keys are owned per-project through env->project, same as loadKeys,
+  // and revoked keys are excluded.
   function loadHomeStats() {
-    return CW.api("/api/collections/flags/records?perPage=200").then(function (f) {
-      return CW.api("/api/collections/environments/records?perPage=200").then(function (e) {
-        return CW.api("/api/collections/sdk_keys/records?perPage=200").then(function (k) {
-          var envProject = {};
-          (e.items || []).forEach(function (env) { envProject[env.id] = env.project; });
-          var stats = {};
-          CW.state.projects.forEach(function (p) { stats[p.id] = { flags: 0, envs: 0, keys: 0 }; });
-          (f.items || []).forEach(function (fl) {
-            if (stats[fl.project]) stats[fl.project].flags++;
+    return CW.apiAll("/api/collections/environments/records?perPage=200").then(function (eItems) {
+      var envs = eItems || [];
+      var envProject = {};
+      envs.forEach(function (env) { envProject[env.id] = env.project; });
+      var stats = {};
+      var projects = CW.state.projects.slice();
+      projects.forEach(function (p) { stats[p.id] = { flags: 0, envs: 0, keys: 0 }; });
+      envs.forEach(function (env) {
+        if (stats[env.project]) stats[env.project].envs++;
+      });
+      var chain = Promise.resolve();
+      projects.forEach(function (p) {
+        chain = chain.then(function () {
+          var f = "?perPage=200&filter=" + encodeURIComponent('(project="' + p.id + '")');
+          return CW.apiAll("/api/collections/flags/records" + f).then(function (fItems) {
+            (fItems || []).forEach(function (fl) {
+              if (stats[fl.project]) stats[fl.project].flags++;
+            });
           });
-          (e.items || []).forEach(function (env) {
-            if (stats[env.project]) stats[env.project].envs++;
-          });
-          (k.items || []).forEach(function (key) {
+        });
+      });
+      return chain.then(function () {
+        return CW.apiAll("/api/collections/sdk_keys/records?perPage=200").then(function (kItems) {
+          (kItems || []).forEach(function (key) {
             var pid = envProject[key.env];
             if (pid && stats[pid] && !key.revoked) stats[pid].keys++;
           });
