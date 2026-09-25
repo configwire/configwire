@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -48,18 +49,28 @@ func PickIndex(slug string, projects []string, project string) (int, error) {
 	return 0, nil
 }
 
+// findEnvsBySlug returns every environment row with the given slug,
+// DB-filtered instead of a full-table scan. Callers decide over the rows
+// with PickIndex — this helper never silently picks one.
+func findEnvsBySlug(app core.App, slug string) ([]*core.Record, error) {
+	return app.FindRecordsByFilter(
+		"environments",
+		"slug = {:slug}",
+		"",
+		0, 0,
+		dbx.Params{"slug": slug},
+	)
+}
+
 // Resolve maps a slug (+ optional project qualifier) to its record. Never silently picks the first of several rows.
 func Resolve(app core.App, slug, project string) (*core.Record, error) {
-	recs, err := app.FindAllRecords("environments")
+	recs, err := findEnvsBySlug(app, slug)
 	if err != nil {
 		return nil, err
 	}
 	var cands []*core.Record
 	var projects []string
 	for _, r := range recs {
-		if r.GetString("slug") != slug {
-			continue
-		}
 		cands = append(cands, r)
 		projects = append(projects, r.GetString("project"))
 	}
