@@ -530,3 +530,25 @@
     get recalcLastVariantWeight() { return CW.recalcLastVariantWeight; },
   };
 })();
+
+/* ConfigWire topbar version — fetch same-origin /api/v1/meta, fallback keeps hardcoded text. */
+(function () {
+  "use strict";
+  function updateVersion() {
+    var el = document.getElementById("cw-version");
+    if (!el) return;
+    try {
+      fetch("/api/v1/meta", { headers: { "Accept": "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (d && typeof d.version === "string" && d.version) el.textContent = d.version;
+        })
+        .catch(function () { /* keep fallback silently */ });
+    } catch (e) { /* keep fallback silently */ }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", updateVersion);
+  } else {
+    updateVersion();
+  }
+})();

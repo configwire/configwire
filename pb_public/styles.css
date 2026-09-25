@@ -346,6 +346,28 @@ code {
   font-size: 11px;
 }
 
+.status-pill .gh-link {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  line-height: 0;
+}
+
+.status-pill .gh-link svg {
+  display: block;
+  vertical-align: middle;
+}
+
+.status-pill .gh-link:hover {
+  opacity: 0.8;
+}
+
+.status-pill .gh-link:focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .dot {
   width: 7px;
   height: 7px;

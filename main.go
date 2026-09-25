@@ -1,10 +1,12 @@
 package main
 
 import (
+	_ "embed"
 	"errors"
 	"log"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -26,6 +28,31 @@ import (
 // Flag key shape + per-project cap and releases immutability live in
 // code (not collection options) so they apply to every write path
 // (API, dashboard, server-side e.App saves).
+
+//go:embed VERSION
+var embeddedVersion string
+
+// Version is the app version, overridable at build time via
+// -ldflags "-X main.Version=vX.Y.Z". When empty, the embedded
+// VERSION file (single source of truth) is used instead.
+var Version string
+
+// appVersion normalizes to a "v" prefix with trimmed whitespace.
+// Falls back to "vdev" when neither ldflags nor the embedded
+// VERSION file provides a value.
+func appVersion() string {
+	v := strings.TrimSpace(Version)
+	if v == "" {
+		v = strings.TrimSpace(embeddedVersion)
+	}
+	if v == "" {
+		return "vdev"
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	return v
+}
 
 var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 
@@ -184,6 +211,12 @@ func main() {
 
 		se.Router.GET("/hello", func(re *core.RequestEvent) error {
 			return re.String(200, "Hello world!")
+		})
+
+		// Public app metadata for the pre-auth login topbar.
+		// No auth by design (same as /hello).
+		se.Router.GET("/api/v1/meta", func(re *core.RequestEvent) error {
+			return re.JSON(200, map[string]string{"version": appVersion()})
 		})
 
 		ingest.Register(se)

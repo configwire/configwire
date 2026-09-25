@@ -9,7 +9,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
-RUN CGO_ENABLED=0 go build -trimpath -o /out/configwire .
+# VERSION may be overridden at build time (--build-arg VERSION=vX.Y.Z);
+# falls back to the embedded VERSION file when left as dev.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-X main.Version=$VERSION" -o /out/configwire .
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
