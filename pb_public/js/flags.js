@@ -414,7 +414,89 @@
   }
 
   function updateFlagDefaultHint() {
-    return CW.updateJsonHint("flag-default");
+    var input = CW.$("flag-default");
+    var typeEl = CW.$("flag-type");
+    var type = typeEl ? typeEl.value : "bool";
+    if (!input) return CW.updateJsonHint("flag-default");
+    var raw = input.value;
+    // Empty input means null default — server accepts null for any type.
+    if (raw.trim() === "") return CW.updateJsonHint("flag-default");
+    var parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { return CW.updateJsonHint("flag-default"); }
+    if (flagDefaultMatchesType(parsed, type)) return CW.updateJsonHint("flag-default");
+    var hint = CW.$("flag-default-hint");
+    if (hint) {
+      hint.textContent = "Invalid defaultValue: " + flagTypeExpectation(type);
+      hint.className = "json-hint err";
+    }
+    input.classList.remove("valid");
+    input.classList.add("invalid");
+    return false;
+  }
+
+  // Canonical JSON defaults per flag type (mirrors server coerceToType in
+  // configwire/releases/snapshot.go). Used when the type changes and the
+  // current defaultValue no longer matches, so the dialog never opens or
+  // switches into a state that publish would reject.
+  var FLAG_TYPE_DEFAULTS = {
+    bool: "false",
+    number: "0",
+    string: '""',
+    json: "{}",
+  };
+
+  var FLAG_TYPE_PLACEHOLDERS = {
+    bool: "false",
+    number: "0",
+    string: '"hello"',
+    json: '{"key": "value"}',
+  };
+
+  function flagTypeExpectation(type) {
+    switch (type) {
+      case "bool": return 'expected bool (true or false)';
+      case "number": return "expected number (e.g. 0)";
+      case "string": return 'expected string (JSON quoted, e.g. "hello")';
+      case "json": return "expected JSON object or array (e.g. {} or [])";
+      default: return 'expected value matching type "' + type + '"';
+    }
+  }
+
+  // Mirrors Go coerceToType (nil/null always allowed — publish skips nil).
+  function flagDefaultMatchesType(value, type) {
+    if (value === null || value === undefined) return true;
+    switch (type) {
+      case "bool": return typeof value === "boolean";
+      case "number": return typeof value === "number";
+      case "string": return typeof value === "string";
+      case "json":
+        return typeof value === "object" && value !== null;
+      default: return true;
+    }
+  }
+
+  // Keep the defaultValue input in sync with the selected type: refresh the
+  // placeholder every time, and replace the value with the type's canonical
+  // default only when the current value would fail the type check (so
+  // user-typed values that already match are never clobbered).
+  // opts.reset=true forces the canonical default (used by Clear).
+  function syncFlagDefaultForType(opts) {
+    var typeEl = CW.$("flag-type");
+    var input = CW.$("flag-default");
+    if (!typeEl || !input) return;
+    var type = typeEl.value || "bool";
+    if (FLAG_TYPE_PLACEHOLDERS[type]) input.placeholder = FLAG_TYPE_PLACEHOLDERS[type];
+    var force = !!(opts && opts.reset);
+    if (!force) {
+      var raw = input.value;
+      if (raw.trim() === "") { updateFlagDefaultHint(); return; }
+      try {
+        if (flagDefaultMatchesType(JSON.parse(raw), type)) { updateFlagDefaultHint(); return; }
+      } catch (e) { /* invalid JSON — fall through and reset to a valid default */ }
+    }
+    if (FLAG_TYPE_DEFAULTS[type] !== undefined) input.value = FLAG_TYPE_DEFAULTS[type];
+    updateFlagDefaultHint();
   }
 
   function resetFlagForm() {
@@ -425,7 +507,7 @@
     var group = CW.$("flag-group");
     if (group) group.value = "";
     renderFlagGroupSelect();
-    updateFlagDefaultHint();
+    syncFlagDefaultForType({ reset: true });
     var res = CW.$("flag-result");
     if (res) res.textContent = "";
   }
@@ -444,7 +526,7 @@
       try {
         CW.$("flag-default").value = JSON.stringify(flag.defaultValue === undefined ? null : flag.defaultValue);
       } catch (e) { CW.$("flag-default").value = "null"; }
-      updateFlagDefaultHint();
+      syncFlagDefaultForType();
       var res = CW.$("flag-result");
       if (res) res.textContent = "editing " + (flag.key || flag.id || "");
       if (title) title.textContent = flag.key ? "Edit " + flag.key : "Edit flag";
@@ -483,6 +565,7 @@
   CW.moveFlag = moveFlag;
   CW.flagKeyById = flagKeyById;
   CW.updateFlagDefaultHint = updateFlagDefaultHint;
+  CW.syncFlagDefaultForType = syncFlagDefaultForType;
   CW.resetFlagForm = resetFlagForm;
   CW.openFlagDialog = openFlagDialog;
   CW.closeFlagDialog = closeFlagDialog;

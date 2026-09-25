@@ -99,6 +99,10 @@
       CW.copyStatsJson();
     });
     CW.on("flag-form", "submit", CW.saveFlag);
+    CW.on("flag-type", "change", function () {
+      if (CW.syncFlagDefaultForType) CW.syncFlagDefaultForType();
+      else if (CW.updateFlagDefaultHint) CW.updateFlagDefaultHint();
+    });
     CW.on("flag-default", "input", CW.updateFlagDefaultHint);
     CW.on("flag-rules-condition", "input", function () {
       if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
@@ -336,7 +340,8 @@
               CW.$("flag-type").value = f.type || "bool";
               CW.$("flag-group").value = f.group || "";
               CW.$("flag-default").value = JSON.stringify(f.defaultValue === undefined ? null : f.defaultValue);
-              CW.updateFlagDefaultHint();
+              if (CW.syncFlagDefaultForType) CW.syncFlagDefaultForType();
+              else if (CW.updateFlagDefaultHint) CW.updateFlagDefaultHint();
               CW.$("flag-result").textContent = "editing " + (f.key || fid);
             }
             break;
@@ -501,6 +506,7 @@
     get openJsonEditor() { return CW.openJsonEditor; }, get closeJsonEditor() { return CW.closeJsonEditor; },
     get openJsonEditorFor() { return CW.openJsonEditorFor; },
     get updateFlagDefaultHint() { return CW.updateFlagDefaultHint; },
+    get syncFlagDefaultForType() { return CW.syncFlagDefaultForType; },
     get updateEditorStatus() { return CW.updateEditorStatus; },
     get updateJsonHint() { return CW.updateJsonHint; },
     get updateAllJsonHints() { return CW.updateAllJsonHints; },
