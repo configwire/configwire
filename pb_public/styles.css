@@ -938,32 +938,27 @@ td code {
 
 #flag-folders th:nth-child(1),
 #flag-folders td:nth-child(1) {
-  width: 16%;
+  width: 20%;
 }
 
 #flag-folders th:nth-child(2),
 #flag-folders td:nth-child(2) {
-  width: 30%;
+  width: 38%;
 }
 
 #flag-folders th:nth-child(3),
 #flag-folders td:nth-child(3) {
-  width: 8%;
+  width: 10%;
 }
 
 #flag-folders th:nth-child(4),
 #flag-folders td:nth-child(4) {
-  width: 12%;
+  width: auto;
 }
 
 #flag-folders th:nth-child(5),
 #flag-folders td:nth-child(5) {
-  width: 12%;
-}
-
-#flag-folders th:nth-child(6),
-#flag-folders td:nth-child(6) {
-  width: 22%;
+  width: 48px;
 }
 
 #flag-folders td {
@@ -973,6 +968,89 @@ td code {
 
 #flag-folders select {
   max-width: 160px;
+}
+
+/* ---- Flag row ⋯ action menu (renderer contract: js/flags.js folderRowHTML
+ * emits td.flag-actions-cell > .flag-menu-wrap > button.flag-menu-btn
+ * ([data-flag-menu], aria-haspopup=menu) + .flag-menu[role=menu][hidden]
+ * holding the same data-flag-rules / data-stats-flag / data-edit-flag /
+ * data-delete-flag buttons boot.js already delegates, plus the
+ * select[data-move-flag] moved inside the menu). Absolute positioning needs
+ * visible overflow on both ancestors or bottom rows get clipped. */
+#flag-folders .folder {
+  overflow: visible;
+}
+
+#flag-folders .table-wrap {
+  overflow: visible;
+}
+
+#flag-folders .flag-actions-cell {
+  text-align: right;
+  vertical-align: middle;
+}
+
+#flag-folders .flag-menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+#flag-folders .flag-menu-btn {
+  width: 28px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+#flag-folders .flag-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 30;
+}
+
+#flag-folders .flag-menu[hidden] {
+  display: none;
+}
+
+#flag-folders .flag-menu button[role="menuitem"] {
+  width: 100%;
+  height: 28px;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+#flag-folders .flag-menu select {
+  width: 100%;
+  max-width: none;
+  height: 28px;
+  font-size: 12px;
+}
+
+#flag-folders .flag-menu-label {
+  display: block;
+  padding: 6px var(--space-2) 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #flag-folders .flag-menu {
+    transition: none;
+  }
 }
 
 /* ---- Empty-state helpers ---- */

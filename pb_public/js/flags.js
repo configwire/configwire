@@ -90,12 +90,17 @@
     var moveDisabled = deleted ? " disabled" : "";
     return '<tr' + rowClass + "><td>" + CW.esc(f.key) + badge + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
       "<td><code>" + CW.esc(JSON.stringify(f.defaultValue)) + "</code></td>" +
-      '<td><select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group"' + moveDisabled + ">" +
-      moveOpts + "</select></td>" +
-      '<td><button type="button" data-flag-rules="' + CW.esc(f.id) + '">' + CW.esc(rulesLabel) + "</button> " +
-      '<button type="button" data-stats-flag="' + CW.esc(f.key) + '">stats</button> ' +
-      '<button type="button" data-edit-flag="' + CW.esc(f.id) + '">edit</button> ' +
-      '<button type="button" data-delete-flag="' + CW.esc(f.id) + '">delete</button></td></tr>';
+      '<td class="flag-actions-cell"><div class="flag-menu-wrap">' +
+      '<button type="button" class="flag-menu-btn" data-flag-menu="' + CW.esc(f.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(f.key) + '">&#8943;</button>' +
+      '<div class="flag-menu" role="menu" hidden>' +
+      '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + CW.esc(rulesLabel) + "</button>" +
+      '<button type="button" role="menuitem" data-stats-flag="' + CW.esc(f.key) + '">stats</button>' +
+      '<button type="button" role="menuitem" data-edit-flag="' + CW.esc(f.id) + '">edit</button>' +
+      '<span class="flag-menu-label">Move to group</span>' +
+      '<select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group"' + moveDisabled + ">" +
+      moveOpts + "</select>" +
+      '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">delete</button>' +
+      "</div></div></td></tr>";
   }
 
   function folderHTML(gid, name) {
@@ -112,8 +117,8 @@
     var rows = flags.map(folderRowHTML).join("");
     var body = collapsed ? "" :
       '<div class="table-wrap"><table aria-label="Flags in ' + CW.esc(name) + '">' +
-      "<thead><tr><th>Key</th><th>Description</th><th>Type</th><th>Default</th><th>Move to</th><th></th></tr></thead>" +
-      "<tbody>" + (rows || '<tr><td colspan="6">No flags in this group.</td></tr>') + "</tbody></table></div>";
+      "<thead><tr><th>Key</th><th>Description</th><th>Type</th><th>Default</th><th></th></tr></thead>" +
+      "<tbody>" + (rows || '<tr><td colspan="5">No flags in this group.</td></tr>') + "</tbody></table></div>";
     var groupBtns = gid
       ? '<button type="button" data-add-flag-group="' + CW.esc(gid) + '">+ flag</button> ' +
         '<button type="button" data-edit-group="' + CW.esc(gid) + '">edit</button> ' +

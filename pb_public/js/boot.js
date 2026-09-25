@@ -304,6 +304,19 @@
       }
     });
 
+    function closeFlagMenus(except) {
+      var box = document.getElementById("flag-folders");
+      if (!box || !box.querySelectorAll) return;
+      var wraps = box.querySelectorAll(".flag-menu-wrap");
+      for (var i = 0; i < wraps.length; i++) {
+        var menu = wraps[i].querySelector ? wraps[i].querySelector(".flag-menu") : null;
+        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-flag-menu]") : null;
+        if (!menu || menu === except) continue;
+        menu.hidden = true;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    }
+
     function flagRowClick(ev) {
       var t = ev.target;
       var fr = t && t.getAttribute && t.getAttribute("data-flag-rules");
@@ -366,6 +379,27 @@
 
     CW.on("flag-folders", "click", function (ev) {
       var t = ev.target;
+      var menuBtn = null;
+      if (t && t.closest) menuBtn = t.closest("[data-flag-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-flag-menu")) menuBtn = t;
+      if (menuBtn) {
+        var wrap = menuBtn.parentNode;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".flag-menu") : null;
+        if (menu) {
+          var willOpen = menu.hidden;
+          closeFlagMenus();
+          menu.hidden = !willOpen;
+          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+        }
+        return;
+      }
+      var inMenu = t && t.closest ? t.closest(".flag-menu") : null;
+      if (inMenu) {
+        var itemBtn = t.closest("[data-flag-rules],[data-stats-flag],[data-edit-flag],[data-delete-flag]");
+        flagRowClick(ev);
+        if (itemBtn) closeFlagMenus();
+        return;
+      }
       var tg = t && t.getAttribute && t.getAttribute("data-toggle-group");
       if (tg) { CW.toggleGroupCollapse(tg); return; }
       var ag = t && t.getAttribute ? t.getAttribute("data-add-flag-group") : null;
@@ -375,11 +409,23 @@
       var dg = t && t.getAttribute && t.getAttribute("data-delete-group");
       if (dg) { CW.deleteGroup(dg).catch(function (e) { CW.toast(e.message); }); return; }
       flagRowClick(ev);
+      closeFlagMenus();
     });
     CW.on("flag-folders", "change", function (ev) {
       var t = ev.target;
       var mid = t && t.getAttribute && t.getAttribute("data-move-flag");
-      if (mid) { CW.moveFlag(mid, t.value || "").catch(function (e) { CW.toast(e.message); }); }
+      if (mid) {
+        CW.moveFlag(mid, t.value || "").catch(function (e) { CW.toast(e.message); });
+        closeFlagMenus();
+      }
+    });
+    document.addEventListener("click", function (ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var inside = t && t.closest ? t.closest(".flag-menu-wrap") : null;
+      if (!inside) closeFlagMenus();
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev && ev.key === "Escape") closeFlagMenus();
     });
 
     CW.on("flag-rules-list", "click", function (ev) {
