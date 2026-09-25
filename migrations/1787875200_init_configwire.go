@@ -122,6 +122,7 @@ func createConfigwireCollections(app core.App) error {
 			Required:  true,
 		},
 		relation("group", colGroups, false),
+		&core.TextField{Name: "description", Max: 1024},
 		&core.JSONField{Name: "defaultValue"},
 		relation("project", colProjects, true),
 	)
