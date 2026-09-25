@@ -13,12 +13,13 @@
 // 404. Unknown env slugs -> 404. Auth is superuser-only via
 // apis.RequireSuperuserAuth().
 //
-// SCALE NOTE (v1-appropriate, documented per contract): aggregation runs
-// in-Go over FindAllRecords("events") filtered by env/flag/kind/ts — O(n)
-// in total events. Fine at v1 scale. FOLLOW-UP: if events ever grow past
-// ~100k rows, replace the scan with indexed filter queries on
-// env+flag+kind+ts (or a pre-aggregated counters collection); the pure
-// Aggregate helper keeps that migration handler-local.
+// SCALE NOTE: aggregation runs in-Go over indexed filter queries —
+// loadRows selects events by (env[, flag], ts >= cutoff) and loadRollups
+// selects event_daily by (env[, flag], cutoffDay <= day < horizon), served
+// by idx_events_env_ts / idx_events_env_flag_ts and
+// idx_event_daily_upsert_key / idx_event_daily_day. The frozen Aggregate /
+// AggregateRollups helpers re-apply the same predicates in-Go, so the DB
+// prefilter is a pure subset narrowing: identical results, no full scan.
 package stats
 
 import (
@@ -32,8 +33,10 @@ import (
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // DefaultSinceDays applies when ?since= is absent.
@@ -292,14 +295,14 @@ func getStats(re *core.RequestEvent) error {
 	}
 	flagFound := FlagFound(flagKey, matched)
 
-	rows, err := loadRows(re.App)
+	eventCutoff := EventCutoffFor(cutoff, horizon)
+	rows, err := loadRows(re.App, env.Id, flagID, filterByFlag, eventCutoff)
 	if err != nil {
 		return err
 	}
-	eventCutoff := EventCutoffFor(cutoff, horizon)
 	stEvents := Aggregate(rows, env.Id, flagID, filterByFlag, eventCutoff)
 
-	buckets, err := loadRollups(re.App)
+	buckets, err := loadRollups(re.App, env.Id, flagID, filterByFlag, cutoffDay, horizon)
 	if err != nil {
 		return err
 	}
@@ -333,13 +336,34 @@ func getStats(re *core.RequestEvent) error {
 	})
 }
 
+// dateParam formats t for indexed Date/DateTime comparisons: PocketBase
+// stores dates in types.DefaultDateLayout, which sorts lexicographically
+// in chronological order, so >= / < on the formatted string matches the
+// in-Go time comparisons exactly (truncation only ever loosens the DB
+// prefilter to a superset the frozen Aggregate narrows back down).
+func dateParam(t time.Time) string {
+	return t.UTC().Format(types.DefaultDateLayout)
+}
+
 // loadRollups projects the event_daily collection into purge.Rollup
-// buckets in one O(n) scan. Flag joins use the stored FlagID verbatim
-// (relation unset -> ""), resolved once per request in getStats —
-// historic rows are never re-resolved against the current key set.
-// userHash never exists on this collection (counts only).
-func loadRollups(app core.App) ([]purge.Rollup, error) {
-	recs, err := app.FindAllRecords("event_daily")
+// buckets by indexed filter: env equality, optional flag equality, and
+// the day window cutoffDay <= day < horizon (history-side of the purge
+// split; the boundary day stays raw-side). Flag joins use the stored
+// FlagID verbatim (relation unset -> ""), resolved once per request in
+// getStats — historic rows are never re-resolved against the current key
+// set. userHash never exists on this collection (counts only).
+func loadRollups(app core.App, envID, flagID string, filterByFlag bool, cutoffDay, horizon time.Time) ([]purge.Rollup, error) {
+	filter := "env = {:env} && day >= {:cutoffDay} && day < {:horizon}"
+	params := dbx.Params{
+		"env":       envID,
+		"cutoffDay": dateParam(cutoffDay),
+		"horizon":   dateParam(horizon),
+	}
+	if filterByFlag {
+		filter = "env = {:env} && flag = {:flag} && day >= {:cutoffDay} && day < {:horizon}"
+		params["flag"] = flagID
+	}
+	recs, err := app.FindRecordsByFilter("event_daily", filter, "", 0, 0, params)
 	if err != nil {
 		return nil, err
 	}
@@ -357,11 +381,22 @@ func loadRollups(app core.App) ([]purge.Rollup, error) {
 	return out, nil
 }
 
-// loadRows projects the events collection into EventRows in one O(n)
-// scan (see the package SCALE NOTE). userHash is deliberately never
+// loadRows projects the events collection into EventRows by indexed
+// filter: env equality, optional flag equality, and ts >= cutoff (the
+// live side of the purge split; zero-ts rows sort below any cutoff and
+// drop out in the DB, as in Aggregate). userHash is deliberately never
 // read — aggregate counts only.
-func loadRows(app core.App) ([]EventRow, error) {
-	recs, err := app.FindAllRecords("events")
+func loadRows(app core.App, envID, flagID string, filterByFlag bool, cutoff time.Time) ([]EventRow, error) {
+	filter := "env = {:env} && ts >= {:cutoff}"
+	params := dbx.Params{
+		"env":    envID,
+		"cutoff": dateParam(cutoff),
+	}
+	if filterByFlag {
+		filter = "env = {:env} && flag = {:flag} && ts >= {:cutoff}"
+		params["flag"] = flagID
+	}
+	recs, err := app.FindRecordsByFilter("events", filter, "", 0, 0, params)
 	if err != nil {
 		return nil, err
 	}
