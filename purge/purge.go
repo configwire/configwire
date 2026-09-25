@@ -31,8 +31,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 const (
@@ -120,19 +122,62 @@ func BuildRollups(rows []EventRow) []Rollup {
 	return out
 }
 
+// dateParam formats t in the PocketBase DateTime layout so indexed range
+// comparisons are lexicographic == chronological (fixed-width UTC).
+func dateParam(t time.Time) string {
+	return t.UTC().Format(types.DefaultDateLayout)
+}
+
+// eventRangeExpr is the INDEXED prefilter for the raw-events delete set
+// (uses the events ts range; no full-table scan). It is a conservative
+// SUPERSET of ShouldDelete(ts, cutoff): storage truncates to milliseconds,
+// so a same-millisecond edge row compares equal to the truncated cutoff in
+// SQL while still being strictly older in full precision. Callers apply
+// ShouldDelete on the read-back rows for the exact verdict — the retention
+// predicate itself is unchanged (FROZEN), so the deletion set is
+// bit-for-bit identical to the old full scan.
+func eventRangeExpr(cutoff time.Time) dbx.Expression {
+	floor := cutoff.UTC().Truncate(time.Millisecond)
+	return dbx.NewExp("ts != '' AND ts <= {:cutoff}", dbx.Params{"cutoff": dateParam(floor)})
+}
+
+// rollupRangeExpr is the INDEXED prefilter for stale event_daily rows
+// (uses the event_daily(day) index). Same superset contract as
+// eventRangeExpr: callers re-apply the exact non-zero strict-before
+// verdict, so the deletion set matches the old full scan exactly.
+func rollupRangeExpr(rollupCutoff time.Time) dbx.Expression {
+	floor := rollupCutoff.UTC().Truncate(time.Millisecond)
+	return dbx.NewExp("day != '' AND day <= {:rc}", dbx.Params{"rc": dateParam(floor)})
+}
+
+// emptyOrNull matches the old in-Go GetString equality exactly: PocketBase
+// reads both ” and NULL back as "", so an empty bucket value must match
+// either storage (unset env/flag relations may persist as ” or NULL).
+func emptyOrNull(col, val string) dbx.Expression {
+	if val == "" {
+		return dbx.Or(dbx.HashExp{col: ""}, dbx.NewExp(col+" IS NULL"))
+	}
+	return dbx.HashExp{col: val}
+}
+
 // PurgeOlderThan rolls raw events with ts strictly before cutoff into
 // event_daily upserts, deletes those raw rows, then deletes event_daily
 // rows with day strictly before cutoff minus 60d (i.e. older than 90d
 // when cutoff is now-30d). It returns the total rows deleted
 // (raw events + stale rollups).
+//
+// Candidates come from indexed range queries (a point-in-time snapshot,
+// same as the old scan): rows ingested after the select are untouched by
+// this run and converge on the next run. Rollup-before-delete order and
+// the crash semantic are unchanged (see the package note).
 func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
-	recs, err := app.FindAllRecords("events")
+	cands, err := app.FindAllRecords("events", eventRangeExpr(cutoff))
 	if err != nil {
 		return 0, err
 	}
 	var doomed []*core.Record
 	var doomedRows []EventRow
-	for _, r := range recs {
+	for _, r := range cands {
 		ts := r.GetDateTime("ts").Time()
 		if !ShouldDelete(ts, cutoff) {
 			continue
@@ -163,7 +208,7 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 
 	// Stale aggregates: event_daily rows older than 90d die too.
 	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
-	daily, err := app.FindAllRecords("event_daily")
+	daily, err := app.FindAllRecords("event_daily", rollupRangeExpr(rollupCutoff))
 	if err != nil {
 		return deleted, err
 	}
@@ -181,20 +226,22 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 }
 
 // CountOlderThan reports how many rows PurgeOlderThan would delete with
-// the same cutoff, with zero writes (dry-run path).
+// the same cutoff, with zero writes (dry-run path). It reads the same
+// indexed candidate sets and applies the same exact predicates, so
+// dry-count == live-deleted structurally.
 func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 	n := 0
-	recs, err := app.FindAllRecords("events")
+	cands, err := app.FindAllRecords("events", eventRangeExpr(cutoff))
 	if err != nil {
 		return 0, err
 	}
-	for _, r := range recs {
+	for _, r := range cands {
 		if ShouldDelete(r.GetDateTime("ts").Time(), cutoff) {
 			n++
 		}
 	}
 	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
-	daily, err := app.FindAllRecords("event_daily")
+	daily, err := app.FindAllRecords("event_daily", rollupRangeExpr(rollupCutoff))
 	if err != nil {
 		return n, err
 	}
@@ -208,10 +255,13 @@ func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 }
 
 // upsertRollups adds each bucket's counts onto the matching event_daily
-// row (matched in-Go on day+env+flag+variant; O(n) scan is v1-appropriate
-// like stats.loadRows) or creates the row when absent. Re-running with
-// the same buckets converges to one row per key — the upsert key is
-// idempotent even though counters add (see CRASH SEMANTIC).
+// row — found per bucket with an indexed find on (day,env,flag,variant)
+// (day as a [midnight,midnight+24h) range, which is exactly the old
+// Format("2006-01-02") equality for any stored time-of-day; env/flag match
+// ”-or-NULL exactly like the old GetString comparison) — or creates the
+// row when absent. Re-running with the same buckets converges to one row
+// per key — the upsert key is idempotent even though counters add (see
+// CRASH SEMANTIC).
 func upsertRollups(app core.App, buckets []Rollup) error {
 	if len(buckets) == 0 {
 		return nil
@@ -220,27 +270,24 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 	if err != nil {
 		return err
 	}
-	existing, err := app.FindAllRecords("event_daily")
-	if err != nil {
-		return err
-	}
-	dayOf := func(r *core.Record) string {
-		if t := r.GetDateTime("day").Time(); !t.IsZero() {
-			return t.UTC().Format("2006-01-02")
-		}
-		return ""
-	}
 	for _, b := range buckets {
-		wantDay := b.Day.UTC().Format("2006-01-02")
+		dayStart := DayBucket(b.Day)
+		dayEnd := dayStart.AddDate(0, 0, 1)
+		recs, err := app.FindAllRecords("event_daily",
+			dbx.NewExp("day >= {:d0} AND day < {:d1}", dbx.Params{
+				"d0": dateParam(dayStart),
+				"d1": dateParam(dayEnd),
+			}),
+			emptyOrNull("env", b.EnvID),
+			emptyOrNull("flag", b.FlagID),
+			dbx.HashExp{"variant": b.Variant},
+		)
+		if err != nil {
+			return err
+		}
 		var match *core.Record
-		for _, r := range existing {
-			if dayOf(r) == wantDay &&
-				r.GetString("env") == b.EnvID &&
-				r.GetString("flag") == b.FlagID &&
-				r.GetString("variant") == b.Variant {
-				match = r
-				break
-			}
+		if len(recs) > 0 {
+			match = recs[0]
 		}
 		if match == nil {
 			match = core.NewRecord(col)
@@ -257,7 +304,6 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 			if err := app.Save(match); err != nil {
 				return err
 			}
-			existing = append(existing, match)
 			continue
 		}
 		match.Set("fetches", match.GetInt("fetches")+b.Fetches)
