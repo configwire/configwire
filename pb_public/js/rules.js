@@ -101,7 +101,7 @@
     return CW.apiMut("DELETE", "/api/collections/rules/records/" + encodeURIComponent(id)).then(function (out) {
       var ok = out.status === 200 || out.status === 201 || out.status === 204;
       CW.toast(ok ? "rule deleted" : "rule delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished();
+      if (ok && CW.markUnpublished) CW.markUnpublished("rule", id, "rule deleted");
       loadRules().catch(function () {});
       return out;
     });

@@ -24,7 +24,10 @@
  *   (.ok/.err)/.json-expand/.json-field-label/.invalid/.valid),
  *   dialog#json-editor-dialog/#flag-rules-dialog (.dialog-actions/.dialog-spacer),
  *   .card(.card-head)/.grid/.btn(.primary/.secondary/.ghost/.danger)/
- *   .badge(.ok/.revoked)/.table-wrap/.inline-form/.form-actions/.muted/.dot */
+ *   .badge(.ok/.revoked/.unpublished)/.table-wrap/.inline-form/.form-actions/.muted/.dot
+ *   dirty tracking: tr.is-unpublished, .rule-item.is-unpublished, .exp-card.is-unpublished,
+ *   .folder.is-unpublished, section.card.is-dirty/.has-unpublished, #unpublished-list,
+ *   #publish-hint.is-dirty, #sidebar-nav a .badge.unpublished */
 :root {
   color-scheme: dark;
   --bg: #141922;
@@ -2176,4 +2179,70 @@ dialog#json-editor-dialog .muted {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Unpublished highlights (dirty tracking) */
+.badge.unpublished {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+tr.is-unpublished,
+#flag-rules-list li.rule-item.is-unpublished,
+#experiment-list li.exp-card.is-unpublished,
+#flag-folders .folder.is-unpublished {
+  background: rgba(251, 191, 36, 0.06);
+  border-color: rgba(251, 191, 36, 0.45);
+  box-shadow: inset 3px 0 0 var(--warn);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+section.card.is-dirty {
+  border-color: rgba(251, 191, 36, 0.55);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35), 0 0 20px rgba(251, 191, 36, 0.18);
+  transition: border-color 140ms ease, box-shadow 160ms ease;
+}
+
+section.card.has-unpublished {
+  border-top: 2px solid rgba(251, 191, 36, 0.45);
+}
+
+#unpublished-list {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+}
+
+#unpublished-list[hidden] {
+  display: none;
+}
+
+#unpublished-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+#unpublished-list li::before {
+  content: "";
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--warn);
+}
+
+#sidebar-nav a .badge.unpublished {
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 10px;
+}
+
+#publish-hint.is-dirty {
+  color: var(--warn);
+  font-weight: 600;
 }

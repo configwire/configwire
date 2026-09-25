@@ -42,15 +42,22 @@
     });
   }
 
+  function isUnpub(kind, id) {
+    try { return !!(CW.isUnpublished && CW.isUnpublished(kind, id)); }
+    catch (e) { return false; }
+  }
+
   function folderRowHTML(f) {
     var count = ruleCountFor(f.id);
     var rulesLabel = count == null ? "rules" : "rules (" + count + ")";
+    var unpub = isUnpub("flag", f.id);
     var moveOpts = '<option value="">(no group)</option>' +
       sortedGroupIds().map(function (id) {
         return '<option value="' + CW.esc(id) + '"' + (f.group === id ? " selected" : "") + ">" +
           CW.esc(CW.state.groups[id]) + "</option>";
       }).join("");
-    return "<tr><td>" + CW.esc(f.key) + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
+    return '<tr' + (unpub ? ' class="is-unpublished"' : "") + "><td>" + CW.esc(f.key) +
+      (unpub ? ' <span class="badge unpublished">Unpublished</span>' : "") + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
       "<td><code>" + CW.esc(JSON.stringify(f.defaultValue)) + "</code></td>" +
       '<td><select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group">' +
       moveOpts + "</select></td>" +
@@ -63,6 +70,12 @@
   function folderHTML(gid, name) {
     var key = gid || "__none";
     var flags = flagsInGroup(gid);
+    var groupDirty = isUnpub("group", gid);
+    if (!groupDirty) {
+      for (var gi = 0; gi < flags.length; gi++) {
+        if (flags[gi] && isUnpub("flag", flags[gi].id)) { groupDirty = true; break; }
+      }
+    }
     var collapsed = !!CW.state.collapsedGroups[key];
     var rows = flags.map(folderRowHTML).join("");
     var body = collapsed ? "" :
@@ -74,7 +87,7 @@
         '<button type="button" data-edit-group="' + CW.esc(gid) + '">edit</button> ' +
         '<button type="button" data-delete-group="' + CW.esc(gid) + '">delete</button>'
       : '<button type="button" data-add-flag-group="">+ flag</button>';
-    return '<section class="folder">' +
+    return '<section class="folder' + (groupDirty ? " is-unpublished" : "") + '">' +
       '<div class="folder-head"><button type="button" class="folder-toggle" data-toggle-group="' + CW.esc(key) +
       '" aria-expanded="' + String(!collapsed) + '" aria-label="Toggle ' + CW.esc(name) + '">' +
       (collapsed ? "&#9656;" : "&#9662;") + "</button>" +
@@ -110,7 +123,7 @@
     return CW.apiMut("PATCH", "/api/collections/flags/records/" + encodeURIComponent(id), { group: gid || null }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
       CW.toast(ok ? "flag moved" : "flag move failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished();
+      if (ok && CW.markUnpublished) CW.markUnpublished("flag", id, flagKeyById(id) || id);
       loadFlags().catch(function () {});
       return out;
     });
@@ -191,7 +204,7 @@
       if (ok) {
         CW.toast("flag saved: " + (out.data.key || out.data.id), true);
         CW.$("flag-result").textContent = "";
-        if (CW.markUnpublished) CW.markUnpublished();
+        if (CW.markUnpublished) CW.markUnpublished("flag", (out.data && (out.data.id || out.data.key)) || id || body.key, (out.data && out.data.key) || body.key);
         if (CW.markFormClean) CW.markFormClean("flag-form");
         closeFlagDialog();
       } else {
@@ -204,10 +217,11 @@
   }
 
   function deleteFlag(id) {
+    var delKey = flagKeyById(id) || id;
     return CW.apiMut("DELETE", "/api/collections/flags/records/" + encodeURIComponent(id)).then(function (out) {
       var ok = out.status === 200 || out.status === 201 || out.status === 204;
       CW.toast(ok ? "flag deleted" : "flag delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished();
+      if (ok && CW.markUnpublished) CW.markUnpublished("flag", id, delKey + " deleted");
       loadFlags().catch(function () {});
       return out;
     });
@@ -226,7 +240,7 @@
         : "group create failed (" + out.status + "): " + CW.serverMessage(out.data));
       if (ok) {
         CW.toast("group created: " + (out.data.name || out.data.id), true);
-        if (CW.markUnpublished) CW.markUnpublished();
+        if (CW.markUnpublished) CW.markUnpublished("group", out.data.id || name, out.data.name || name);
         loadFlags().catch(function () {});
       }
       return out;
@@ -247,7 +261,7 @@
         : "group rename failed (" + out.status + "): " + CW.serverMessage(out.data));
       if (ok) {
         CW.toast("group renamed: " + (out.data.name || out.data.id), true);
-        if (CW.markUnpublished) CW.markUnpublished();
+        if (CW.markUnpublished) CW.markUnpublished("group", out.data.id || id, out.data.name || name);
         loadFlags().catch(function () {});
       }
       return out;
@@ -258,7 +272,7 @@
     var name = CW.state.groups[id] || id;
     var inGroup = CW.state.flags.filter(function (f) { return f && f.group === id; });
     var msg = inGroup.length
-      ? 'Delete group "' + name + '" with ' + inGroup.length + (inGroup.length === 1 ? " flag" : " flags") + "? Those flags will become ungrouped."
+      ? 'Delete group "' + name + '" with ' + inGroup.length + (inGroup.length === 1 ? " flag" : " flags") + "? Its flags will be ungrouped."
       : 'Delete group "' + name + '"?';
     if (!window.confirm(msg)) return Promise.resolve();
     // Ungroup flags first so the delete never leaves dangling group refs
@@ -279,7 +293,7 @@
         ? "group deleted: " + name
         : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data));
       CW.toast(ok ? "group deleted" : "group delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-      if (ok && CW.markUnpublished) CW.markUnpublished();
+      if (ok && CW.markUnpublished) CW.markUnpublished("group", id, name);
       loadFlags().catch(function () {});
       return out;
     });
@@ -323,8 +337,10 @@
     var items = flagRulesForActive();
     if (!items.length) { list.innerHTML = "<li>No rules for this flag.</li>"; return; }
     list.innerHTML = items.map(function (r) {
-      return '<li class="rule-item">' +
+      var runpub = isUnpub("rule", r.id);
+      return '<li class="rule-item' + (runpub ? " is-unpublished" : "") + '">' +
         '<span class="rule-prio">P' + CW.esc(r.priority) + "</span>" +
+        (runpub ? ' <span class="badge unpublished">Unpublished</span>' : "") +
         dialogConditionHTML(r.condition) +
         '<span class="rule-arrow" aria-hidden="true">→</span>' +
         dialogValueHTML(r.value) +
@@ -412,7 +428,11 @@
         var fid = CW.$("flag-rules-flag-id");
         if (fid) fid.value = flagId;
         CW.state.activeFlagRulesId = flagId;
-        if (CW.markUnpublished) CW.markUnpublished();
+        if (CW.markUnpublished) {
+          var _rk = flagKeyById(flagId) || flagId;
+          CW.markUnpublished("rule", (out.data && out.data.id) || id || "new", "rule for " + _rk);
+          CW.markUnpublished("flag", flagId, _rk);
+        }
         if (CW.markFormClean) CW.markFormClean("flag-rules-form");
       }
       return CW.loadRules().then(function () {

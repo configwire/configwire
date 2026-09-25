@@ -11,7 +11,7 @@
     var en = e && e.selectedOptions && e.selectedOptions[0] ? e.selectedOptions[0].textContent : "";
     CW.$("scope-hint").textContent = CW.state.projectId
       ? ("project: " + pn + "  ·  env: " + (en || "(none)"))
-      : "Pick a project to scope flags, releases, publish and stats.";
+      : "Pick a project to begin.";
   }
 
   function renderProjectEnv() {

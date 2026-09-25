@@ -4,6 +4,22 @@
 
   var CW = window.CW;
 
+  function isExpUnpub(id) {
+    try { return !!(CW.isUnpublished && CW.isUnpublished("experiment", id)); }
+    catch (e) { return false; }
+  }
+
+  function expNameById(id) {
+    if (Array.isArray(CW.state.experiments)) {
+      for (var i = 0; i < CW.state.experiments.length; i++) {
+        if (CW.state.experiments[i] && CW.state.experiments[i].id === id) {
+          return CW.state.experiments[i].name || id;
+        }
+      }
+    }
+    return id;
+  }
+
   function renderExperiments() {
     var list = CW.$("experiment-list");
     if (!CW.state.experiments.length) { list.innerHTML = "<li>No experiments.</li>"; return; }
@@ -21,9 +37,10 @@
       var opts = statuses.map(function (s) {
         return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
       }).join("");
-      return '<li class="exp-card">' +
+      return '<li class="exp-card' + (isExpUnpub(x.id) ? " is-unpublished" : "") + '">' +
         '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
-        '<span class="' + badgeClass + '">' + CW.esc(st) + "</span></div>" +
+        '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" +
+        (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "") + "</div>" +
         '<div class="exp-meta">flag <code>' + CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
         "</code> · seed <code>" + CW.esc(x.seed) + "</code></div>" +
         '<div class="exp-variants">' + summary + "</div>" +
@@ -80,6 +97,7 @@
         CW.toast((id ? "experiment saved: " : "experiment created: ") + (out.data.name || out.data.id), true);
         var resEl = CW.$("experiment-result");
         if (resEl) resEl.textContent = "";
+        if (CW.markUnpublished) CW.markUnpublished("experiment", (out.data && (out.data.id || out.data.name)) || id || body.name, (out.data && out.data.name) || body.name);
         if (CW.markFormClean) CW.markFormClean("experiment-form");
         closeExperimentDialog();
       } else {
@@ -95,9 +113,11 @@
   }
 
   function deleteExperiment(id) {
+    var delName = expNameById(id);
     return CW.apiMut("DELETE", "/api/collections/experiments/records/" + encodeURIComponent(id)).then(function (out) {
       var ok = out.status === 200 || out.status === 201 || out.status === 204;
       CW.toast(ok ? "experiment deleted" : "experiment delete failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      if (ok && CW.markUnpublished) CW.markUnpublished("experiment", id, delName);
       loadExperiments().catch(function () {});
       return out;
     });
@@ -107,6 +127,7 @@
     return CW.apiMut("PATCH", "/api/collections/experiments/records/" + encodeURIComponent(id), { status: status }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
       CW.toast(ok ? "experiment status: " + status : "experiment status failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      if (ok && CW.markUnpublished) CW.markUnpublished("experiment", (out.data && out.data.id) || id, (out.data && out.data.name) || expNameById(id));
       loadExperiments().catch(function () {});
       return out;
     });

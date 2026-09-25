@@ -99,7 +99,7 @@
       else CW.toast(msg);
     }
     var text = CW.state.lastStatsText || "";
-    if (!text) { say("nothing to copy yet"); return; }
+    if (!text) { say("nothing to copy"); return; }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function () { say("copied"); },
         function () { say("copy failed — select and copy manually"); });

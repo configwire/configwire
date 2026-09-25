@@ -28,6 +28,8 @@
     lastStatsError: "", // inline error line rendered under the numbers
     homeStats: {}, // projectId -> {flags, envs, keys} for the home grid
     view: "home", // "home" | "detail" (hash-routed)
+    unpublishedChanges: false, // publish-global dirty (any unsaved/unpublished edit)
+    unpublished: { flag: {}, rule: {}, experiment: {}, group: {} }, // kind -> id -> {label, at}
   };
 
   function $(id) { return document.getElementById(id); }
