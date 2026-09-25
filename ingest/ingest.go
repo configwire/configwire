@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -237,10 +238,30 @@ func ResolveUserHash(userHash, userID string) string {
 	return ""
 }
 
+// findSDKKey returns the sdk_keys row matching (prefix, hash), or (nil,
+// nil) when no row matches. The prefix prefilter runs in the DB (served by
+// the column index when present) instead of a full-table scan; the hash is
+// then compared in constant time in Go, so a prefix collision never leaks
+// timing about the stored hash. Revocation is NOT checked here — the
+// caller maps revoked rows to 401, preserving auth order.
+func findSDKKey(app core.App, prefix, want string) (*core.Record, error) {
+	recs, err := app.FindAllRecords("sdk_keys", dbx.HashExp{"prefix": prefix})
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range recs {
+		if subtle.ConstantTimeCompare([]byte(r.GetString("hash")), []byte(want)) != 1 {
+			continue
+		}
+		return r, nil
+	}
+	return nil, nil
+}
+
 // RequireSDKKey authenticates X-ConfigWire-Key against sdk_keys (exported for
-// T10 reuse). Lookup prefilters on prefix (first 8 chars) then compares
-// hex(sha256(fullKey)) in constant time. Unknown/missing/revoked → 401 error
-// suitable for returning directly from a handler.
+// T10 reuse). Lookup prefilters on prefix (first 8 chars, DB-side) then
+// compares hex(sha256(fullKey)) in constant time. Unknown/missing/revoked
+// → 401 error suitable for returning directly from a handler.
 func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	denied := func() (*core.Record, error) {
 		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
@@ -249,26 +270,14 @@ func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	if full == "" {
 		return denied()
 	}
-	prefix, want := KeyPrefix(full), KeyHash(full)
-	recs, err := re.App.FindAllRecords("sdk_keys")
+	key, err := findSDKKey(re.App, KeyPrefix(full), KeyHash(full))
 	if err != nil {
 		return denied()
 	}
-	// O(n) scan over sdk_keys is fine at ConfigWire scale (tens of keys);
-	// revisit with an indexed prefix query if key counts ever grow.
-	for _, r := range recs {
-		if r.GetString("prefix") != prefix {
-			continue
-		}
-		if subtle.ConstantTimeCompare([]byte(r.GetString("hash")), []byte(want)) != 1 {
-			continue
-		}
-		if r.GetBool("revoked") {
-			return denied()
-		}
-		return r, nil
+	if key == nil || key.GetBool("revoked") {
+		return denied()
 	}
-	return denied()
+	return key, nil
 }
 
 // RateLimitFor returns the per-minute quota for a key record, defaulting to
