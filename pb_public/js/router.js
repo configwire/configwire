@@ -39,7 +39,7 @@
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
-    var mods = ["flags", "experiments", "keys", "releases", "publish", "stats", "account"];
+    var mods = ["flags", "experiments", "releases", "publish", "keys", "stats", "account"];
     var showNav = (CW.state.view === "detail" && CW.state.projectId) || CW.state.view === "account";
     if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
