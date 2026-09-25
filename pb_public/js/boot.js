@@ -337,6 +337,7 @@
               var f = CW.state.flags[i];
               CW.$("flag-id").value = f.id;
               CW.$("flag-key").value = f.key || "";
+              CW.$("flag-description").value = f.description || "";
               CW.$("flag-type").value = f.type || "bool";
               CW.$("flag-group").value = f.group || "";
               CW.$("flag-default").value = JSON.stringify(f.defaultValue === undefined ? null : f.defaultValue);

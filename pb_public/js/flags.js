@@ -50,7 +50,7 @@
         return '<option value="' + CW.esc(id) + '"' + (f.group === id ? " selected" : "") + ">" +
           CW.esc(CW.state.groups[id]) + "</option>";
       }).join("");
-    return "<tr><td>" + CW.esc(f.key) + "</td><td>" + CW.esc(f.type) + "</td>" +
+    return "<tr><td>" + CW.esc(f.key) + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
       "<td><code>" + CW.esc(JSON.stringify(f.defaultValue)) + "</code></td>" +
       '<td><select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group">' +
       moveOpts + "</select></td>" +
@@ -67,8 +67,8 @@
     var rows = flags.map(folderRowHTML).join("");
     var body = collapsed ? "" :
       '<div class="table-wrap"><table aria-label="Flags in ' + CW.esc(name) + '">' +
-      "<thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Move to</th><th></th></tr></thead>" +
-      "<tbody>" + (rows || '<tr><td colspan="5">No flags in this group.</td></tr>') + "</tbody></table></div>";
+      "<thead><tr><th>Key</th><th>Description</th><th>Type</th><th>Default</th><th>Move to</th><th></th></tr></thead>" +
+      "<tbody>" + (rows || '<tr><td colspan="6">No flags in this group.</td></tr>') + "</tbody></table></div>";
     var groupBtns = gid
       ? '<button type="button" data-add-flag-group="' + CW.esc(gid) + '">+ flag</button> ' +
         '<button type="button" data-edit-group="' + CW.esc(gid) + '">edit</button> ' +
@@ -175,6 +175,7 @@
     if (!parsed.ok) { CW.$("flag-result").textContent = parsed.error; return Promise.resolve(); }
     var body = {
       key: CW.$("flag-key").value.trim(),
+      description: CW.$("flag-description") ? CW.$("flag-description").value.trim() : "",
       type: CW.$("flag-type").value,
       defaultValue: parsed.value,
       project: CW.state.projectId,
@@ -521,6 +522,7 @@
       renderFlagGroupSelect();
       CW.$("flag-id").value = flag.id || "";
       CW.$("flag-key").value = flag.key || "";
+      CW.$("flag-description").value = flag.description || "";
       CW.$("flag-type").value = flag.type || "bool";
       CW.$("flag-group").value = flag.group || "";
       try {

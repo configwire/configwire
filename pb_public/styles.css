@@ -913,27 +913,32 @@ td code {
 
 #flag-folders th:nth-child(1),
 #flag-folders td:nth-child(1) {
-  width: 22%;
+  width: 16%;
 }
 
 #flag-folders th:nth-child(2),
 #flag-folders td:nth-child(2) {
-  width: 12%;
+  width: 30%;
 }
 
 #flag-folders th:nth-child(3),
 #flag-folders td:nth-child(3) {
-  width: 20%;
+  width: 8%;
 }
 
 #flag-folders th:nth-child(4),
 #flag-folders td:nth-child(4) {
-  width: 20%;
+  width: 12%;
 }
 
 #flag-folders th:nth-child(5),
 #flag-folders td:nth-child(5) {
-  width: 26%;
+  width: 12%;
+}
+
+#flag-folders th:nth-child(6),
+#flag-folders td:nth-child(6) {
+  width: 22%;
 }
 
 #flag-folders td {
@@ -1606,11 +1611,20 @@ section[aria-labelledby="stats"] form.inline-form button {
 }
 
 #flag-form label input,
-#flag-form label select {
+#flag-form label select,
+#flag-form label textarea {
   width: 100%;
 }
 
-#flag-form .flag-default-label {
+/* Keep the textarea at full label width: override intrinsic cols sizing. */
+#flag-form label textarea {
+  display: block;
+  max-width: 100%;
+  resize: vertical;
+}
+
+#flag-form .flag-default-label,
+#flag-form .flag-description-label {
   grid-column: 1 / -1;
 }
 
