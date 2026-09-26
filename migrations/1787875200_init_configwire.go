@@ -86,6 +86,21 @@ func relation(name, target string, required bool) *core.RelationField {
 	}
 }
 
+// relationCascade is relation() with CascadeDelete=true: deleting the
+// target parent deletes child rows. Used for the full hierarchy
+// (project->envs/groups/flags, env->releases/keys/events/daily,
+// flag->rules/experiments/events/daily). flags.group stays non-cascade
+// (ungroup on group delete, never delete flags).
+func relationCascade(name, target string, required bool) *core.RelationField {
+	return &core.RelationField{
+		Name:          name,
+		CollectionId:  target,
+		MaxSelect:     1,
+		Required:      required,
+		CascadeDelete: true,
+	}
+}
+
 func createConfigwireCollections(app core.App) error {
 	projects := newConfigwireCollection("projects", colProjects)
 	projects.Fields.Add(
@@ -95,7 +110,7 @@ func createConfigwireCollections(app core.App) error {
 
 	environments := newConfigwireCollection("environments", colEnvironments)
 	environments.Fields.Add(
-		relation("project", colProjects, true),
+		relationCascade("project", colProjects, true),
 		&core.TextField{Name: "slug", Required: true, Presentable: true},
 		&core.TextField{Name: "sdkKeyPrefix"},
 	)
@@ -103,7 +118,7 @@ func createConfigwireCollections(app core.App) error {
 	groups := newConfigwireCollection("groups", colGroups)
 	groups.Fields.Add(
 		&core.TextField{Name: "name", Required: true, Presentable: true},
-		relation("project", colProjects, true),
+		relationCascade("project", colProjects, true),
 	)
 
 	flags := newConfigwireCollection("flags", colFlags)
@@ -124,7 +139,7 @@ func createConfigwireCollections(app core.App) error {
 		relation("group", colGroups, false),
 		&core.TextField{Name: "description", Max: 1024},
 		&core.JSONField{Name: "defaultValue"},
-		relation("project", colProjects, true),
+		relationCascade("project", colProjects, true),
 	)
 
 	rules := newConfigwireCollection("rules", colRules)
@@ -148,22 +163,22 @@ func createConfigwireCollections(app core.App) error {
 		&core.JSONField{Name: "snapshot", Required: true},
 		&core.TextField{Name: "author"},
 		&core.TextField{Name: "note"},
-		relation("env", colEnvironments, true),
+		relationCascade("env", colEnvironments, true),
 	)
 
 	sdkKeys := newConfigwireCollection("sdk_keys", colSDKKeys)
 	sdkKeys.Fields.Add(
 		&core.TextField{Name: "prefix", Required: true},
 		&core.TextField{Name: "hash", Required: true},
-		relation("env", colEnvironments, true),
+		relationCascade("env", colEnvironments, true),
 		&core.BoolField{Name: "revoked"},
 		&core.NumberField{Name: "rateLimit", OnlyInt: true},
 	)
 
 	events := newConfigwireCollection("events", colEvents)
 	events.Fields.Add(
-		relation("env", colEnvironments, false),
-		relation("flag", colFlags, false),
+		relationCascade("env", colEnvironments, false),
+		relationCascade("flag", colFlags, false),
 		&core.TextField{Name: "variant"},
 		&core.SelectField{
 			Name:      "kind",
@@ -177,7 +192,7 @@ func createConfigwireCollections(app core.App) error {
 	experiments := newConfigwireCollection("experiments", colExperiments)
 	experiments.Fields.Add(
 		&core.TextField{Name: "name", Required: true, Presentable: true},
-		relation("flag", colFlags, true),
+		relationCascade("flag", colFlags, true),
 		&core.TextField{Name: "seed", Required: true},
 		&core.JSONField{
 			Name:     "variants",
