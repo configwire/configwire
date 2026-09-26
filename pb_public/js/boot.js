@@ -262,22 +262,43 @@
     });
     CW.on("experiment-list", "click", function (ev) {
       var t = ev.target;
-      var del = t && t.getAttribute && t.getAttribute("data-delete-experiment");
+      var menuBtn = null;
+      if (t && t.closest) menuBtn = t.closest("[data-exp-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-exp-menu")) menuBtn = t;
+      if (menuBtn) {
+        var wrap = menuBtn.parentNode;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".exp-menu") : null;
+        if (menu) {
+          var willOpen = menu.hidden;
+          closeExpMenus();
+          menu.hidden = !willOpen;
+          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+        }
+        return;
+      }
+      var inMenu = t && t.closest ? t.closest(".exp-menu") : null;
+      var delBtn = t && t.closest ? t.closest("[data-delete-experiment]") : null;
+      var editBtn = t && t.closest ? t.closest("[data-edit-experiment]") : null;
+      if (!delBtn && t && t.getAttribute && t.getAttribute("data-delete-experiment")) delBtn = t;
+      if (!editBtn && t && t.getAttribute && t.getAttribute("data-edit-experiment")) editBtn = t;
+      var del = delBtn && delBtn.getAttribute ? delBtn.getAttribute("data-delete-experiment") : null;
       if (del) {
+        if (inMenu) closeExpMenus();
         cwConfirm("Delete this experiment?", {title: "Delete experiment", okText: "Delete", danger: true}).then(function (ok) {
           if (!ok) return;
           CW.deleteExperiment(del).catch(function (e) { CW.toast(e.message); });
         });
         return;
       }
-      var eid = t && t.getAttribute && t.getAttribute("data-edit-experiment");
-      if (eid) {
+      var editEl = editBtn && editBtn.getAttribute ? editBtn.getAttribute("data-edit-experiment") : null;
+      if (editEl) {
+        if (inMenu) closeExpMenus();
         var found = null;
         var expList = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
         for (var i = 0; i < expList.length; i++) {
-          if (expList[i].id === eid) { found = expList[i]; break; }
+          if (expList[i].id === editEl) { found = expList[i]; break; }
         }
-        if (!found) { CW.toast("experiment not found: " + eid); return; }
+        if (!found) { CW.toast("experiment not found: " + editEl); return; }
         if (CW.openExperimentDialog) CW.openExperimentDialog(found);
         else {
           CW.$("exp-id").value = found.id;
@@ -290,7 +311,7 @@
           } catch (e) { CW.$("exp-variants").value = "[]"; }
           if (CW.syncVariantsBuilderFromInput) CW.syncVariantsBuilderFromInput();
           if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
-          CW.$("experiment-result").textContent = "editing " + (found.name || eid);
+          CW.$("experiment-result").textContent = "editing " + (found.name || editEl);
         }
       }
     });
@@ -300,6 +321,7 @@
       if (!sid) return;
       var status = t.value;
       CW.setExperimentStatus(sid, status).catch(function (e) { CW.toast(e.message); });
+      closeExpMenus();
     });
     CW.on("key-form", "submit", CW.createKey);
     CW.on("key-copy", "click", function () {
@@ -324,6 +346,19 @@
       for (var i = 0; i < wraps.length; i++) {
         var menu = wraps[i].querySelector ? wraps[i].querySelector(".flag-menu") : null;
         var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-flag-menu]") : null;
+        if (!menu || menu === except) continue;
+        menu.hidden = true;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    }
+
+    function closeExpMenus(except) {
+      var box = document.getElementById("experiment-list");
+      if (!box || !box.querySelectorAll) return;
+      var wraps = box.querySelectorAll(".exp-menu-wrap");
+      for (var i = 0; i < wraps.length; i++) {
+        var menu = wraps[i].querySelector ? wraps[i].querySelector(".exp-menu") : null;
+        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-exp-menu]") : null;
         if (!menu || menu === except) continue;
         menu.hidden = true;
         if (btn) btn.setAttribute("aria-expanded", "false");
@@ -436,11 +471,11 @@
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
-      var inside = t && t.closest ? t.closest(".flag-menu-wrap") : null;
-      if (!inside) closeFlagMenus();
+      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".exp-menu-wrap")) : null;
+      if (!inside) { closeFlagMenus(); closeExpMenus(); }
     });
     document.addEventListener("keydown", function (ev) {
-      if (ev && ev.key === "Escape") closeFlagMenus();
+      if (ev && ev.key === "Escape") { closeFlagMenus(); closeExpMenus(); }
     });
 
     CW.on("flag-rules-list", "click", function (ev) {

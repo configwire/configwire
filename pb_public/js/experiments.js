@@ -53,13 +53,18 @@
       return '<li class="exp-card' + (isExpDeleted(x.id, x) ? " is-deleted" : (isExpUnpub(x.id) ? " is-unpublished" : "")) + '">' +
         '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
         '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" +
-        (isExpDeleted(x.id, x) ? ' <span class="badge deleted">Deleted</span>' : (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "")) + "</div>" +
+        (isExpDeleted(x.id, x) ? ' <span class="badge deleted">Deleted</span>' : (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "")) +
+        '<span class="exp-menu-wrap">' +
+        '<button type="button" class="exp-menu-btn" data-exp-menu="' + CW.esc(x.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(x.name) + '">&#8943;</button>' +
+        '<div class="exp-menu" role="menu" hidden>' +
+        '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
+        '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
+        '<span class="exp-menu-label">Status</span>' +
+        '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select>" +
+        "</div></span></div>" +
         '<div class="exp-meta">flag <code>' + CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
         "</code> · seed <code>" + CW.esc(x.seed) + "</code></div>" +
-        '<div class="exp-variants">' + summary + "</div>" +
-        '<div class="exp-actions"><label>status <select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select></label> " +
-        '<span class="exp-actions-buttons"><button type="button" class="btn ghost" data-edit-experiment="' + CW.esc(x.id) + '">Edit</button> ' +
-        '<button type="button" class="btn ghost" data-delete-experiment="' + CW.esc(x.id) + '">Delete</button></span></div></li>';
+        '<div class="exp-variants">' + summary + "</div></li>";
     }).join("");
   }
 
