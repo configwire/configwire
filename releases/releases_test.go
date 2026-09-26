@@ -275,33 +275,18 @@ func TestResolveExperimentFlagExcludesForeignProject(t *testing.T) {
 func TestResolveExperimentFlagUntargetedAndDangling(t *testing.T) {
 	projects := map[string]string{"flagA": "projA"}
 	keys := map[string]string{"flagA": "launch"}
-	if key, include := ResolveExperimentFlag("projA", "", projects, keys); !include || key != "" {
-		t.Fatalf("expected (\"\", true) for untargeted, got (%q, %v)", key, include)
+	if _, include := ResolveExperimentFlag("projA", "", projects, keys); include {
+		t.Fatal("expected untargeted experiment (flag \"\") to be excluded")
 	}
-	if key, include := ResolveExperimentFlag("projA", "ghost", projects, keys); !include || key != "" {
-		t.Fatalf("expected (\"\", true) for dangling relation, got (%q, %v)", key, include)
-	}
-}
-
-func TestRollbackPickGlobalUnique(t *testing.T) {
-	rows := []ReleaseRow{{EnvID: "envA", Version: 1}, {EnvID: "envA", Version: 2}}
-	idx, err := RollbackPick(rows, 1, "")
-	if err != nil || idx != 0 {
-		t.Fatalf("expected index 0, got %d, err %v", idx, err)
+	if _, include := ResolveExperimentFlag("projA", "ghost", projects, keys); include {
+		t.Fatal("expected dangling experiment relation to be excluded")
 	}
 }
 
-func TestRollbackPickGlobalAmbiguousOnlyWhenShared(t *testing.T) {
-	rows := []ReleaseRow{{EnvID: "envA", Version: 1}, {EnvID: "envB", Version: 1}}
-	if _, err := RollbackPick(rows, 1, ""); !errors.Is(err, ErrReleaseAmbiguous) {
-		t.Fatalf("expected ErrReleaseAmbiguous, got %v", err)
-	}
-}
-
-func TestRollbackPickGlobalUnknown(t *testing.T) {
+func TestRollbackPickRequiresEnvID(t *testing.T) {
 	rows := []ReleaseRow{{EnvID: "envA", Version: 1}}
-	if _, err := RollbackPick(rows, 9, ""); !errors.Is(err, ErrReleaseNotFound) {
-		t.Fatalf("expected ErrReleaseNotFound, got %v", err)
+	if _, err := RollbackPick(rows, 1, ""); !errors.Is(err, ErrReleaseNotFound) {
+		t.Fatalf("expected ErrReleaseNotFound for empty envID, got %v", err)
 	}
 }
 

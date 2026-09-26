@@ -74,7 +74,6 @@ func internalSave(app core.App, rec *core.Record) error {
 // (they are not superuser tokens), non-superuser auth -> 403.
 func Register(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/env/{env}/publish", postPublish).Bind(apis.RequireSuperuserAuth())
-	se.Router.POST("/api/v1/admin/releases/{version}/rollback", postRollback).Bind(apis.RequireSuperuserAuth())
 	se.Router.POST("/api/v1/admin/env/{env}/releases/{version}/rollback", postRollbackEnv).Bind(apis.RequireSuperuserAuth())
 }
 
@@ -242,19 +241,21 @@ var (
 )
 
 // RollbackPick selects the rollback source row purely (no I/O).
-// envID == "" is the legacy global route: candidates share the version
-// across envs (none -> not found, 2+ -> ambiguous). Otherwise (the
-// env-scoped route) candidates share version AND env, so duplicate
-// versions across envs resolve deterministically (none -> not found;
-// 2+ in one env -> ambiguous, defensive: the write mutex never issues
-// those). O(n) over releases — same discipline as MaxVersionForEnv.
+// envID is required (env-scoped route): candidates share version AND
+// env, so duplicate versions across envs resolve deterministically
+// (none -> not found; 2+ in one env -> ambiguous, defensive: the write
+// mutex never issues those). O(n) over releases — same discipline as
+// MaxVersionForEnv.
 func RollbackPick(rows []ReleaseRow, version int, envID string) (int, error) {
+	if envID == "" {
+		return -1, ErrReleaseNotFound
+	}
 	best := -1
 	for i, r := range rows {
 		if r.Version != version {
 			continue
 		}
-		if envID != "" && r.EnvID != envID {
+		if r.EnvID != envID {
 			continue
 		}
 		if best != -1 {
@@ -338,47 +339,6 @@ func parseRollbackVersion(re *core.RequestEvent) (int, error) {
 		return 0, re.BadRequestError("invalid version: must be an integer.", nil)
 	}
 	return n, nil
-}
-
-// postRollback handles POST /api/v1/admin/releases/:version/rollback
-// (legacy global route, behavior preserved). The source row is the one
-// row with that version across envs.
-// Order: 401 (middleware) -> 400 (bad version / ambiguous only when
-// the version truly exists in 2+ envs) -> 404 (unknown version) -> 200.
-// No UPDATE path exists: releases rows stay immutable (the main.go
-// hooks deny updates).
-func postRollback(re *core.RequestEvent) error {
-	security.SetHeaders(re)
-	var req rollbackRequest
-	if err := decodeRollbackNote(re, &req); err != nil {
-		return err
-	}
-	n, err := parseRollbackVersion(re)
-	if err != nil {
-		return err
-	}
-
-	writeMu.Lock()
-	defer writeMu.Unlock()
-
-	recs, err := re.App.FindAllRecords("releases")
-	if err != nil {
-		return err
-	}
-	idx, rerr := RollbackPick(releaseRows(recs), n, "")
-	if rerr != nil {
-		if errors.Is(rerr, ErrReleaseAmbiguous) {
-			return re.BadRequestError("ambiguous version: multiple envs share this version.", nil)
-		}
-		return re.NotFoundError("Unknown release version.", nil)
-	}
-
-	version, etag, err := rollbackToNewRow(re.App, recs[idx], req.Note, callerAuthor(re), n)
-	if err != nil {
-		return err
-	}
-
-	return re.JSON(http.StatusOK, map[string]any{"version": version, "etag": etag})
 }
 
 // postRollbackEnv handles POST
