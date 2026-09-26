@@ -22,7 +22,15 @@ func init() {
 		if err := addVersionField(app, "events"); err != nil {
 			return err
 		}
-		return addVersionField(app, "event_daily")
+		if err := addVersionField(app, "event_daily"); err != nil {
+			return err
+		}
+		collection, err := app.FindCollectionByNameOrId("event_daily")
+		if err != nil {
+			return nil
+		}
+		collection.AddIndex("idx_event_daily_upsert_key", true, "day, env, flag, variant, version", "")
+		return app.Save(collection)
 	}, func(app core.App) error {
 		return nil
 	})

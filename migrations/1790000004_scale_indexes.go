@@ -35,7 +35,7 @@ type scaleIndex struct {
 var scaleIndexes = []scaleIndex{
 	{"events", "idx_events_env_ts", false, "env, ts"},
 	{"events", "idx_events_env_flag_ts", false, "env, flag, ts"},
-	{"event_daily", "idx_event_daily_upsert_key", true, "day, env, flag, variant"},
+	{"event_daily", "idx_event_daily_upsert_key", true, "day, env, flag, variant, version"},
 	{"event_daily", "idx_event_daily_day", false, "day"},
 	{"environments", "idx_environments_slug_project", false, "slug, project"},
 	{"flags", "idx_flags_key_project", false, "key, project"},
