@@ -48,6 +48,9 @@
   function toast(msg, ok) {
     var el = $("toast");
     if (!el) return;
+    // After auto-logout there is no session: never leave a stale API error
+    // (e.g. "request failed (403)") visible on the login screen.
+    if (!state.token && ok !== true) { el.textContent = ""; el.hidden = true; return; }
     el.textContent = msg;
     el.hidden = !msg;
     // Success (ok===true) renders green via #toast.ok; everything else
@@ -111,7 +114,7 @@
 
   function api(path) {
     return fetch(path, { headers: authHeaders() }).then(function (res) {
-      if (res.status === 401) { logoutRef(); throw new Error("unauthorized (401) — please log in"); }
+      if (res.status === 401 || res.status === 403) { logoutRef(); throw new Error("session expired — please log in"); }
       if (!res.ok) {
         return res.json().then(function (data) {
           throw new Error("request failed (" + res.status + "): " + serverMessage(data));
@@ -206,7 +209,7 @@
       }, function () {
         return { status: res.status, data: { message: "HTTP " + res.status } };
       }).then(function (out) {
-        if (out.status === 401) logoutRef();
+        if (out.status === 401 || out.status === 403) logoutRef();
         return out;
       });
     });
