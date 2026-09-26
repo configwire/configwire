@@ -1,11 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"log"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/pocketbase/dbx"
@@ -45,6 +48,67 @@ func appVersion() string {
 		v = "v" + v
 	}
 	return v
+}
+
+// staticDigest fingerprints the Admin UI shell (index.html, styles.css,
+// js/*.js) so the browser can detect a redeploy without a VERSION bump.
+// Computed once at serve start; "" when pb_public is unreachable
+// (e.g. wrong cwd — the client then skips the asset comparison).
+func staticDigest() string {
+	files := []string{"./pb_public/index.html", "./pb_public/styles.css"}
+	if entries, err := os.ReadDir("./pb_public/js"); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
+				files = append(files, "./pb_public/js/"+e.Name())
+			}
+		}
+	}
+	sort.Strings(files)
+	h := sha256.New()
+	ok := false
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		ok = true
+		h.Write([]byte(f))
+		h.Write([]byte{0})
+		h.Write(b)
+		h.Write([]byte{0})
+	}
+	if !ok {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// setStaticCacheHeaders assigns cache policy to Admin UI static responses
+// so no manual ?v= query bump is ever needed:
+//   - "/" and *.html (incl. extensionless SPA-fallback paths that serve
+//     index.html) -> no-store: the entry point is always fresh.
+//   - *.js/*.css -> no-cache: revalidated via Last-Modified (304 when
+//     unchanged), so updates apply on next load with no version query.
+//   - images/fonts -> 1h public cache (non-critical bytes).
+// API routes are untouched.
+func setStaticCacheHeaders(re *core.RequestEvent) {
+	p := re.Request.URL.Path
+	if strings.HasPrefix(p, "/api/") {
+		return
+	}
+	h := re.Response.Header()
+	switch {
+	case p == "/" || strings.HasSuffix(p, ".html"):
+		h.Set("Cache-Control", "no-store")
+	case strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".css"):
+		h.Set("Cache-Control", "no-cache")
+	case strings.HasSuffix(p, ".png") || strings.HasSuffix(p, ".jpg") ||
+		strings.HasSuffix(p, ".jpeg") || strings.HasSuffix(p, ".svg") ||
+		strings.HasSuffix(p, ".ico") || strings.HasSuffix(p, ".woff2"):
+		h.Set("Cache-Control", "public, max-age=3600")
+	default:
+		h.Set("Cache-Control", "no-store")
+	}
 }
 
 var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
@@ -189,8 +253,14 @@ func main() {
 		// Global security headers for every response.
 		se.Router.BindFunc(func(re *core.RequestEvent) error {
 			security.SetHeaders(re)
+			setStaticCacheHeaders(re)
 			return re.Next()
 		})
+
+		// Content fingerprint of the Admin UI shell, captured once per
+		// process start. The client compares it on a timer to show a
+		// "reload to update" banner — no VERSION bump required.
+		assets := staticDigest()
 
 		se.Router.GET("/hello", func(re *core.RequestEvent) error {
 			return re.String(200, "Hello world!")
@@ -199,7 +269,7 @@ func main() {
 		// Public app metadata for the pre-auth login topbar.
 		// No auth by design (same as /hello).
 		se.Router.GET("/api/v1/meta", func(re *core.RequestEvent) error {
-			return re.JSON(200, map[string]string{"version": appVersion()})
+			return re.JSON(200, map[string]string{"version": appVersion(), "assets": assets})
 		})
 
 		ingest.Register(se)

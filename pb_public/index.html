@@ -7,7 +7,7 @@
   <meta name="description" content="ConfigWire admin console — flags, rules, experiments, keys, releases.">
   <meta name="theme-color" content="#1a1f2a">
   <title>ConfigWire Admin</title>
-  <link rel="stylesheet" href="/styles.css?v=21">
+  <link rel="stylesheet" href="/styles.css">
   <link rel="icon" type="image/png" href="/img/favicon.png">
   <!-- Pinned vendor copy (htmx 2.0.7). If this file is missing, replace with the
      CDN fallback below (documented fallback, not silent):
@@ -86,6 +86,7 @@
     </header>
     <main id="main">
       <div id="toast" role="alert" aria-live="assertive" hidden></div>
+      <div id="cw-reload-bar" role="status" hidden><span>A new version of the admin console is available.</span><button id="cw-reload-btn" type="button" class="btn primary">Reload to update</button></div>
 
       <section id="login-section" class="card auth" aria-label="Login">
         <div class="login-banner-wrap" aria-hidden="true">
@@ -508,21 +509,22 @@
       </section>
     </main>
   </div>
-  <script src="/js/core.js?v=11"></script>
-  <script src="/js/dialog.js?v=1"></script>
-  <script src="/js/auth.js?v=8"></script>
-  <script src="/js/router.js?v=11"></script>
-  <script src="/js/account.js?v=2"></script>
-  <script src="/js/scope.js?v=8"></script>
-  <script src="/js/drafts.js?v=1"></script>
-  <script src="/js/flags.js?v=19"></script>
-  <script src="/js/rules.js?v=11"></script>
-  <script src="/js/experiments.js?v=12"></script>
-  <script src="/js/keys.js?v=8"></script>
-  <script src="/js/releases.js?v=10"></script>
-  <script src="/js/stats.js?v=8"></script>
-  <script src="/js/json-editor.js?v=9"></script>
-  <script src="/js/boot.js?v=26"></script>
+  <script src="/js/core.js"></script>
+  <script src="/js/dialog.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/router.js"></script>
+  <script src="/js/account.js"></script>
+  <script src="/js/scope.js"></script>
+  <script src="/js/drafts.js"></script>
+  <script src="/js/flags.js"></script>
+  <script src="/js/rules.js"></script>
+  <script src="/js/experiments.js"></script>
+  <script src="/js/keys.js"></script>
+  <script src="/js/releases.js"></script>
+  <script src="/js/stats.js"></script>
+  <script src="/js/json-editor.js"></script>
+  <script src="/js/boot.js"></script>
+  <script src="/js/update.js"></script>
 </body>
 
 </html>
