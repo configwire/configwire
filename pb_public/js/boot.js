@@ -365,6 +365,19 @@
       }
     }
 
+    function closeReleaseMenus(except) {
+      var box = document.getElementById("release-list");
+      if (!box || !box.querySelectorAll) return;
+      var wraps = box.querySelectorAll(".release-menu-wrap");
+      for (var i = 0; i < wraps.length; i++) {
+        var menu = wraps[i].querySelector ? wraps[i].querySelector(".release-menu") : null;
+        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-release-menu]") : null;
+        if (!menu || menu === except) continue;
+        menu.hidden = true;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    }
+
     function flagRowClick(ev) {
       var t = ev.target;
       var fr = t && t.getAttribute && t.getAttribute("data-flag-rules");
@@ -471,11 +484,11 @@
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
-      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".exp-menu-wrap")) : null;
-      if (!inside) { closeFlagMenus(); closeExpMenus(); }
+      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap")) : null;
+      if (!inside) { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); }
     });
     document.addEventListener("keydown", function (ev) {
-      if (ev && ev.key === "Escape") { closeFlagMenus(); closeExpMenus(); }
+      if (ev && ev.key === "Escape") { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); }
     });
 
     CW.on("flag-rules-list", "click", function (ev) {
@@ -533,6 +546,21 @@
 
     CW.on("release-list", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
+      var menuBtn = null;
+      if (t && t.closest) menuBtn = t.closest("[data-release-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-release-menu")) menuBtn = t;
+      if (menuBtn) {
+        var wrap = menuBtn.parentNode;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".release-menu") : null;
+        if (menu) {
+          var willOpen = menu.hidden;
+          closeReleaseMenus();
+          menu.hidden = !willOpen;
+          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+        }
+        return;
+      }
+      var inMenu = t && t.closest ? t.closest(".release-menu") : null;
       var viewId = null;
       if (t) {
         if (t.closest) {
@@ -543,11 +571,15 @@
         }
       }
       if (viewId) {
+        if (inMenu) closeReleaseMenus();
         if (CW.openReleaseDialog) CW.openReleaseDialog(viewId);
         return;
       }
-      var v = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-rollback-version");
+      var rb = t && t.closest ? t.closest("[data-rollback-version]") : null;
+      if (!rb && t && t.getAttribute && t.getAttribute("data-rollback-version")) rb = t;
+      var v = rb && rb.getAttribute ? rb.getAttribute("data-rollback-version") : null;
       if (!v) return;
+      if (inMenu) closeReleaseMenus();
       if (CW.state.applying) return;
       var hasDrafts = false;
       try {

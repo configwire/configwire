@@ -12,16 +12,20 @@
     var expanded = !!CW.state.releasesExpanded;
     var visible = expanded ? CW.state.releases : CW.state.releases.slice(0, 3);
     var html = visible.map(function (r, idx) {
-      var base = "<li>v" + CW.esc(r.version) + " etag " + CW.esc(r.etag) +
+      var label = "v" + CW.esc(r.version) + " etag " + CW.esc(r.etag) +
         (r.note ? " — " + CW.esc(r.note) : "");
+      var menu = '<span class="release-menu-wrap">' +
+        '<button type="button" class="release-menu-btn" data-release-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for release v' + CW.esc(r.version) + '">&#8943;</button>' +
+        '<div class="release-menu" role="menu" hidden>' +
+        '<button type="button" role="menuitem" data-view-release="' + CW.esc(r.id) + '">view</button>' +
+        (idx === 0 ? "" :
+          '<button type="button" role="menuitem" data-rollback-version="' + CW.esc(r.version) + '">rollback to v' +
+          CW.esc(r.version) + "</button>") +
+        "</div></span>";
       if (idx === 0) {
-        return base + ' <span class="badge ok">current</span>' +
-          ' <button type="button" data-view-release="' + CW.esc(r.id) + '">view</button></li>';
+        return "<li>" + label + ' <span class="badge ok">current</span>' + menu + "</li>";
       }
-      return base +
-        ' <button type="button" data-view-release="' + CW.esc(r.id) + '">view</button>' +
-        ' <button type="button" data-rollback-version="' + CW.esc(r.version) + '">rollback to v' +
-        CW.esc(r.version) + "</button></li>";
+      return "<li>" + label + menu + "</li>";
     }).join("");
     if (CW.state.releases.length > 3) {
       var hidden = CW.state.releases.length - 3;
