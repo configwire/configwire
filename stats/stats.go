@@ -83,6 +83,7 @@ type EventRow struct {
 	FlagID  string // "" when the ingest-time flag key matched nothing (relation unset)
 	Kind    string // "fetch" | "exposure"
 	Variant string // verbatim stored variant ("" possible, counted as-is)
+	Version int
 	Ts      time.Time
 }
 
@@ -91,6 +92,7 @@ type Stats struct {
 	Fetches    int
 	Exposures  int
 	PerVariant map[string]int // over exposures only, verbatim variant names
+	PerVersion map[int]int    // over fetches only, by fetched release version
 }
 
 // RatesFor derives per-variant exposure shares purely (display-math
@@ -175,9 +177,10 @@ func EventCutoffFor(cutoff, horizon time.Time) time.Time {
 // flags keep their history) -> day-grain cutoff (day >= cutoffDay kept,
 // exactly-at-cutoff kept, zero-day skipped) -> horizon (day < horizon;
 // the boundary day stays raw-side) -> counts (fetches+exposures added,
-// perVariant over exposures only, verbatim variant incl "").
+// perVariant over exposures only, verbatim variant incl "", perVersion
+// over fetches only by stored version).
 func AggregateRollups(buckets []purge.Rollup, envID, flagID string, filterByFlag bool, cutoffDay, horizon time.Time) Stats {
-	out := Stats{PerVariant: map[string]int{}}
+	out := Stats{PerVariant: map[string]int{}, PerVersion: map[int]int{}}
 	for _, b := range buckets {
 		if b.EnvID != envID {
 			continue
@@ -196,6 +199,9 @@ func AggregateRollups(buckets []purge.Rollup, envID, flagID string, filterByFlag
 		if b.Exposures > 0 {
 			out.PerVariant[b.Variant] += b.Exposures
 		}
+		if b.Fetches > 0 {
+			out.PerVersion[b.Version] += b.Fetches
+		}
 	}
 	return out
 }
@@ -212,12 +218,18 @@ func ApproximateFor(rollupsTotal int) bool {
 // inputs are already windowed to disjoint sides of the horizon, so this
 // is a plain sum; perVariant keys merge verbatim ("" included).
 func MergeStats(events, rollups Stats) Stats {
-	out := Stats{Fetches: events.Fetches + rollups.Fetches, Exposures: events.Exposures + rollups.Exposures, PerVariant: map[string]int{}}
+	out := Stats{Fetches: events.Fetches + rollups.Fetches, Exposures: events.Exposures + rollups.Exposures, PerVariant: map[string]int{}, PerVersion: map[int]int{}}
 	for v, n := range events.PerVariant {
 		out.PerVariant[v] += n
 	}
 	for v, n := range rollups.PerVariant {
 		out.PerVariant[v] += n
+	}
+	for v, n := range events.PerVersion {
+		out.PerVersion[v] += n
+	}
+	for v, n := range rollups.PerVersion {
+		out.PerVersion[v] += n
 	}
 	return out
 }
@@ -229,7 +241,7 @@ func MergeStats(events, rollups Stats) Stats {
 // recency) are excluded. Fetches and exposures are both flag-filtered;
 // PerVariant counts exposures only.
 func Aggregate(rows []EventRow, envID, flagID string, filterByFlag bool, cutoff time.Time) Stats {
-	out := Stats{PerVariant: map[string]int{}}
+	out := Stats{PerVariant: map[string]int{}, PerVersion: map[int]int{}}
 	for _, r := range rows {
 		if r.EnvID != envID {
 			continue
@@ -243,6 +255,7 @@ func Aggregate(rows []EventRow, envID, flagID string, filterByFlag bool, cutoff 
 		switch r.Kind {
 		case "fetch":
 			out.Fetches++
+			out.PerVersion[r.Version]++
 		case "exposure":
 			out.Exposures++
 			out.PerVariant[r.Variant]++
@@ -326,6 +339,7 @@ func getStats(re *core.RequestEvent) error {
 		"fetches":     st.Fetches,
 		"exposures":   st.Exposures,
 		"perVariant":  st.PerVariant,
+		"perVersion":  st.PerVersion,
 		"version":     version,
 		"echo":        echo,
 		"flagFound":   flagFound,
@@ -374,6 +388,7 @@ func loadRollups(app core.App, envID, flagID string, filterByFlag bool, cutoffDa
 			EnvID:     r.GetString("env"),
 			FlagID:    r.GetString("flag"),
 			Variant:   r.GetString("variant"),
+			Version:   r.GetInt("version"),
 			Fetches:   r.GetInt("fetches"),
 			Exposures: r.GetInt("exposures"),
 		})
@@ -407,6 +422,7 @@ func loadRows(app core.App, envID, flagID string, filterByFlag bool, cutoff time
 			FlagID:  r.GetString("flag"),
 			Kind:    r.GetString("kind"),
 			Variant: r.GetString("variant"),
+			Version: r.GetInt("version"),
 			Ts:      r.GetDateTime("ts").Time(),
 		})
 	}

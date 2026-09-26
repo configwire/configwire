@@ -54,15 +54,17 @@ type EventRow struct {
 	FlagID  string // "" when the ingest-time flag key matched nothing (relation unset)
 	Kind    string // "fetch" | "exposure"
 	Variant string // verbatim stored variant ("" possible, counted as-is)
+	Version int
 	Ts      time.Time
 }
 
-// Rollup is one per-(day, env, flag, variant) aggregate bucket stored in event_daily.
+// Rollup is one per-(day, env, flag, variant, version) aggregate bucket stored in event_daily.
 type Rollup struct {
 	Day       time.Time // UTC midnight of the event day
 	EnvID     string
 	FlagID    string
 	Variant   string
+	Version   int
 	Fetches   int
 	Exposures int
 }
@@ -83,7 +85,7 @@ func ShouldDelete(ts, cutoff time.Time) bool {
 	return ts.Before(cutoff)
 }
 
-// BuildRollups folds rows into per-(day,env,flag,variant) buckets purely
+// BuildRollups folds rows into per-(day,env,flag,variant,version) buckets purely
 // (no I/O). Unknown kinds are ignored (same fail-closed posture as
 // stats.Aggregate); zero-ts rows are skipped (unkeepable per ShouldDelete
 // they are never in the delete set either).
@@ -93,6 +95,7 @@ func BuildRollups(rows []EventRow) []Rollup {
 		env     string
 		flag    string
 		variant string
+		version int
 	}
 	byKey := map[key]*Rollup{}
 	var order []key
@@ -101,10 +104,10 @@ func BuildRollups(rows []EventRow) []Rollup {
 			continue
 		}
 		day := DayBucket(r.Ts)
-		k := key{day: day.Format("2006-01-02"), env: r.EnvID, flag: r.FlagID, variant: r.Variant}
+		k := key{day: day.Format("2006-01-02"), env: r.EnvID, flag: r.FlagID, variant: r.Variant, version: r.Version}
 		b, ok := byKey[k]
 		if !ok {
-			b = &Rollup{Day: day, EnvID: r.EnvID, FlagID: r.FlagID, Variant: r.Variant}
+			b = &Rollup{Day: day, EnvID: r.EnvID, FlagID: r.FlagID, Variant: r.Variant, Version: r.Version}
 			byKey[k] = b
 			order = append(order, k)
 		}
@@ -188,6 +191,7 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 			FlagID:  r.GetString("flag"),
 			Kind:    r.GetString("kind"),
 			Variant: r.GetString("variant"),
+			Version: r.GetInt("version"),
 			Ts:      ts,
 		})
 	}
@@ -255,7 +259,7 @@ func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 }
 
 // upsertRollups adds each bucket's counts onto the matching event_daily
-// row — found per bucket with an indexed find on (day,env,flag,variant)
+// row — found per bucket with an indexed find on (day,env,flag,variant,version)
 // (day as a [midnight,midnight+24h) range, which is exactly the old
 // Format("2006-01-02") equality for any stored time-of-day; env/flag match
 // ”-or-NULL exactly like the old GetString comparison) — or creates the
@@ -286,9 +290,13 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 			return err
 		}
 		var match *core.Record
-		if len(recs) > 0 {
-			match = recs[0]
+		for _, r := range recs {
+			if r.GetInt("version") == b.Version {
+				match = r
+				break
+			}
 		}
+		hasVersionField := col.Fields.GetByName("version") != nil
 		if match == nil {
 			match = core.NewRecord(col)
 			match.Set("day", b.Day)
@@ -299,6 +307,9 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 				match.Set("flag", b.FlagID)
 			}
 			match.Set("variant", b.Variant)
+			if hasVersionField {
+				match.Set("version", b.Version)
+			}
 			match.Set("fetches", b.Fetches)
 			match.Set("exposures", b.Exposures)
 			if err := app.Save(match); err != nil {

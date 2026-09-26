@@ -78,11 +78,17 @@
         '<p class="stats-guide">No stats yet — publish a release, fetch via SDK, then post an exposure event.</p>' +
         '<p class="muted stats-echo-quiet">' + echoHtml + "</p>";
     } else {
+      var perVersion = data.perVersion || {};
+      var vKeys = Object.keys(perVersion).sort(function (a, b) { return Number(a) - Number(b); });
+      var vSplit = vKeys.map(function (v) {
+        return "v" + CW.esc(v) + ": " + CW.esc(perVersion[v]);
+      }).join(", ") || "(no version data)";
       html =
         '<p class="stats-count">version: <strong>' + CW.esc(data.version) + "</strong></p>" +
         '<p class="stats-count">fetches: <strong>' + CW.esc(data.fetches) + "</strong></p>" +
         '<p class="stats-count">exposures: <strong>' + CW.esc(data.exposures) + "</strong></p>" +
         '<p class="stats-split">split: ' + split + "</p>" +
+        '<p class="stats-split">versions: ' + vSplit + "</p>" +
         chart +
         '<p class="muted">' + echoHtml + "</p>";
     }

@@ -16,6 +16,7 @@ type StoredEvent struct {
 	Kind     string
 	Variant  string
 	UserHash string
+	Version  int
 	Ts       time.Time
 }
 
@@ -138,6 +139,7 @@ func (b *Batcher) flush(items []StoredEvent) {
 		rec.Set("kind", it.Kind)
 		rec.Set("variant", it.Variant)
 		rec.Set("userHash", it.UserHash)
+		rec.Set("version", it.Version)
 		rec.Set("ts", it.Ts)
 		if err := b.app.Save(rec); err != nil {
 			failed++

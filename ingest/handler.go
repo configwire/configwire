@@ -157,6 +157,7 @@ func postEvents(re *core.RequestEvent) error {
 			EnvID: env.Id, FlagID: flagID,
 			Kind: ev.Kind, Variant: ev.Variant,
 			UserHash: ResolveUserHash(ev.UserHash, ""), Ts: ts,
+			Version: ev.Version,
 		})
 	}
 	for _, s := range stored {

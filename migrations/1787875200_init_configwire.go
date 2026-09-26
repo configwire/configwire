@@ -186,6 +186,7 @@ func createConfigwireCollections(app core.App) error {
 			MaxSelect: 1,
 		},
 		&core.TextField{Name: "userHash"},
+		&core.NumberField{Name: "version", OnlyInt: true},
 		&core.DateField{Name: "ts"},
 	)
 

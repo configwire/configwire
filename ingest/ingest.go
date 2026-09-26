@@ -73,6 +73,7 @@ type EventIn struct {
 	Flag     string
 	Variant  string
 	UserHash string
+	Version  int
 	Ts       time.Time // zero when absent (handler substitutes time.Now)
 }
 
@@ -101,6 +102,7 @@ type rawEvent struct {
 	Flag     string          `json:"flag"`
 	Variant  string          `json:"variant"`
 	UserHash string          `json:"userHash"`
+	Version  int             `json:"version"`
 	Ts       json.RawMessage `json:"ts"`
 }
 
@@ -179,11 +181,14 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	if strings.IndexByte(r.Flag, 0) >= 0 || strings.IndexByte(r.Variant, 0) >= 0 || strings.IndexByte(r.UserHash, 0) >= 0 {
 		return ev, badRequest("NUL byte in flag/variant/userHash is forbidden.")
 	}
+	if r.Version < 0 {
+		return ev, badRequest("invalid version: must be >= 0.")
+	}
 	ts, aerr := parseTs(r.Ts)
 	if aerr != nil {
 		return ev, aerr
 	}
-	ev = EventIn{Kind: r.Kind, Flag: r.Flag, Variant: r.Variant, UserHash: r.UserHash, Ts: ts}
+	ev = EventIn{Kind: r.Kind, Flag: r.Flag, Variant: r.Variant, UserHash: r.UserHash, Version: r.Version, Ts: ts}
 	return ev, nil
 }
 

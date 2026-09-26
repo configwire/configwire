@@ -62,6 +62,7 @@ func parityTestApp(t *testing.T) *tests.TestApp {
 		`{"type":"text","name":"flag"}`,
 		`{"type":"text","name":"kind"}`,
 		`{"type":"text","name":"variant"}`,
+		`{"type":"number","name":"version"}`,
 		`{"type":"date","name":"ts"}`,
 	)
 	mkCol("event_daily",
@@ -69,6 +70,7 @@ func parityTestApp(t *testing.T) *tests.TestApp {
 		`{"type":"text","name":"env"}`,
 		`{"type":"text","name":"flag"}`,
 		`{"type":"text","name":"variant"}`,
+		`{"type":"number","name":"version"}`,
 		`{"type":"number","name":"fetches"}`,
 		`{"type":"number","name":"exposures"}`,
 	)

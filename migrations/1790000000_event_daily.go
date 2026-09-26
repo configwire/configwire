@@ -46,6 +46,7 @@ func init() {
 				CascadeDelete: true,
 			},
 			&core.TextField{Name: "variant"},
+			&core.NumberField{Name: "version", OnlyInt: true},
 			&core.NumberField{Name: "fetches", OnlyInt: true},
 			&core.NumberField{Name: "exposures", OnlyInt: true},
 		)
