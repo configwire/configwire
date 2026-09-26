@@ -555,6 +555,22 @@
       try {
         applied = CW.applyDrafts ? CW.applyDrafts() : Promise.resolve(null);
       } catch (e) { applyFailed(e); return; }
+      // Apply wrote live records and consumed the drafts, so server
+      // snapshots are stale until reloaded. Flags first: loadExperiments
+      // filters by CW.state.flags.
+      function reloadPublishedCollections() {
+        function loadRest() {
+          if (CW.loadRules) {
+            try { CW.loadRules().catch(function () {}); } catch (e) { /* best-effort */ }
+          }
+          if (CW.loadExperiments) {
+            try { CW.loadExperiments().catch(function (e2) { CW.toast(e2.message); }); } catch (e3) { /* best-effort */ }
+          }
+        }
+        if (CW.loadFlags) {
+          try { CW.loadFlags().then(loadRest, loadRest); } catch (e) { loadRest(); }
+        } else { loadRest(); }
+      }
       applied.then(function () {
         var base = null;
         try { base = CW.latestVersion(); }
@@ -574,9 +590,11 @@
           CW.loadReleases().then(function () {
             if (out.status !== 200 && CW.markUnpublished) CW.markUnpublished();
           }).catch(function () {});
+          reloadPublishedCollections();
         }, function (e) {
           finishApply();
           CW.$("publish-result").textContent = "publish failed: " + ((e && e.message) || e);
+          reloadPublishedCollections();
         });
       }, applyFailed);
     });
