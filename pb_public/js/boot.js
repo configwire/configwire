@@ -687,7 +687,7 @@
 })();
 
 /* ConfigWire topbar version — fetch same-origin /api/v1/meta, fallback keeps hardcoded text.
- * Update check — fetch GitHub Tags (no Release objects needed) in parallel, show #cw-update with latest state. Silent fail. */
+ * Update check — fetch GitHub Releases in parallel, show #cw-update with latest state. Silent fail. */
 (function () {
   "use strict";
   function isDevTag(tag) {
@@ -761,7 +761,7 @@
         .catch(function () { /* keep fallback silently */ });
     } catch (e) { /* keep fallback silently */ }
     try {
-      fetch("https://api.github.com/repos/configwire/configwire/tags?per_page=10", {
+      fetch("https://api.github.com/repos/configwire/configwire/releases?per_page=10", {
         headers: { "Accept": "application/vnd.github+json" }
       })
         .then(function (r) { return r.ok ? r.json() : null; })
@@ -769,7 +769,7 @@
           if (!d || !d.length) return;
           var best = null;
           for (var i = 0; i < d.length; i++) {
-            var name = d[i] && typeof d[i].name === "string" ? d[i].name.trim() : "";
+            var name = d[i] && typeof d[i].tag_name === "string" ? d[i].tag_name.trim() : "";
             if (!name || isDevTag(name)) continue;
             if (!best || isNewer(name, best)) best = name;
           }
