@@ -13,6 +13,7 @@
       CW.state.lastStatsText = JSON.stringify(data, null, 2);
     } catch (e) { CW.state.lastStatsText = String(data); }
     var exposures = Number(data.exposures) || 0;
+    var fetches = Number(data.fetches) || 0;
     var perVariant = data.perVariant || {};
     var keys = Object.keys(perVariant);
     var palette = ["var(--accent)", "var(--ok)", "var(--warn)", "var(--danger)", "var(--muted)"];
@@ -58,11 +59,14 @@
     var echoSince = echo.since || echo.horizon || "";
     var echoHtml = "flag " + CW.esc(echoFlag) + " · since " + CW.esc(echoSince) +
       " · cutoff " + CW.esc(echo.cutoff || "");
-    // True empty (no exposures AND flag known): deliberate onboarding state —
-    // muted tiles + one guidance line, quiet echo, secondary copy. Unknown-flag
-    // zeros (flagFound:false) keep the legacy zero wall + prominent warning so
-    // the two states never look alike; populated markup below is byte-identical.
-    var isEmpty = exposures === 0 && data.flagFound !== false;
+    // True empty (no fetches AND no exposures, flag known): deliberate
+    // onboarding state — muted tiles + one guidance line, quiet echo,
+    // secondary copy. Fetch-only windows show populated counts (fetches
+    // are per-flag since the SDK posts one fetch event per served key).
+    // Unknown-flag zeros (flagFound:false) keep the legacy zero wall +
+    // prominent warning so the two states never look alike; populated
+    // markup below is byte-identical.
+    var isEmpty = fetches === 0 && exposures === 0 && data.flagFound !== false;
     var html;
     if (isEmpty) {
       html =
