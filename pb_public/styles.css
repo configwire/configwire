@@ -1163,6 +1163,7 @@ td code {
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--muted-dim);
+  text-align: left;
 }
 
 @media (prefers-reduced-motion: reduce) {

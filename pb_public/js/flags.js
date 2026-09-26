@@ -94,10 +94,10 @@
       '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + CW.esc(rulesLabel) + "</button>" +
       '<button type="button" role="menuitem" data-stats-flag="' + CW.esc(f.key) + '">stats</button>' +
       '<button type="button" role="menuitem" data-edit-flag="' + CW.esc(f.id) + '">edit</button>' +
+      '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">delete</button>' +
       '<span class="flag-menu-label">Move to group</span>' +
       '<select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group"' + moveDisabled + ">" +
       moveOpts + "</select>" +
-      '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">delete</button>' +
       "</div></div></td></tr>";
   }
 
