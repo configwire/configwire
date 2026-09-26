@@ -165,6 +165,40 @@
     return Math.round(n * 100) / 100;
   }
 
+  // Weight inputs only support 2 decimal places (backend is integer bps).
+  // Clamp live typing by truncating extra digits so "33.336" becomes
+  // "33.33" instead of silently rounding to a different value.
+  function clampWeightInputDecimals(el) {
+    if (!el || el.value == null) return;
+    var raw = String(el.value);
+    if (!raw) return;
+    if (/[eE]/.test(raw)) {
+      var n = parseFloat(raw);
+      if (isFinite(n)) el.value = String(round2(n));
+      return;
+    }
+    var m = raw.match(/^(-?\d+)\.(\d+)(.*)$/);
+    if (m && m[2].length > 2) {
+      el.value = m[1] + "." + m[2].slice(0, 2);
+    }
+  }
+
+  // Strict string-length check: "33.330" counts as 3 digits and fails.
+  // Live typing never reaches validation with 3 digits (clamp truncates
+  // first), so this only fires for programmatic values. Exponential
+  // notation falls back to a numeric round-trip check.
+  function weightRawHasTooManyDecimals(raw) {
+    raw = String(raw == null ? "" : raw).trim();
+    if (!raw) return false;
+    if (/[eE]/.test(raw)) {
+      var n = parseFloat(raw);
+      if (!isFinite(n)) return false;
+      return Math.abs(n * 100 - Math.round(n * 100)) > 1e-9;
+    }
+    var m = raw.match(/^[+-]?\d*\.(\d+)/);
+    return !!(m && m[1].length > 2);
+  }
+
   // Percent <-> bps conversions. Backend contract stays integer bps
   // summing to 10000; the builder only displays/inputs percent doubles.
   function bpsToPercent(bps) {
@@ -285,6 +319,7 @@
     var i, weightEl, v;
     for (i = 0; i < rows.length - 1; i++) {
       weightEl = rowField(rows[i], "exp-variant-weight");
+      if (weightEl) clampWeightInputDecimals(weightEl);
       v = weightEl ? parseFloat(String(weightEl.value)) : 0;
       if (!isFinite(v)) v = 0;
       sum += v;
@@ -345,6 +380,10 @@
       p = weightEl ? parseFloat(String(weightEl.value)) : NaN;
       if (!isFinite(p) || p < 0 || p > 100) {
         return fail(weightEl, "Variant " + (i + 1) + ": weight must be a number 0-100 (%)");
+      }
+      var rawW = weightEl && weightEl.value != null ? String(weightEl.value).trim() : "";
+      if (weightRawHasTooManyDecimals(rawW)) {
+        return fail(weightEl, "Variant " + (i + 1) + ": weight must have at most 2 decimal places");
       }
       text = valuesEl ? String(valuesEl.value == null ? "" : valuesEl.value).trim() : "";
       if (text) {
