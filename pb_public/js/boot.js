@@ -732,14 +732,14 @@
       if (!upd || !latest || isDevTag(current)) return;
       try {
         if (isNewer(latest, current)) {
-          upd.textContent = "\u2022 update " + latest;
+          upd.textContent = "update " + latest;
           var label = "New version available: " + latest + " (current " + current + ") \u2014 open releases";
           upd.setAttribute("title", label);
           upd.setAttribute("aria-label", label);
           if (upd.classList) upd.classList.remove("is-current");
           upd.removeAttribute("hidden");
         } else {
-          upd.textContent = "\u2022 latest " + latest;
+          upd.textContent = "latest";
           var label2 = "Up to date: current " + current + ", latest " + latest;
           upd.setAttribute("title", label2);
           upd.setAttribute("aria-label", label2);
