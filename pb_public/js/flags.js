@@ -80,7 +80,7 @@
     var badge = deleted
       ? ' <span class="badge deleted">Deleted</span>'
       : (unpub ? ' <span class="badge unpublished">Unpublished</span>' : "");
-    var moveOpts = '<option value="">(no group)</option>' +
+    var moveOpts = '<option value="">Default</option>' +
       selectableGroupIds().map(function (id) {
         return '<option value="' + CW.esc(id) + '"' + (f.group === id ? " selected" : "") + ">" +
           CW.esc(groupNameById(id)) + "</option>";
@@ -139,7 +139,7 @@
     var ids = sortedGroupIds();
     var html = ids.map(function (id) { return folderHTML(id, groupNameById(id) || id); }).join("");
     var none = flagsInGroup("");
-    if (none.length || !ids.length) html += folderHTML("", "(no group)");
+    if (none.length || !ids.length) html += folderHTML("", "Default");
     box.innerHTML = html || '<p class="muted">No flags for this project.</p>';
   }
 
@@ -192,7 +192,7 @@
     if (!sel) return;
     var groups = CW.drafts.mergedGroups();
     var cur = sel.value;
-    sel.innerHTML = '<option value="">(no group)</option>' +
+    sel.innerHTML = '<option value="">Default</option>' +
       Object.keys(groups).filter(function (id) { return draftOpOf("group", id) !== "delete"; }).map(function (id) {
         return '<option value="' + CW.esc(id) + '">' + CW.esc(groups[id]) + "</option>";
       }).join("");
