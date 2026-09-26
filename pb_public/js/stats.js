@@ -61,8 +61,8 @@
       " · cutoff " + CW.esc(echo.cutoff || "");
     // True empty (no fetches AND no exposures, flag known): deliberate
     // onboarding state — muted tiles + one guidance line, quiet echo,
-    // secondary copy. Fetch-only windows show populated counts (fetches
-    // are per-flag since the SDK posts one fetch event per served key).
+    // secondary copy. Fetch-only windows show populated counts (fetch
+    // is env-wide, exposures are per-flag).
     // Unknown-flag zeros (flagFound:false) keep the legacy zero wall +
     // prominent warning so the two states never look alike; populated
     // markup below is byte-identical.
