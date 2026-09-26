@@ -383,17 +383,23 @@
 
     function flagRowClick(ev) {
       var t = ev.target;
-      var fr = t && t.getAttribute && t.getAttribute("data-flag-rules");
+      function act(name) {
+        var el = null;
+        if (t && t.closest) el = t.closest("[" + name + "]");
+        if (!el && t && t.getAttribute && t.getAttribute(name) != null) el = t;
+        return el && el.getAttribute ? el.getAttribute(name) : null;
+      }
+      var fr = act("data-flag-rules");
       if (fr) {
         if (CW.openFlagRulesDialog) CW.openFlagRulesDialog(fr);
         return;
       }
-      var fe = t && t.getAttribute && t.getAttribute("data-flag-experiments");
+      var fe = act("data-flag-experiments");
       if (fe) {
         if (CW.openFlagExperimentsDialog) CW.openFlagExperimentsDialog(fe);
         return;
       }
-      var del = t && t.getAttribute && t.getAttribute("data-delete-flag");
+      var del = act("data-delete-flag");
       if (del) {
         cwConfirm("Delete this flag and all its rules?", {title: "Delete flag", okText: "Delete", danger: true}).then(function (ok) {
           if (!ok) return;
@@ -403,7 +409,7 @@
         });
         return;
       }
-      var k = t && t.getAttribute && t.getAttribute("data-stats-flag");
+      var k = act("data-stats-flag");
       if (k) {
         var sflag = CW.$("stats-flag");
         if (sflag) {
@@ -424,7 +430,7 @@
         if (card && card.scrollIntoView) card.scrollIntoView();
         return;
       }
-      var fid = t && t.getAttribute && t.getAttribute("data-edit-flag");
+      var fid = act("data-edit-flag");
       if (fid) {
         var flagList = CW.drafts ? CW.drafts.mergedFlags() : CW.state.flags;
         for (var i = 0; i < flagList.length; i++) {
