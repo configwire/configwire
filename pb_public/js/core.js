@@ -45,9 +45,21 @@
     return state.token ? { Authorization: state.token } : {};
   }
 
+  var toastTimer = null;
+
+  function hideToast() {
+    var el = $("toast");
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+    if (!el) return;
+    el.textContent = "";
+    el.hidden = true;
+    el.classList.remove("ok");
+  }
+
   function toast(msg, ok) {
     var el = $("toast");
     if (!el) return;
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
     // After auto-logout there is no session: never leave a stale API error
     // (e.g. "request failed (403)") visible on the login screen.
     if (!state.token && ok !== true) { el.textContent = ""; el.hidden = true; return; }
@@ -56,7 +68,15 @@
     // Success (ok===true) renders green via #toast.ok; everything else
     // stays danger-red so errors are never mistaken for success.
     el.classList.toggle("ok", ok === true);
+    if (msg) {
+      toastTimer = setTimeout(hideToast, 3500);
+    }
   }
+
+  // Click-to-dismiss: single delegated listener, registered once at load.
+  document.addEventListener("click", function (ev) {
+    if (ev && ev.target && ev.target.closest && ev.target.closest("#toast")) hideToast();
+  });
 
   function showLoginError(msg) {
     var el = $("login-error");

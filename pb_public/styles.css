@@ -724,17 +724,26 @@ a:focus-visible {
   width: 100%;
 }
 
-/* ---- Toast notification ---- */
+/* ---- Toast notification (floating snackbar, bottom-right) ---- */
 #toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  max-width: min(380px, calc(100vw - 32px));
   padding: var(--space-2) var(--space-4);
-  margin-bottom: var(--space-4);
   border: 1px solid var(--danger);
   border-radius: var(--radius-sm);
-  background: rgba(248, 113, 113, 0.1);
+  background: var(--panel-2);
+  box-shadow: var(--shadow);
   color: var(--danger);
   font-weight: 500;
   font-size: 13px;
-  animation: toast-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  z-index: 100;
+}
+
+#toast:not([hidden]) {
+  animation: toast-snackbar-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 #toast[hidden] {
@@ -756,6 +765,24 @@ a:focus-visible {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes toast-snackbar-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #toast:not([hidden]) {
+    animation: none;
   }
 }
 
