@@ -10,9 +10,11 @@
 # Monorepo usage (run from repo root):
 #   docker build -t ghcr.io/configwire/configwire:latest ./configwire
 #   docker compose -f configwire/compose.yml up -d
+name: configwire
 services:
   configwire:
     image: ghcr.io/configwire/configwire:latest
+    container_name: configwire
     ports:
       - "8090:8090"
     volumes:
