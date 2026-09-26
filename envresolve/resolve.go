@@ -82,11 +82,14 @@ func Resolve(app core.App, slug, project string) (*core.Record, error) {
 }
 
 // ResolveForKey maps a slug through the SDK key's bound env. The key's env IS
-// the env, so slug collisions across projects cannot misroute. Keys with
-// no env set (legacy) fall back to unqualified Resolve.
+// the env, so slug collisions across projects cannot misroute. BREAKING:
+// keys must be bound to an env — an empty keyEnvID is rejected with
+// ErrScopeMismatch (401 semantics via ToRequestError) instead of falling
+// back to unqualified Resolve, so unscoped keys can never resolve or leak
+// across projects.
 func ResolveForKey(app core.App, slug, keyEnvID string) (*core.Record, error) {
 	if keyEnvID == "" {
-		return Resolve(app, slug, "")
+		return nil, ErrScopeMismatch
 	}
 	env, err := app.FindRecordById("environments", keyEnvID)
 	if err != nil {

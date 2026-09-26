@@ -11,7 +11,8 @@
 //   - ?project= qualifier selects the project; unknown qualifier -> 404.
 //   - Key env mismatch -> ErrScopeMismatch -> handler 401 (message pinned).
 //   - ResolveForKey: the key's env IS the env (point lookup, never a scan
-//     pick); legacy keys with empty env fall back to unqualified Resolve.
+//     pick); unscoped keys with empty env are rejected with ErrScopeMismatch
+//     (breaking removal of the legacy Resolve fallback).
 //   - Flag scoping: same flag key under another project never matches.
 package envresolve
 

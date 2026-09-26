@@ -106,8 +106,8 @@ func TestResolveKeepsSemantics(t *testing.T) {
 
 // TestResolveForKeyNeverMisroutes is the adversarial probe: the same slug
 // in two projects must resolve through the KEY's env (point lookup), so a
-// key for projA can never serve projB's env. Legacy keys with an empty
-// env still fall back to unqualified Resolve.
+// key for projA can never serve projB's env. Unscoped keys (empty env) are
+// rejected with ErrScopeMismatch — no legacy fallback to Resolve.
 func TestResolveForKeyNeverMisroutes(t *testing.T) {
 	app := lookupTestApp(t)
 	idA := seedEnv(t, app, "dev", "projA")
@@ -128,13 +128,12 @@ func TestResolveForKeyNeverMisroutes(t *testing.T) {
 	if _, err := ResolveForKey(app, "dev", "missing-id"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("dangling key env must be ErrNotFound, got %v", err)
 	}
-	// Legacy fallback: empty key env resolves the unambiguous slug, and
-	// still reports ambiguity for the shared one.
-	env, err = ResolveForKey(app, "solo", "")
-	if err != nil || env.GetString("slug") != "solo" {
-		t.Fatalf("legacy fallback must resolve solo, got %+v err=%v", env, err)
+	// Unscoped keys rejected: empty key env is ErrScopeMismatch for both
+	// solo and shared slugs — never falls back to Resolve.
+	if _, err := ResolveForKey(app, "solo", ""); !errors.Is(err, ErrScopeMismatch) {
+		t.Fatalf("unscoped key must be ErrScopeMismatch on solo slug, got %v", err)
 	}
-	if _, err := ResolveForKey(app, "dev", ""); !errors.As(err, &AmbiguousError{}) {
-		t.Fatalf("legacy fallback must stay ambiguous on shared slug, got %v", err)
+	if _, err := ResolveForKey(app, "dev", ""); !errors.Is(err, ErrScopeMismatch) {
+		t.Fatalf("unscoped key must be ErrScopeMismatch on shared slug, got %v", err)
 	}
 }
