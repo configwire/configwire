@@ -430,6 +430,9 @@ func ValidateSnapshot(snap Snapshot) error {
 		}
 	}
 	for _, e := range snap.Experiments {
+		if e.Flag == "" {
+			return errors.New("experiment " + e.ID + ": flag is required")
+		}
 		raw, err := json.Marshal(e.Variants)
 		if err != nil {
 			return fmt.Errorf("experiment %q: variants are not valid JSON", e.ID)

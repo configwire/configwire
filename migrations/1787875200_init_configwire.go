@@ -177,7 +177,7 @@ func createConfigwireCollections(app core.App) error {
 	experiments := newConfigwireCollection("experiments", colExperiments)
 	experiments.Fields.Add(
 		&core.TextField{Name: "name", Required: true, Presentable: true},
-		relation("flag", colFlags, false),
+		relation("flag", colFlags, true),
 		&core.TextField{Name: "seed", Required: true},
 		&core.JSONField{
 			Name:     "variants",
