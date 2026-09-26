@@ -137,66 +137,14 @@
   }
 
   var UNPUBLISHED_KINDS = ["flag", "rule", "experiment", "group"];
-  var UNPUBLISHED_LS_PREFIX = "cw_unpublished_";
-
-  function ensureUnpublishedShape() {
-    if (!CW.state.unpublished || typeof CW.state.unpublished !== "object") {
-      CW.state.unpublished = { flag: {}, rule: {}, experiment: {}, group: {} };
-    }
-    for (var i = 0; i < UNPUBLISHED_KINDS.length; i++) {
-      var k = UNPUBLISHED_KINDS[i];
-      if (!CW.state.unpublished[k] || typeof CW.state.unpublished[k] !== "object") {
-        CW.state.unpublished[k] = {};
-      }
-    }
-    return CW.state.unpublished;
-  }
-
-  function unpublishedScopeKey() {
-    var scope = "";
-    try {
-      scope = CW.state.envId || (CW.envSlug ? CW.envSlug() : "") || "";
-    } catch (e) { scope = CW.state.envId || ""; }
-    return UNPUBLISHED_LS_PREFIX + scope;
-  }
-
-  function persistUnpublished() {
-    try {
-      ensureUnpublishedShape();
-      localStorage.setItem(unpublishedScopeKey(), JSON.stringify(CW.state.unpublished));
-    } catch (e) { /* private mode / quota: memory copy still works */ }
-  }
-
-  function restoreUnpublished() {
-    ensureUnpublishedShape();
-    var raw = null;
-    try { raw = localStorage.getItem(unpublishedScopeKey()); } catch (e) { raw = null; }
-    if (!raw) return CW.state.unpublished;
-    try {
-      var parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        for (var i = 0; i < UNPUBLISHED_KINDS.length; i++) {
-          var k = UNPUBLISHED_KINDS[i];
-          if (parsed[k] && typeof parsed[k] === "object") {
-            CW.state.unpublished[k] = parsed[k];
-          } else {
-            CW.state.unpublished[k] = {};
-          }
-        }
-      }
-    } catch (e) { /* corrupt entry: keep empty shape */ }
-    return CW.state.unpublished;
-  }
 
   // Draft signal (Unit A store): CW.state.drafts = { flag:{}, rule:{},
   // experiment:{}, group:{} }, entry { op, body, baseId, tempId, label, at }.
-  // When Unit A's module (CW.drafts) is loaded, drafts ARE the unpublished
-  // signal and legacy marker buckets are ignored. Before drafts.js lands
-  // (or if it ever unloads), fall back to the legacy marker buckets so the
-  // publish chrome never goes blank. All guards are call-time (never parse
-  // time) so script order between drafts.js and releases.js does not matter.
+  // Drafts-only: CW.drafts is required, no legacy marker-bucket fallback.
+  // All guards are call-time (never parse time) so script order between
+  // drafts.js and releases.js does not matter.
   function useDraftSignal() {
-    return !!(CW.state && CW.state.drafts && typeof CW.state.drafts === "object" && CW.drafts);
+    return !!(CW.drafts);
   }
 
   // Temp-id test is pure shape: the "draft-" prefix only. Never consult draft
@@ -231,16 +179,7 @@
   }
 
   function unpublishedSummary() {
-    if (useDraftSignal()) return draftSummary();
-    ensureUnpublishedShape();
-    var out = { flag: 0, rule: 0, experiment: 0, group: 0, total: 0 };
-    for (var i = 0; i < UNPUBLISHED_KINDS.length; i++) {
-      var k = UNPUBLISHED_KINDS[i];
-      var n = Object.keys(CW.state.unpublished[k] || {}).length;
-      out[k] = n;
-      out.total += n;
-    }
-    return out;
+    return draftSummary();
   }
 
   function plural(n, one, many) {
@@ -277,32 +216,17 @@
     var list = ensureUnpublishedListEl();
     if (!list) return;
     var rows = [];
-    if (useDraftSignal()) {
-      for (var i = 0; i < UNPUBLISHED_KINDS.length; i++) {
-        var kind = UNPUBLISHED_KINDS[i];
-        var items = draftBucketEntries(kind);
-        for (var j = 0; j < items.length; j++) {
-          var entry = items[j].entry;
-          var label = entry.label || items[j].key;
-          var isNew = isDraftTempId(kind, items[j].key) || isDraftTempId(kind, entry.tempId);
-          var isDel = entry.op === "delete";
-          rows.push('<li data-unpublished-kind="' + CW.esc(kind) + '" data-unpublished-id="' +
-            CW.esc(items[j].key) + '" data-op="' + CW.esc(entry.op || "") + '">' + CW.esc(kind) + ": " + CW.esc(label) +
-            (isNew ? " (new)" : (isDel ? " (deleted)" : "")) + "</li>");
-        }
-      }
-    } else {
-      ensureUnpublishedShape();
-      for (var m = 0; m < UNPUBLISHED_KINDS.length; m++) {
-        var lkind = UNPUBLISHED_KINDS[m];
-        var bucket = CW.state.unpublished[lkind] || {};
-        var ids = Object.keys(bucket);
-        for (var n = 0; n < ids.length; n++) {
-          var bentry = bucket[ids[n]] || {};
-          var blabel = bentry.label || ids[n];
-          rows.push('<li data-unpublished-kind="' + CW.esc(lkind) + '" data-unpublished-id="' +
-            CW.esc(ids[n]) + '">' + CW.esc(lkind) + ": " + CW.esc(blabel) + "</li>");
-        }
+    for (var i = 0; i < UNPUBLISHED_KINDS.length; i++) {
+      var kind = UNPUBLISHED_KINDS[i];
+      var items = draftBucketEntries(kind);
+      for (var j = 0; j < items.length; j++) {
+        var entry = items[j].entry;
+        var label = entry.label || items[j].key;
+        var isNew = isDraftTempId(kind, items[j].key) || isDraftTempId(kind, entry.tempId);
+        var isDel = entry.op === "delete";
+        rows.push('<li data-unpublished-kind="' + CW.esc(kind) + '" data-unpublished-id="' +
+          CW.esc(items[j].key) + '" data-op="' + CW.esc(entry.op || "") + '">' + CW.esc(kind) + ": " + CW.esc(label) +
+          (isNew ? " (new)" : (isDel ? " (deleted)" : "")) + "</li>");
       }
     }
     if (!rows.length) {
@@ -377,31 +301,16 @@
   }
 
   function markUnpublished(kind, id, label) {
-    // Zero-arg path: publish-failure re-dirty relies on CW.markUnpublished().
-    if (kind === undefined || kind === null || kind === "") {
-      setPublishState(true);
-      return;
-    }
-    var valid = false;
-    for (var i = 0; i < UNPUBLISHED_KINDS.length; i++) {
-      if (UNPUBLISHED_KINDS[i] === kind) { valid = true; break; }
-    }
-    if (!valid || id === undefined || id === null || id === "") {
-      setPublishState(true);
-      return;
-    }
-    ensureUnpublishedShape();
-    var key = String(id);
-    CW.state.unpublished[kind][key] = { label: label === undefined || label === null ? key : String(label), at: Date.now() };
-    persistUnpublished();
     setPublishState(true);
   }
 
   function isUnpublished(kind, id) {
-    ensureUnpublishedShape();
     if (!kind || !isKnownKind(kind)) return false;
     if (id === undefined || id === null || id === "") return false;
-    return Object.prototype.hasOwnProperty.call(CW.state.unpublished[kind] || {}, String(id));
+    try {
+      if (CW.drafts && typeof CW.drafts.isDraft === "function") return !!CW.drafts.isDraft(kind, id);
+    } catch (e) { /* ignore */ }
+    return false;
   }
 
   function isKnownKind(kind) {
@@ -412,8 +321,6 @@
   }
 
   function clearUnpublished() {
-    CW.state.unpublished = { flag: {}, rule: {}, experiment: {}, group: {} };
-    try { localStorage.removeItem(unpublishedScopeKey()); } catch (e) { /* private mode */ }
   }
 
   function clearDraftStore() {
@@ -807,10 +714,8 @@
       // Publish form auto-fills baseVersion from the latest version so the
       // first submit never goes stale (no 409 on first try by default).
       CW.$("publish-base").value = latestVersion();
-      // Fresh load means clean, unless a persisted per-env map survives reload.
-      restoreUnpublished();
       if (unpublishedSummary().total > 0) setPublishState(true);
-      else { clearUnpublished(); setPublishState(false); }
+      else setPublishState(false);
     });
   }
 

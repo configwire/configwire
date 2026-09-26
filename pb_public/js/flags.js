@@ -51,10 +51,8 @@
   }
 
   function isUnpub(kind, id) {
-    // Drafts are the unpublished signal; legacy markers stay as fallback.
     try { if (CW.drafts && CW.drafts.isDraft(kind, id)) return true; } catch (e) { /* ignore */ }
-    try { return !!(CW.isUnpublished && CW.isUnpublished(kind, id)); }
-    catch (e) { return false; }
+    return false;
   }
 
   function draftOpOf(kind, id) {
