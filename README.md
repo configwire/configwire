@@ -280,14 +280,14 @@ The server pushes a new event whenever a release is published for the environmen
 
 All admin paths require a superuser token: `Authorization: <token>` (bare or `Bearer`-prefixed).
 
-| Method | Path                               | Description                                                |
-| ------ | ---------------------------------- | ---------------------------------------------------------- |
-| `POST` | `/api/v1/admin/env/{env}/publish`  | Publish a new immutable release                            |
-| `POST` | `/api/v1/admin/env/{env}/rollback` | Roll back to a previous release (republishes as a new row) |
-| `GET`  | `/api/v1/admin/env/{env}/stats`    | Query flag stats                                           |
-| `POST` | `/api/v1/admin/maintenance/purge`  | Trigger event purge (`?dry=1` for dry run)                 |
+| Method | Path                                                  | Description                                                |
+| ------ | ----------------------------------------------------- | ---------------------------------------------------------- |
+| `POST` | `/api/v1/admin/env/{env}/publish`                     | Publish a new immutable release                            |
+| `POST` | `/api/v1/admin/env/{env}/releases/{version}/rollback` | Roll back to a previous release (republishes as a new row) |
+| `GET`  | `/api/v1/admin/env/{env}/stats`                       | Query flag stats                                           |
+| `POST` | `/api/v1/admin/maintenance/purge`                     | Trigger event purge (`?dry=1` for dry run)                 |
 
-### Publish
+### Publish 
 
 ```bash
 curl -X POST http://127.0.0.1:8090/api/v1/admin/env/dev/publish \

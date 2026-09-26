@@ -352,7 +352,7 @@ EOF
 
 # ---- STAGE 5: rollback v1 ----------------------------------------------------
 echo "--- STAGE 5: rollback v1 -> version 3, fresh etag, values restored ---"
-CODE="$(su_post "$BASE_URL/api/v1/admin/releases/1/rollback" '{"note":"t17 rollback to v1"}' /tmp/cw-t17-rb.json)"
+CODE="$(su_post "$BASE_URL/api/v1/admin/env/e2e/releases/1/rollback" '{"note":"t17 rollback to v1"}' /tmp/cw-t17-rb.json)"
 [ "$CODE" = "200" ] && pass "rollback 200" || { fail "rollback (code $CODE)"; exit 1; }
 python3 - <<EOF && pass "rollback version==3 AND etag!=v1 etag" || fail "rollback version/etag"
 import json, sys

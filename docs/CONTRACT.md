@@ -133,9 +133,14 @@ flag type, bad rule condition shape (unknown field/op, missing value
 key, bare `custom`), bad experiment weights (must sum to exactly 10000
 bps). Ref: `configwire/releases/snapshot.go:396-436`.
 
-## 3. Rollback — `POST /api/v1/admin/releases/{version}/rollback` and `POST /api/v1/admin/env/{env}/releases/{version}/rollback`
+## 3. Rollback — `POST /api/v1/admin/env/{env}/releases/{version}/rollback`
 
-Ref: `configwire/releases/handler.go` (legacy `postRollback`, env-scoped `postRollbackEnv`).
+> BREAKING (removed in this release): the global route
+> `POST /api/v1/admin/releases/{version}/rollback` was removed; use the
+> env-scoped route below. Untargeted experiments (`flag ""`) are now
+> excluded.
+
+Ref: `configwire/releases/handler.go` (env-scoped `postRollbackEnv`).
 
 Request (note optional; empty body means no note; only malformed
 non-empty bodies are `400`):
@@ -151,10 +156,6 @@ Success `200` (source snapshot bytes copied verbatim into a new row,
 {"version": 3, "etag": "1f75363af9defec2"}
 ```
 
-- Legacy global route `POST /api/v1/admin/releases/{version}/rollback`:
-  unknown version then `404`; version shared by 2+ envs then `400`
-  (`ambiguous version`) — ambiguous only when truly shared, otherwise
-  behavior is unchanged.
 - Env-scoped route
   `POST /api/v1/admin/env/{env}/releases/{version}/rollback` (with
   optional `?project=<projectId>` for shared slugs): selects the
@@ -303,8 +304,8 @@ After auth the handler holds SSE long-lived:
   `config_update` event. Ref: `:67-88`.
 - Loop runs inline on the request goroutine (no per-conn goroutine;
   ticker/timer stopped via defer; write/flush errors end the handler).
-- `POST /api/v1/spike/publish/{clientId}` is a QA-only hook gated by a
-  hardcoded spike key, never production; no publish-triggered fan-out.
+- > BREAKING (removed in this release): `POST /api/v1/spike/publish/{clientId}`
+  was removed; no publish-triggered fan-out.
 
 ## 7. Purge — `POST /api/v1/admin/maintenance/purge`
 
