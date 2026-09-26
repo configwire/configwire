@@ -222,8 +222,6 @@ func main() {
 
 		account.Register(se)
 
-		registerSpikeRoutes(se)
-
 		// Static files only; dynamic data via
 		// fetch calls from pb_public/js/*.js. Mounted LAST on /{path...}
 		// with indexFallback so /api/* (registered above) keeps
