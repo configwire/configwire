@@ -27,7 +27,8 @@
  *   .badge(.ok/.revoked/.unpublished/.deleted)/.table-wrap/.inline-form/.form-actions/.muted/.dot
  *   dirty tracking: tr.is-unpublished/.is-deleted, .rule-item.is-unpublished/.is-deleted, .exp-card.is-unpublished/.is-deleted,
  *   .folder.is-unpublished/.is-deleted, section.card.is-dirty/.has-unpublished, #unpublished-list,
- *   #publish-hint.is-dirty, #sidebar-nav a .badge.unpublished */
+ *   #publish-hint.is-dirty, #sidebar-nav a .badge.unpublished,
+ *   topbar update check: #cw-version/#cw-update/.update-pill */
 :root {
   color-scheme: dark;
   --bg: #141922;
@@ -369,6 +370,63 @@ code {
   outline: 1px solid var(--muted);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+.update-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.1);
+  color: var(--warn);
+  border-radius: 999px;
+  padding: 2px 8px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.update-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex-shrink: 0;
+  animation: cw-update-pulse 2s infinite;
+}
+
+.update-pill:hover {
+  border-color: var(--warn);
+}
+
+.update-pill.is-current {
+  border-color: rgba(94, 234, 212, 0.35);
+  background: rgba(94, 234, 212, 0.08);
+  color: var(--mint);
+}
+
+.update-pill.is-current::before {
+  background: var(--mint);
+}
+
+.update-pill:focus-visible {
+  outline: 1px solid var(--warn);
+  outline-offset: 2px;
+}
+
+@keyframes cw-update-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-pill::before {
+    animation: none;
+  }
 }
 
 .dot {
