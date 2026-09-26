@@ -78,7 +78,6 @@
       var sel = CW.selectedEnv();
       if (sel && sel.slug) CW.state.envSlug = sel.slug;
       CW.persistScope();
-      CW.renderScopeHint();
       CW.loadReleases().catch(function () {});
       CW.loadKeys().catch(function () {});
       CW.loadStats().catch(function () {});

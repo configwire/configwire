@@ -4,16 +4,6 @@
 
   var CW = window.CW;
 
-  function renderScopeHint() {
-    var p = CW.$("project-select");
-    var e = CW.$("env-select");
-    var pn = p && p.selectedOptions && p.selectedOptions[0] ? p.selectedOptions[0].textContent : "";
-    var en = e && e.selectedOptions && e.selectedOptions[0] ? e.selectedOptions[0].textContent : "";
-    CW.$("scope-hint").textContent = CW.state.projectId
-      ? ("project: " + pn + "  ·  env: " + (en || "(none)"))
-      : "Pick a project to begin.";
-  }
-
   function renderProjectEnv() {
     var ps = CW.$("project-select");
     var cur = CW.state.projectId;
@@ -40,7 +30,6 @@
     } else CW.state.envId = null;
     var sel = CW.selectedEnv();
     if (sel && sel.slug) CW.state.envSlug = sel.slug;
-    renderScopeHint();
   }
 
   function defaultEnvId() {
@@ -110,7 +99,6 @@
           }
           return loadEnvs();
         }).then(function () {
-          renderScopeHint();
           CW.loadFlags().catch(function () {});
         }).catch(function () {});
       }
@@ -157,7 +145,6 @@
     }).catch(function (e) { CW.toast(e.message); });
   }
 
-  CW.renderScopeHint = renderScopeHint;
   CW.renderProjectEnv = renderProjectEnv;
   CW.defaultEnvId = defaultEnvId;
   CW.loadProjects = loadProjects;

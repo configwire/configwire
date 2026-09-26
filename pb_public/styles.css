@@ -14,7 +14,7 @@
  * Tokens live here in :root only (no DESIGN.md per scope).
  * JS contract: every #id / .class referenced by js/*.js is styled below —
  *   toast(.ok), login-*, admin-section, view-home/detail, project-*
- *   (.project-card, .project-card-stats), scope-bar/scope-hint, flag-*
+  *   (.project-card, .project-card-stats), scope-bar, flag-*
  *   (.flag-default-label, #flag-rules-dialog/-list/-form, .rule-*), exp-*, experiment-*, key-* (#key-once),
  *   release-*, publish-*, setup-*, account-*(#account-list/-create-form/-result,
  *   #view-account), stats-* (.stats-tiles/.stats-tile(-num/-label),
@@ -867,12 +867,6 @@ a:focus-visible {
   align-self: stretch;
   background: var(--border-soft);
   flex-shrink: 0;
-}
-
-#scope-hint {
-  color: var(--muted);
-  font-size: 12px;
-  margin: var(--space-1) 0 var(--space-4);
 }
 
 /* ---- Tables & lists ---- */

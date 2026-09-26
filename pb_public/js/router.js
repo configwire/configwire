@@ -161,7 +161,6 @@
     var p = projectById(CW.state.projectId);
     var el = CW.$("detail-project-name");
     if (el) el.textContent = p ? (p.name || p.id) : "Project";
-    CW.renderScopeHint();
     syncSidebar();
   }
 
