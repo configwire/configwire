@@ -151,7 +151,7 @@
       CW.loadFlags().catch(function (e) { CW.$("flag-folders").innerHTML = "<p class=\"muted\">" + CW.esc(e.message) + "</p>"; });
       CW.loadReleases().catch(function (e) { CW.$("release-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
       CW.loadRules().catch(function (e) { CW.toast(e.message); });
-      CW.loadExperiments().catch(function (e) { CW.$("experiment-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
+      CW.loadExperiments().catch(function (e) { CW.toast(e.message); });
       CW.loadKeys().catch(function (e) { CW.$("key-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
       CW.loadStats().catch(function () { /* inline in stats card */ });
     }).catch(function (e) { CW.toast(e.message); });

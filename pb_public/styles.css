@@ -964,6 +964,7 @@ td code {
 
 #release-list,
 #flag-rules-list,
+#flag-experiments-list,
 #experiment-list,
 #key-list {
   list-style: none;
@@ -973,6 +974,7 @@ td code {
 
 #release-list li,
 #flag-rules-list li,
+#flag-experiments-list li,
 #experiment-list li,
 #key-list li {
   margin-bottom: var(--space-2);
@@ -1449,6 +1451,97 @@ td code {
   #experiment-list .exp-menu {
     transition: none;
   }
+}
+
+/* ---- Flag experiments dialog: same card rows as #experiment-list, but
+ * with inline edit/delete/status actions (no ... menu). Renderer contract:
+ * js/experiments.js renderFlagExperimentsList emits
+ * ul#flag-experiments-list > li.exp-card
+ * (.exp-card-head > .exp-name + .badge + .exp-actions >
+ * button[data-edit-experiment] + button[data-delete-experiment] +
+ * select[data-exp-status], .exp-meta seed code,
+ * .exp-variants .exp-variant-pill). */
+#flag-experiments-list li.exp-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas: "head" "meta" "variants";
+  gap: 4px 12px;
+  align-items: center;
+  overflow: visible;
+}
+
+#flag-experiments-list .exp-card-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+#flag-experiments-list .exp-name {
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+#flag-experiments-list .exp-meta {
+  grid-area: meta;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+#flag-experiments-list .exp-meta code {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#flag-experiments-list .exp-variants {
+  grid-area: variants;
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+#flag-experiments-list .exp-variant-pill {
+  display: inline-block;
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-3);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#flag-experiments-list .exp-variant-pill b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+#flag-experiments-list .exp-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+#flag-experiments-list .exp-actions button {
+  height: 28px;
+  font-size: 12px;
+}
+
+#flag-experiments-list .exp-actions select {
+  height: 28px;
+  font-size: 12px;
+  max-width: 120px;
 }
 
 /* ---- Release row ⋯ action menu (mirrors the flag-table menu above:
@@ -2156,6 +2249,7 @@ textarea.valid {
 dialog#cw-dialog,
 dialog#json-editor-dialog,
 dialog#flag-rules-dialog,
+dialog#flag-experiments-dialog,
 dialog#flag-dialog,
 dialog#experiment-dialog,
 dialog#release-dialog {
@@ -2182,6 +2276,12 @@ dialog#release-dialog {
 }
 
 dialog#flag-rules-dialog {
+  width: min(760px, 94vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+dialog#flag-experiments-dialog {
   width: min(760px, 94vw);
   max-height: 88dvh;
   overflow-y: auto;
@@ -2269,6 +2369,7 @@ dialog#cw-dialog {
 dialog#cw-dialog::backdrop,
 dialog#json-editor-dialog::backdrop,
 dialog#flag-rules-dialog::backdrop,
+dialog#flag-experiments-dialog::backdrop,
 dialog#flag-dialog::backdrop,
 dialog#experiment-dialog::backdrop,
 dialog#release-dialog::backdrop {
@@ -2278,6 +2379,7 @@ dialog#release-dialog::backdrop {
 
 dialog#cw-dialog h3,
 dialog#flag-rules-dialog h3,
+dialog#flag-experiments-dialog h3,
 dialog#flag-dialog h3,
 dialog#experiment-dialog h3,
 dialog#release-dialog h3 {
@@ -2535,7 +2637,8 @@ dialog#json-editor-dialog .muted {
     width: 100%;
   }
 
-  #experiment-list li.exp-card {
+  #experiment-list li.exp-card,
+  #flag-experiments-list li.exp-card {
     grid-template-columns: 1fr;
     grid-template-areas: "head" "meta" "variants";
   }
@@ -2583,6 +2686,7 @@ dialog#json-editor-dialog .muted {
   dialog#cw-dialog,
   dialog#json-editor-dialog,
   dialog#flag-rules-dialog,
+  dialog#flag-experiments-dialog,
   dialog#flag-dialog,
   dialog#experiment-dialog,
   dialog#release-dialog {
@@ -2618,6 +2722,7 @@ dialog#json-editor-dialog .muted {
 
 tr.is-unpublished,
 #flag-rules-list li.rule-item.is-unpublished,
+#flag-experiments-list li.exp-card.is-unpublished,
 #experiment-list li.exp-card.is-unpublished,
 #flag-folders .folder.is-unpublished {
   background: rgba(251, 191, 36, 0.06);
@@ -2628,6 +2733,7 @@ tr.is-unpublished,
 
 tr.is-deleted,
 #flag-rules-list li.rule-item.is-deleted,
+#flag-experiments-list li.exp-card.is-deleted,
 #experiment-list li.exp-card.is-deleted,
 #flag-folders .folder.is-deleted {
   background: rgba(248, 113, 113, 0.06);

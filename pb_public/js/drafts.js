@@ -390,6 +390,9 @@
     if (CW.state.activeFlagRulesId && CW.renderFlagRulesList) {
       try { CW.renderFlagRulesList(); } catch (e) { /* render best-effort */ }
     }
+    if (CW.state.activeFlagExperimentsId && CW.renderFlagExperimentsList) {
+      try { CW.renderFlagExperimentsList(); } catch (e2) { /* render best-effort */ }
+    }
   }
 
   CW.drafts = {

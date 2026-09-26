@@ -86,7 +86,6 @@
     CW.on("stats-since", "change", function () { CW.loadStats().catch(function () {}); });
     CW.on("refresh-flags", "click", function () { CW.loadFlags().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-releases", "click", function () { CW.loadReleases().catch(function (e) { CW.toast(e.message); }); });
-    CW.on("refresh-experiments", "click", function () { CW.loadExperiments().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-keys", "click", function () { CW.loadKeys().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-stats", "click", function () {
       CW.loadStats().catch(function () { /* loadStats renders inline */ });
@@ -253,37 +252,25 @@
       }
       if (CW.markFormClean) CW.markFormClean("experiment-form");
     });
-    CW.on("experiment-add-btn", "click", function () {
-      if (CW.openExperimentDialog) CW.openExperimentDialog(null);
-    });
     CW.on("experiment-dialog-close", "click", function () {
       if (CW.closeExperimentDialog) CW.closeExperimentDialog();
       else { var dlg = CW.$("experiment-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
-    CW.on("experiment-list", "click", function (ev) {
+    CW.on("flag-experiments-close", "click", function () {
+      if (CW.closeFlagExperimentsDialog) CW.closeFlagExperimentsDialog();
+      else { var fdlg = CW.$("flag-experiments-dialog"); if (fdlg && fdlg.open) fdlg.close(); }
+    });
+    CW.on("flag-experiments-add", "click", function () {
+      if (CW.openExperimentDialog) CW.openExperimentDialog(null, CW.state.activeFlagExperimentsId || "");
+    });
+    CW.on("flag-experiments-list", "click", function (ev) {
       var t = ev.target;
-      var menuBtn = null;
-      if (t && t.closest) menuBtn = t.closest("[data-exp-menu]");
-      else if (t && t.getAttribute && t.getAttribute("data-exp-menu")) menuBtn = t;
-      if (menuBtn) {
-        var wrap = menuBtn.parentNode;
-        var menu = wrap && wrap.querySelector ? wrap.querySelector(".exp-menu") : null;
-        if (menu) {
-          var willOpen = menu.hidden;
-          closeExpMenus();
-          menu.hidden = !willOpen;
-          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
-        }
-        return;
-      }
-      var inMenu = t && t.closest ? t.closest(".exp-menu") : null;
       var delBtn = t && t.closest ? t.closest("[data-delete-experiment]") : null;
       var editBtn = t && t.closest ? t.closest("[data-edit-experiment]") : null;
       if (!delBtn && t && t.getAttribute && t.getAttribute("data-delete-experiment")) delBtn = t;
       if (!editBtn && t && t.getAttribute && t.getAttribute("data-edit-experiment")) editBtn = t;
       var del = delBtn && delBtn.getAttribute ? delBtn.getAttribute("data-delete-experiment") : null;
       if (del) {
-        if (inMenu) closeExpMenus();
         cwConfirm("Delete this experiment?", {title: "Delete experiment", okText: "Delete", danger: true}).then(function (ok) {
           if (!ok) return;
           CW.deleteExperiment(del).catch(function (e) { CW.toast(e.message); });
@@ -292,7 +279,6 @@
       }
       var editEl = editBtn && editBtn.getAttribute ? editBtn.getAttribute("data-edit-experiment") : null;
       if (editEl) {
-        if (inMenu) closeExpMenus();
         var found = null;
         var expList = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
         for (var i = 0; i < expList.length; i++) {
@@ -315,13 +301,12 @@
         }
       }
     });
-    CW.on("experiment-list", "change", function (ev) {
+    CW.on("flag-experiments-list", "change", function (ev) {
       var t = ev.target;
       var sid = t && t.getAttribute && t.getAttribute("data-exp-status");
       if (!sid) return;
       var status = t.value;
       CW.setExperimentStatus(sid, status).catch(function (e) { CW.toast(e.message); });
-      closeExpMenus();
     });
     CW.on("key-form", "submit", CW.createKey);
     CW.on("key-copy", "click", function () {
@@ -353,7 +338,7 @@
     }
 
     function closeExpMenus(except) {
-      var box = document.getElementById("experiment-list");
+      var box = document.getElementById("flag-experiments-list");
       if (!box || !box.querySelectorAll) return;
       var wraps = box.querySelectorAll(".exp-menu-wrap");
       for (var i = 0; i < wraps.length; i++) {
@@ -383,6 +368,11 @@
       var fr = t && t.getAttribute && t.getAttribute("data-flag-rules");
       if (fr) {
         if (CW.openFlagRulesDialog) CW.openFlagRulesDialog(fr);
+        return;
+      }
+      var fe = t && t.getAttribute && t.getAttribute("data-flag-experiments");
+      if (fe) {
+        if (CW.openFlagExperimentsDialog) CW.openFlagExperimentsDialog(fe);
         return;
       }
       var del = t && t.getAttribute && t.getAttribute("data-delete-flag");
@@ -458,7 +448,7 @@
       }
       var inMenu = t && t.closest ? t.closest(".flag-menu") : null;
       if (inMenu) {
-        var itemBtn = t.closest("[data-flag-rules],[data-stats-flag],[data-edit-flag],[data-delete-flag]");
+        var itemBtn = t.closest("[data-flag-rules],[data-flag-experiments],[data-stats-flag],[data-edit-flag],[data-delete-flag]");
         flagRowClick(ev);
         if (itemBtn) closeFlagMenus();
         return;

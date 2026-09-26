@@ -74,6 +74,9 @@
   function folderRowHTML(f) {
     var count = ruleCountFor(f.id);
     var rulesLabel = count == null ? "rules" : "rules (" + count + ")";
+    var expCount = null;
+    try { expCount = CW.expCountFor ? CW.expCountFor(f.id) : null; } catch (e) { expCount = null; }
+    var expsLabel = expCount == null ? "experiments" : "experiments (" + expCount + ")";
     var deleted = isDeleted("flag", f.id, f);
     var unpub = deleted || isUnpub("flag", f.id);
     var rowClass = deleted ? ' class="is-deleted"' : (unpub ? ' class="is-unpublished"' : "");
@@ -92,6 +95,7 @@
       '<button type="button" class="flag-menu-btn" data-flag-menu="' + CW.esc(f.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(f.key) + '">&#8943;</button>' +
       '<div class="flag-menu" role="menu" hidden>' +
       '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + CW.esc(rulesLabel) + "</button>" +
+      '<button type="button" role="menuitem" data-flag-experiments="' + CW.esc(f.id) + '">' + CW.esc(expsLabel) + "</button>" +
       '<button type="button" role="menuitem" data-stats-flag="' + CW.esc(f.key) + '">stats</button>' +
       '<button type="button" role="menuitem" data-edit-flag="' + CW.esc(f.id) + '">edit</button>' +
       '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">delete</button>' +

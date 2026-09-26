@@ -3,6 +3,8 @@
   "use strict";
 
   var CW = window.CW;
+  if (CW.state.experimentsLoaded === undefined) CW.state.experimentsLoaded = false;
+  if (CW.state.activeFlagExperimentsId === undefined) CW.state.activeFlagExperimentsId = null;
 
   function isExpUnpub(id) {
     try { if (CW.drafts && CW.drafts.isDraft("experiment", id)) return true; } catch (e) { /* ignore */ }
@@ -32,10 +34,32 @@
     return id;
   }
 
-  function renderExperiments() {
-    var list = CW.$("experiment-list");
-    var items = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
-    if (!items.length) { list.innerHTML = "<li>No experiments.</li>"; return; }
+  function expCountFor(flagId) {
+    var list = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
+    if (!Array.isArray(list)) return null;
+    // Mirror ruleCountFor: plain "experiments" label until first load.
+    if (!CW.state.experimentsLoaded && CW.state.experiments.length === 0) return null;
+    var n = 0;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].flag === flagId && !list[i]._draftDeleted) n++;
+    }
+    return n;
+  }
+
+  function flagExperimentsForActive() {
+    var flagId = CW.state.activeFlagExperimentsId || "";
+    var list = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (x) { return x && x.flag === flagId; });
+  }
+
+  function renderFlagExperimentsList() {
+    var list = CW.$("flag-experiments-list");
+    if (!list) return;
+    var flagId = CW.state.activeFlagExperimentsId || "";
+    if (!flagId) { list.innerHTML = "<li>Pick a flag first.</li>"; return; }
+    var items = flagExperimentsForActive();
+    if (!items.length) { list.innerHTML = "<li>No experiments for this flag.</li>"; return; }
     list.innerHTML = items.map(function (x) {
       var variants = Array.isArray(x.variants) ? x.variants : [];
       var summary = variants.map(function (v) {
@@ -46,26 +70,97 @@
       var badgeClass = st === "running"
         ? "badge ok exp-status-running"
         : st === "stopped" ? "badge revoked exp-status-stopped" : "badge exp-status-draft";
+      var deleted = isExpDeleted(x.id, x);
+      var unpub = deleted || isExpUnpub(x.id);
+      var cls = deleted ? " is-deleted" : (unpub ? " is-unpublished" : "");
+      var badge = deleted
+        ? ' <span class="badge deleted">Deleted</span>'
+        : (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "");
       var statuses = ["draft", "running", "stopped"];
       var opts = statuses.map(function (s) {
         return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
       }).join("");
-      return '<li class="exp-card' + (isExpDeleted(x.id, x) ? " is-deleted" : (isExpUnpub(x.id) ? " is-unpublished" : "")) + '">' +
+      return '<li class="exp-card' + cls + '">' +
         '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
-        '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" +
-        (isExpDeleted(x.id, x) ? ' <span class="badge deleted">Deleted</span>' : (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "")) +
-        '<span class="exp-menu-wrap">' +
-        '<button type="button" class="exp-menu-btn" data-exp-menu="' + CW.esc(x.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(x.name) + '">&#8943;</button>' +
-        '<div class="exp-menu" role="menu" hidden>' +
-        '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
-        '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
-        '<span class="exp-menu-label">Status</span>' +
-        '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select>" +
-        "</div></span></div>" +
-        '<div class="exp-meta">flag <code>' + CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
-        "</code> · seed <code>" + CW.esc(x.seed) + "</code></div>" +
+        '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" + badge +
+        '<span class="exp-actions">' +
+        '<button type="button" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
+        '<button type="button" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
+        '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status for ' + CW.esc(x.name) + '">' + opts + "</select>" +
+        "</span></div>" +
+        '<div class="exp-meta">seed <code>' + CW.esc(x.seed) + "</code></div>" +
         '<div class="exp-variants">' + summary + "</div></li>";
     }).join("");
+  }
+
+  function openFlagExperimentsDialog(flagId) {
+    CW.state.activeFlagExperimentsId = flagId || "";
+    var title = CW.$("flag-experiments-title");
+    if (title) {
+      var key = CW.flagKeyById ? CW.flagKeyById(flagId) : "";
+      title.textContent = key ? "Experiments for " + key : "Experiments for flag";
+    }
+    renderFlagExperimentsList();
+    var dlg = CW.$("flag-experiments-dialog");
+    if (!dlg) return;
+    if (dlg.showModal) {
+      try { if (!dlg.open) dlg.showModal(); } catch (e) { /* already open */ }
+    }
+  }
+
+  function closeFlagExperimentsDialog() {
+    var dlg = CW.$("flag-experiments-dialog");
+    if (dlg && dlg.open) dlg.close();
+    CW.state.activeFlagExperimentsId = null;
+  }
+
+  function renderExperiments() {
+    // Standalone #experiment-list was removed (experiments now live inside
+    // each flag, like rules). Keep a legacy branch in case the element
+    // exists in a cached page, then always refresh flag counts + dialog.
+    var list = CW.$("experiment-list");
+    var items = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
+    if (list) {
+      if (!items.length) { list.innerHTML = "<li>No experiments.</li>"; }
+      else {
+        list.innerHTML = items.map(function (x) {
+          var variants = Array.isArray(x.variants) ? x.variants : [];
+          var summary = variants.map(function (v) {
+            var w = (v && typeof v.weightBps === "number" && isFinite(v.weightBps)) ? v.weightBps : 0;
+            return '<span class="exp-variant-pill">' + CW.esc(v.name) + " <b>" + CW.esc(String(bpsToPercent(w))) + "%</b></span>";
+          }).join("");
+          var st = x.status || "draft";
+          var badgeClass = st === "running"
+            ? "badge ok exp-status-running"
+            : st === "stopped" ? "badge revoked exp-status-stopped" : "badge exp-status-draft";
+          var statuses = ["draft", "running", "stopped"];
+          var opts = statuses.map(function (s) {
+            return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
+          }).join("");
+          return '<li class="exp-card' + (isExpDeleted(x.id, x) ? " is-deleted" : (isExpUnpub(x.id) ? " is-unpublished" : "")) + '">' +
+            '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
+            '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" +
+            (isExpDeleted(x.id, x) ? ' <span class="badge deleted">Deleted</span>' : (isExpUnpub(x.id) ? ' <span class="badge unpublished">Unpublished</span>' : "")) +
+            '<span class="exp-menu-wrap">' +
+            '<button type="button" class="exp-menu-btn" data-exp-menu="' + CW.esc(x.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(x.name) + '">&#8943;</button>' +
+            '<div class="exp-menu" role="menu" hidden>' +
+            '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
+            '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
+            '<span class="exp-menu-label">Status</span>' +
+            '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select>" +
+            "</div></span></div>" +
+            '<div class="exp-meta">flag <code>' + CW.esc(CW.flagKeyById(x.flag) || x.flag || "(none)") +
+            "</code> · seed <code>" + CW.esc(x.seed) + "</code></div>" +
+            '<div class="exp-variants">' + summary + "</div></li>";
+        }).join("");
+      }
+    }
+    if (CW.renderFlags) {
+      try { CW.renderFlags(); } catch (e) { /* counts live in flag rows */ }
+    }
+    if (CW.state.activeFlagExperimentsId) {
+      try { renderFlagExperimentsList(); } catch (e2) { /* best-effort */ }
+    }
   }
 
   function loadExperiments() {
@@ -77,6 +172,7 @@
         items = items.filter(function (x) { return flagIds[x.flag]; });
       }
       CW.state.experiments = items;
+      CW.state.experimentsLoaded = true;
       if (CW.drafts) {
         try { CW.drafts.restoreDrafts(); } catch (e) { /* best-effort */ }
       }
@@ -587,10 +683,15 @@
     return true;
   }
 
-  function openExperimentDialog(exp) {
+  function openExperimentDialog(exp, presetFlagId) {
     var title = CW.$("experiment-dialog-title");
     if (!exp) {
       resetExperimentForm();
+      if (presetFlagId) {
+        var sel = CW.$("exp-flag-select");
+        if (sel) sel.value = presetFlagId;
+        if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
+      }
       if (title) title.textContent = "Add experiment";
     } else {
       fillExperimentForm(exp);
@@ -609,6 +710,10 @@
   }
 
   CW.renderExperiments = renderExperiments;
+  CW.renderFlagExperimentsList = renderFlagExperimentsList;
+  CW.openFlagExperimentsDialog = openFlagExperimentsDialog;
+  CW.closeFlagExperimentsDialog = closeFlagExperimentsDialog;
+  CW.expCountFor = expCountFor;
   CW.loadExperiments = loadExperiments;
   CW.saveExperiment = saveExperiment;
   CW.createExperiment = createExperiment;

@@ -175,18 +175,6 @@
               </div>
             </section>
 
-            <section class="card" aria-labelledby="experiments">
-              <div class="card-head">
-                <h2 id="experiments">Experiments</h2>
-                <div class="card-actions"><button id="experiment-add-btn" type="button" class="btn primary">Add
-                    experiment</button><button id="refresh-experiments" type="button" class="btn ghost">Refresh
-                    experiments</button></div>
-              </div>
-              <ul id="experiment-list" aria-label="Experiments">
-                <li>Not loaded.</li>
-              </ul>
-            </section>
-
             <section class="card" aria-labelledby="releases">
               <div class="card-head">
                 <h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh
@@ -479,6 +467,22 @@
             </div>
           </form>
           <p id="flag-rules-result" role="status"></p>
+        </dialog>
+        <dialog id="flag-experiments-dialog" aria-labelledby="flag-experiments-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="flag-experiments-title">Experiments for flag</h3>
+            </div>
+            <button type="button" id="flag-experiments-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
+          <ul id="flag-experiments-list" aria-label="Flag experiments">
+            <li>Not loaded.</li>
+          </ul>
+          <div class="form-actions">
+            <button type="button" id="flag-experiments-add" class="btn primary">New experiment</button>
+          </div>
+          <p id="flag-experiments-result" role="status"></p>
         </dialog>
         <dialog id="json-editor-dialog" aria-labelledby="json-editor-title">
           <h3 id="json-editor-title">Edit JSON</h3>
