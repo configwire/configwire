@@ -13,9 +13,9 @@
 //	    their linked flag: rows targeting a flag of another project are
 //	    EXCLUDED (no cross-project leakage into snapshots, and therefore
 //	    into fetch overlays, stats, or ingest). Untargeted rows (flag
-//	    relation unset or dangling) are included with flag "" (legacy
-//	    shape). experiment.flag is the linked flag's KEY ("" when the
-//	    relation is unset/unresolvable), experiment.id is the record id.
+//	    relation unset or dangling) are EXCLUDED (breaking change: the
+//	    legacy flag "" shape is removed). experiment.flag is the linked
+//	    flag's KEY, experiment.id is the record id.
 //	  - flag.group is the linked groups record id ("" when unset).
 //
 // ETAG RULE (T10/T13/T17 contract):
@@ -265,16 +265,16 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 // unit-testable. projects/keys index every flag by record id (built
 // once per BuildSnapshot from the already-loaded flags scan, so no
 // extra queries). Untargeted rows (flagID "") or dangling relations
-// are included with key "" (legacy shape); rows whose flag lives in
+// are EXCLUDED (breaking change: legacy flag "" shape removed); rows
 // another project are excluded — that exclusion is what keeps one
 // project's experiments out of another project's snapshots.
 func ResolveExperimentFlag(projectID, flagID string, projects, keys map[string]string) (key string, include bool) {
 	if flagID == "" {
-		return "", true
+		return "", false
 	}
 	p, ok := projects[flagID]
 	if !ok {
-		return "", true
+		return "", false
 	}
 	if p != projectID {
 		return "", false
