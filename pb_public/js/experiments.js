@@ -80,14 +80,17 @@
       var opts = statuses.map(function (s) {
         return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
       }).join("");
+      var svgOpen = '<svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+      var editIcon = svgOpen + '<path d="M11 2.5l2.5 2.5L5 13.5l-3.2 1 1-3.2z"/></svg>';
+      var deleteIcon = svgOpen + '<path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4"/><path d="M6.5 7v4"/><path d="M9.5 7v4"/></svg>';
       return '<li class="exp-card' + cls + '">' +
         '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
         '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" + badge +
         '<span class="exp-menu-wrap">' +
         '<button type="button" class="exp-menu-btn" data-exp-menu="' + CW.esc(x.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(x.name) + '">&#8943;</button>' +
         '<div class="exp-menu" role="menu" hidden>' +
-        '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
-        '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
+        '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">' + editIcon + "<span>edit</span></button>" +
+        '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">' + deleteIcon + "<span>delete</span></button>" +
         '<span class="exp-menu-label">Status</span>' +
         '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status for ' + CW.esc(x.name) + '">' + opts + "</select>" +
         "</div></span></div>" +
@@ -140,6 +143,9 @@
           var opts = statuses.map(function (s) {
             return '<option value="' + s + '"' + (st === s ? " selected" : "") + ">" + s + "</option>";
           }).join("");
+          var svgOpen = '<svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+          var editIcon = svgOpen + '<path d="M11 2.5l2.5 2.5L5 13.5l-3.2 1 1-3.2z"/></svg>';
+          var deleteIcon = svgOpen + '<path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4"/><path d="M6.5 7v4"/><path d="M9.5 7v4"/></svg>';
           return '<li class="exp-card' + (isExpDeleted(x.id, x) ? " is-deleted" : (isExpUnpub(x.id) ? " is-unpublished" : "")) + '">' +
             '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
             '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" +
@@ -147,8 +153,8 @@
             '<span class="exp-menu-wrap">' +
             '<button type="button" class="exp-menu-btn" data-exp-menu="' + CW.esc(x.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(x.name) + '">&#8943;</button>' +
             '<div class="exp-menu" role="menu" hidden>' +
-            '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
-            '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
+            '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">' + editIcon + "<span>edit</span></button>" +
+            '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">' + deleteIcon + "<span>delete</span></button>" +
             '<span class="exp-menu-label">Status</span>' +
             '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status">' + opts + "</select>" +
             "</div></span></div>" +

@@ -14,13 +14,16 @@
     var html = visible.map(function (r, idx) {
       var label = "v" + CW.esc(r.version) + " etag " + CW.esc(r.etag) +
         (r.note ? " — " + CW.esc(r.note) : "");
+      var svgOpen = '<svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+      var viewIcon = svgOpen + '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+      var rollbackIcon = svgOpen + '<path d="M2.5 6.5h7a3 3 0 0 1 0 6H5"/><path d="M5.5 3.5 2.5 6.5l3 3"/></svg>';
       var menu = '<span class="release-menu-wrap">' +
         '<button type="button" class="release-menu-btn" data-release-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for release v' + CW.esc(r.version) + '">&#8943;</button>' +
         '<div class="release-menu" role="menu" hidden>' +
-        '<button type="button" role="menuitem" data-view-release="' + CW.esc(r.id) + '">view</button>' +
+        '<button type="button" role="menuitem" data-view-release="' + CW.esc(r.id) + '">' + viewIcon + "<span>view</span></button>" +
         (idx === 0 ? "" :
-          '<button type="button" role="menuitem" data-rollback-version="' + CW.esc(r.version) + '">rollback to v' +
-          CW.esc(r.version) + "</button>") +
+          '<button type="button" role="menuitem" data-rollback-version="' + CW.esc(r.version) + '">' + rollbackIcon + "<span>rollback to v" +
+          CW.esc(r.version) + "</span></button>") +
         "</div></span>";
       if (idx === 0) {
         return "<li>" + label + ' <span class="badge ok">current</span>' + menu + "</li>";
