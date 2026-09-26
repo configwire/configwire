@@ -33,19 +33,11 @@ import (
 //go:embed VERSION
 var embeddedVersion string
 
-// Version is the app version, overridable at build time via
-// -ldflags "-X main.Version=vX.Y.Z". When empty, the embedded
-// VERSION file (single source of truth) is used instead.
-var Version string
-
-// appVersion normalizes to a "v" prefix with trimmed whitespace.
-// Falls back to "vdev" when neither ldflags nor the embedded
-// VERSION file provides a value.
+// appVersion normalizes the embedded VERSION file (single source of
+// truth) to a "v" prefix with trimmed whitespace.
+// Falls back to "vdev" only when the embedded VERSION file is empty.
 func appVersion() string {
-	v := strings.TrimSpace(Version)
-	if v == "" {
-		v = strings.TrimSpace(embeddedVersion)
-	}
+	v := strings.TrimSpace(embeddedVersion)
 	if v == "" {
 		return "vdev"
 	}
