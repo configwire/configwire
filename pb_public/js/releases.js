@@ -271,12 +271,7 @@
     var flagsSec = null;
     try { flagsSec = document.querySelector('section[aria-labelledby="flags"]'); } catch (e) { flagsSec = null; }
     if (flagsSec && flagsSec.classList) {
-      flagsSec.classList.toggle("has-unpublished", (s.flag + s.rule + s.group) > 0);
-    }
-    var expSec = null;
-    try { expSec = document.querySelector('section[aria-labelledby="experiments"]'); } catch (e) { expSec = null; }
-    if (expSec && expSec.classList) {
-      expSec.classList.toggle("has-unpublished", s.experiment > 0);
+      flagsSec.classList.toggle("has-unpublished", (s.flag + s.rule + s.group + s.experiment) > 0);
     }
   }
 

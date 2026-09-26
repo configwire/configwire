@@ -83,11 +83,14 @@
       return '<li class="exp-card' + cls + '">' +
         '<div class="exp-card-head"><strong class="exp-name">' + CW.esc(x.name) + "</strong> " +
         '<span class="' + badgeClass + '">' + CW.esc(st) + "</span>" + badge +
-        '<span class="exp-actions">' +
-        '<button type="button" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
-        '<button type="button" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
+        '<span class="exp-menu-wrap">' +
+        '<button type="button" class="exp-menu-btn" data-exp-menu="' + CW.esc(x.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(x.name) + '">&#8943;</button>' +
+        '<div class="exp-menu" role="menu" hidden>' +
+        '<button type="button" role="menuitem" data-edit-experiment="' + CW.esc(x.id) + '">edit</button>' +
+        '<button type="button" role="menuitem" data-delete-experiment="' + CW.esc(x.id) + '">delete</button>' +
+        '<span class="exp-menu-label">Status</span>' +
         '<select data-exp-status="' + CW.esc(x.id) + '" aria-label="Experiment status for ' + CW.esc(x.name) + '">' + opts + "</select>" +
-        "</span></div>" +
+        "</div></span></div>" +
         '<div class="exp-meta">seed <code>' + CW.esc(x.seed) + "</code></div>" +
         '<div class="exp-variants">' + summary + "</div></li>";
     }).join("");

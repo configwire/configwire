@@ -39,7 +39,7 @@
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
-    var mods = ["flags", "experiments", "releases", "publish", "keys", "stats", "account"];
+    var mods = ["flags", "releases", "publish", "keys", "stats", "account"];
     var showNav = (CW.state.view === "detail" && CW.state.projectId) || CW.state.view === "account";
     if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
@@ -210,6 +210,7 @@
     renderDetailHeader();
     loadDetailScope();
     if (anchor) {
+      if (anchor === "experiments") anchor = "flags";
       var t = CW.$(anchor);
       var card = t && t.closest ? t.closest("section") : null;
       if (card) scrollBelowSticky(card);
@@ -232,7 +233,8 @@
         showView("detail");
         renderDetailHeader();
         if (r.anchor) {
-          var t = CW.$(r.anchor);
+          var anchor = r.anchor === "experiments" ? "flags" : r.anchor;
+          var t = CW.$(anchor);
           var card = t && t.closest ? t.closest("section") : null;
           if (card) scrollBelowSticky(card);
         }

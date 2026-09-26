@@ -265,12 +265,28 @@
     });
     CW.on("flag-experiments-list", "click", function (ev) {
       var t = ev.target;
+      var menuBtn = null;
+      if (t && t.closest) menuBtn = t.closest("[data-exp-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-exp-menu")) menuBtn = t;
+      if (menuBtn) {
+        var wrap = menuBtn.parentNode;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".exp-menu") : null;
+        if (menu) {
+          var willOpen = menu.hidden;
+          closeExpMenus();
+          menu.hidden = !willOpen;
+          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+        }
+        return;
+      }
+      var inMenu = t && t.closest ? t.closest(".exp-menu") : null;
       var delBtn = t && t.closest ? t.closest("[data-delete-experiment]") : null;
       var editBtn = t && t.closest ? t.closest("[data-edit-experiment]") : null;
       if (!delBtn && t && t.getAttribute && t.getAttribute("data-delete-experiment")) delBtn = t;
       if (!editBtn && t && t.getAttribute && t.getAttribute("data-edit-experiment")) editBtn = t;
       var del = delBtn && delBtn.getAttribute ? delBtn.getAttribute("data-delete-experiment") : null;
       if (del) {
+        if (inMenu) closeExpMenus();
         cwConfirm("Delete this experiment?", {title: "Delete experiment", okText: "Delete", danger: true}).then(function (ok) {
           if (!ok) return;
           CW.deleteExperiment(del).catch(function (e) { CW.toast(e.message); });
@@ -279,6 +295,7 @@
       }
       var editEl = editBtn && editBtn.getAttribute ? editBtn.getAttribute("data-edit-experiment") : null;
       if (editEl) {
+        if (inMenu) closeExpMenus();
         var found = null;
         var expList = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
         for (var i = 0; i < expList.length; i++) {
@@ -307,6 +324,7 @@
       if (!sid) return;
       var status = t.value;
       CW.setExperimentStatus(sid, status).catch(function (e) { CW.toast(e.message); });
+      closeExpMenus();
     });
     CW.on("key-form", "submit", CW.createKey);
     CW.on("key-copy", "click", function () {

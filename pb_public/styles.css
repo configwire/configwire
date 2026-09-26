@@ -1453,13 +1453,13 @@ td code {
   }
 }
 
-/* ---- Flag experiments dialog: same card rows as #experiment-list, but
- * with inline edit/delete/status actions (no ... menu). Renderer contract:
+/* ---- Flag experiments dialog: same card rows as #experiment-list, with the
+ * same ... menu. Renderer contract:
  * js/experiments.js renderFlagExperimentsList emits
  * ul#flag-experiments-list > li.exp-card
- * (.exp-card-head > .exp-name + .badge + .exp-actions >
- * button[data-edit-experiment] + button[data-delete-experiment] +
- * select[data-exp-status], .exp-meta seed code,
+ * (.exp-card-head > .exp-name + .badge + .exp-menu-wrap >
+ * button.exp-menu-btn ([data-exp-menu]) + .exp-menu[role=menu][hidden] holding
+ * edit/delete menuitems + select[data-exp-status], .exp-meta seed code,
  * .exp-variants .exp-variant-pill). */
 #flag-experiments-list li.exp-card {
   display: grid;
@@ -1524,24 +1524,85 @@ td code {
   font-weight: 700;
 }
 
-#flag-experiments-list .exp-actions {
+#flag-experiments-list .exp-menu-wrap {
+  position: relative;
+  display: inline-block;
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+#flag-experiments-list .exp-menu-btn {
+  width: 28px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0;
+  height: var(--input-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  flex-wrap: wrap;
+  justify-content: center;
 }
 
-#flag-experiments-list .exp-actions button {
+#flag-experiments-list .exp-menu-btn:hover {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text);
+}
+
+#flag-experiments-list .exp-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 30;
+}
+
+#flag-experiments-list .exp-menu[hidden] {
+  display: none;
+}
+
+#flag-experiments-list .exp-menu button[role="menuitem"] {
+  width: 100%;
+  height: 28px;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+#flag-experiments-list .exp-menu select {
+  width: 100%;
+  max-width: none;
   height: 28px;
   font-size: 12px;
 }
 
-#flag-experiments-list .exp-actions select {
-  height: 28px;
-  font-size: 12px;
-  max-width: 120px;
+#flag-experiments-list .exp-menu-label {
+  display: block;
+  padding: 6px var(--space-2) 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted-dim);
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #flag-experiments-list .exp-menu {
+    transition: none;
+  }
 }
 
 /* ---- Release row ⋯ action menu (mirrors the flag-table menu above:
