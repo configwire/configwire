@@ -134,13 +134,21 @@
       if (CW.state.view === "detail") return; // route()->openProject loads detail scope
       CW.loadHomeStats().catch(function () {});
       // Preload current scope in the background so a card click is instant.
+      // Flags first: loadExperiments filters by CW.state.flags and
+      // mergedRules resolves against merged flags, so rules/experiments
+      // must wait for flags or first-open counts render as (0).
       loadEnvs().then(function () {
-        CW.loadFlags().catch(function (e) { CW.$("flag-folders").innerHTML = "<p class=\"muted\">" + CW.esc(e.message) + "</p>"; });
         CW.loadReleases().catch(function (e) { CW.$("release-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
-        CW.loadRules().catch(function (e) { CW.toast(e.message); });
-        CW.loadExperiments().catch(function (e) { CW.toast(e.message); });
         CW.loadKeys().catch(function (e) { CW.$("key-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
         CW.loadStats().catch(function () { /* inline in stats card */ });
+        CW.loadFlags().then(loadScopedAfterFlags, function (e) {
+          CW.$("flag-folders").innerHTML = "<p class=\"muted\">" + CW.esc(e.message) + "</p>";
+          loadScopedAfterFlags();
+        });
+        function loadScopedAfterFlags() {
+          CW.loadRules().catch(function (e) { CW.toast(e.message); });
+          CW.loadExperiments().catch(function (e) { CW.toast(e.message); });
+        }
       }).catch(function (e) { CW.toast(e.message); });
     }).catch(function (e) { CW.toast(e.message); });
   }
