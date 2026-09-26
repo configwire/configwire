@@ -105,8 +105,14 @@
       variants: variants,
       status: CW.$("exp-status").value,
     };
-    var flagId = CW.$("exp-flag-select").value;
-    if (flagId) body.flag = flagId;
+    var flagSel = CW.$("exp-flag-select");
+    var flagId = flagSel ? String(flagSel.value || "").trim() : "";
+    if (!flagId) {
+      var flagRes = CW.$("experiment-result");
+      if (flagRes) flagRes.textContent = "Target flag is required";
+      return Promise.resolve();
+    }
+    body.flag = flagId;
     // Local-only: stage the full POST/PATCH body as a draft.
     if (id) {
       CW.drafts.draftStage("experiment", { op: "update", body: body, baseId: id, label: body.name });

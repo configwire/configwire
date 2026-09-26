@@ -177,8 +177,9 @@
       return '<option value="' + CW.esc(f.id) + '">' + CW.esc(f.key) + "</option>";
     }).join("");
     var xs = CW.$("exp-flag-select");
+    if (!xs) return;
     var curX = xs.value;
-    xs.innerHTML = '<option value="">(none)</option>' + opts;
+    xs.innerHTML = opts;
     if (curX !== undefined) xs.value = curX;
   }
 
