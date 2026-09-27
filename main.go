@@ -90,6 +90,7 @@ func staticDigest() string {
 //   - *.js/*.css -> no-cache: revalidated via Last-Modified (304 when
 //     unchanged), so updates apply on next load with no version query.
 //   - images/fonts -> 1h public cache (non-critical bytes).
+//
 // API routes are untouched.
 func setStaticCacheHeaders(re *core.RequestEvent) {
 	p := re.Request.URL.Path
