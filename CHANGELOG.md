@@ -5,12 +5,40 @@ All notable changes to the ConfigWire server (`configwire/`, image
 
 ## [Unreleased]
 
+### Added
+
+- Node `js_tests/` suite for the Admin UI (`configwire/js_tests/`).
+  `harness.js` VM loader with stub prelude plus a `side-effects.md`
+  table; pure suites for core/drafts/rules/experiments/flags/
+  releases/keys/stats/update/boot plus JSON-editor and router-scope;
+  DOM suites for dialog/auth/account/dom-ops with a full-order run;
+  and the deferred releases-pure suite. Run from `configwire/` with
+  `node --test "js_tests/test-*.js"` (quoted glob — bare dir form
+  fails with `MODULE_NOT_FOUND` on Node v25); Node `>= 20` required.
+
 ### Changed
 
 - CI now runs on `workflow_dispatch` and is driven by the local push
   scripts (`scripts/push.sh --all`), instead of running on every push.
   No runtime change; `gofmt` + `go vet` + `go build` remain the
   pre-push gate for `configwire/`.
+- Pre-push gates are fail-closed on tests. `scripts/push.sh` now runs
+  `dart test` (dart target) and `go test ./...` (configwire target) in
+  addition to analyze/vet/build, so a broken tree or failing test
+  aborts before any split reaches GitHub main/tags.
+- `make test` now runs Go + Dart + node: `go build`/`vet`/`test` plus
+  `dart analyze`/`dart test` plus the node `js_tests` suite as
+  fail-closed recipe lines with a `node >= 20` floor guard. READMEs
+  gain the Node prereq and updated `make test` rows.
+- CI sets up Node 20 (`actions/setup-node@v4`) for lint and test so
+  the node suite runs alongside Go/Dart.
+- Docker build ignores `js_tests/`, the `/configwire` binary,
+  `.omo/`, and `.github/` — none are needed in the image (final stage
+  takes only the binary + `pb_public/`), and ignoring them keeps
+  edits from busting the go-build cache.
+- Admin wordmark is two-tone in the sidebar and topbar: `Config` in
+  light gray (`#9da4ad`) and `Wire` in banner blue (`#3a9aee`),
+  sampled from `pb_public/img/banner.png`. No layout change.
 
 ## v0.0.7 — 2026-09-27
 
