@@ -5,16 +5,36 @@ All notable changes to the ConfigWire server (`configwire/`, image
 
 ## [Unreleased]
 
+## v0.0.8 — 2026-09-28
+
 ### Added
 
 - Node `js_tests/` suite for the Admin UI (`configwire/js_tests/`).
   `harness.js` VM loader with stub prelude plus a `side-effects.md`
   table; pure suites for core/drafts/rules/experiments/flags/
-  releases/keys/stats/update/boot plus JSON-editor and router-scope;
-  DOM suites for dialog/auth/account/dom-ops with a full-order run;
+  releases/keys/stats/update/boot/transfer plus JSON-editor and
+  router-scope; DOM suites for dialog/auth/account/dom-ops with a
+  full-order run (incl. transfer load order and draft-view toggle);
   and the deferred releases-pure suite. Run from `configwire/` with
   `node --test "js_tests/test-*.js"` (quoted glob — bare dir form
   fails with `MODULE_NOT_FOUND` on Node v25); Node `>= 20` required.
+- Flag import/export + draft snapshot (`pb_public/js/transfer.js`,
+  wired in `index.html`/`boot.js`/`releases.js`/`styles.css`). Flags
+  card gains Export/Import buttons; Export dialog snapshots merged
+  flags+rules+experiments to JSON with copy/download; Import dialog
+  (paste + file input) validates shape/keys/types/ops and stages
+  drafts only — nothing publishes until Publish, existing keys merge,
+  rules per flag are replaced; publish form gains a View-draft button
+  (visible only when dirty) showing a live-vs-merged diff dialog
+  (green added / red removed / amber old → new); release three-dot
+  menus gain an export item converting a release snapshot back to
+  re-importable transfer JSON.
+- Drafts net-zero suppression (`pb_public/js/drafts.js`). Updates
+  identical to the live record stage nothing (`draftStage` returns
+  `null`, pending entry cleared); a rule create identical to a pending
+  rule delete nets zero (both entries dropped, for id-less snapshot
+  recreates); `pruneNoopDrafts()` runs on scope restore. Callers
+  toast `no changes to stage` instead of inflating unpublished counts.
 
 ### Changed
 
@@ -39,6 +59,12 @@ All notable changes to the ConfigWire server (`configwire/`, image
 - Admin wordmark is two-tone in the sidebar and topbar: `Config` in
   light gray (`#9da4ad`) and `Wire` in banner blue (`#3a9aee`),
   sampled from `pb_public/img/banner.png`. No layout change.
+- Flag rows now highlight when a child rule/experiment carries a
+  draft: the flag row gets the unpublished style + badge, its folder
+  counts as dirty, and the three-dot menu rules/experiments items
+  gain a dirty dot (`pb_public/js/flags.js`). Flag/group/rule/
+  experiment/status submits already covered by net-zero suppression
+  toast `no changes to stage` when nothing changed.
 
 ## v0.0.7 — 2026-09-27
 
