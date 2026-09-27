@@ -138,6 +138,14 @@ test("plural/summaryText via setPublishState hint text", function () {
   assert.equal(h.elementsById["publish-hint"].textContent, "No unpublished changes");
 });
 
+test("setPublishState: view-draft button visible only when dirty", function () {
+  reset();
+  h.CW.setPublishState(true);
+  assert.equal(h.elementsById["transfer-draft-view-btn"].hidden, false);
+  h.CW.setPublishState(false);
+  assert.equal(h.elementsById["transfer-draft-view-btn"].hidden, true);
+});
+
 test("isKnownKind via isUnpublished: unknown kind and empty id are false", function () {
   reset();
   h.CW.drafts.draftStage("flag", { op: "update", body: { description: "d" }, baseId: "kf", label: "kf" });
