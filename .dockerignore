@@ -5,3 +5,9 @@ pb_data/
 .DS_Store
 .idea/
 .vscode/
+# Never needed for the image build (final stage takes only the binary +
+# pb_public/); ignoring also keeps these edits from busting the go-build cache.
+js_tests/
+/configwire
+.omo/
+.github/
