@@ -71,14 +71,38 @@
     return sortedGroupIds().filter(function (id) { return draftOpOf("group", id) !== "delete"; });
   }
 
-  function folderRowHTML(f) {
+  function flagChildDrafts() {
+    var out = {};
+    try {
+      if (!CW.drafts) return out;
+      var kinds = ["rule", "experiment"];
+      for (var i = 0; i < kinds.length; i++) {
+        var fn = kinds[i] === "rule" ? "mergedRules" : "mergedExperiments";
+        if (typeof CW.drafts[fn] !== "function") continue;
+        var list = CW.drafts[fn]();
+        if (!Array.isArray(list)) continue;
+        for (var j = 0; j < list.length; j++) {
+          var it = list[j];
+          if (!it || it.flag === undefined || it.flag === null || it.flag === "") continue;
+          if (!isUnpub(kinds[i], it.id)) continue;
+          var fid = String(it.flag);
+          if (!out[fid]) out[fid] = {};
+          out[fid][kinds[i]] = true;
+        }
+      }
+    } catch (e) { /* best-effort */ }
+    return out;
+  }
+
+  function folderRowHTML(f, childSet) {
     var count = ruleCountFor(f.id);
     var rulesLabel = count == null ? "rules" : "rules (" + count + ")";
     var expCount = null;
     try { expCount = CW.expCountFor ? CW.expCountFor(f.id) : null; } catch (e) { expCount = null; }
     var expsLabel = expCount == null ? "experiments" : "experiments (" + expCount + ")";
     var deleted = isDeleted("flag", f.id, f);
-    var unpub = deleted || isUnpub("flag", f.id);
+    var childKinds = (childSet && childSet[f.id]) || {};
+    var unpub = deleted || isUnpub("flag", f.id) || !!(childKinds.rule || childKinds.experiment);
     var rowClass = deleted ? ' class="is-deleted"' : (unpub ? ' class="is-unpublished"' : "");
     var badge = deleted
       ? ' <span class="badge deleted">Deleted</span>'
@@ -89,6 +113,8 @@
           CW.esc(groupNameById(id)) + "</option>";
       }).join("");
     var moveDisabled = deleted ? " disabled" : "";
+    var ruleDot = childKinds.rule ? ' <span class="dot dirty" aria-hidden="true"></span>' : "";
+    var expDot = childKinds.experiment ? ' <span class="dot dirty" aria-hidden="true"></span>' : "";
     var svgOpen = '<svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
     var rulesIcon = svgOpen + '<path d="M2.5 5h11"/><circle cx="6" cy="5" r="1.6"/><path d="M2.5 11h11"/><circle cx="10" cy="11" r="1.6"/></svg>';
     var expsIcon = svgOpen + '<path d="M6 2h4"/><path d="M7 2v4.5L3.5 12a1.5 1.5 0 0 0 1.3 2.5h6.4a1.5 1.5 0 0 0 1.3-2.5L9 6.5V2"/><path d="M5.5 10h5"/></svg>';
@@ -100,8 +126,8 @@
       '<td class="flag-actions-cell"><div class="flag-menu-wrap">' +
       '<button type="button" class="flag-menu-btn" data-flag-menu="' + CW.esc(f.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(f.key) + '">&#8943;</button>' +
       '<div class="flag-menu" role="menu" hidden>' +
-      '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + rulesIcon + "<span>" + CW.esc(rulesLabel) + "</span></button>" +
-      '<button type="button" role="menuitem" data-flag-experiments="' + CW.esc(f.id) + '">' + expsIcon + "<span>" + CW.esc(expsLabel) + "</span></button>" +
+      '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + rulesIcon + "<span>" + CW.esc(rulesLabel) + "</span>" + ruleDot + "</button>" +
+      '<button type="button" role="menuitem" data-flag-experiments="' + CW.esc(f.id) + '">' + expsIcon + "<span>" + CW.esc(expsLabel) + "</span>" + expDot + "</button>" +
       '<button type="button" role="menuitem" data-stats-flag="' + CW.esc(f.key) + '">' + statsIcon + "<span>stats</span></button>" +
       '<button type="button" role="menuitem" data-edit-flag="' + CW.esc(f.id) + '">' + editIcon + "<span>edit</span></button>" +
       '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">' + deleteIcon + "<span>delete</span></button>" +
@@ -111,18 +137,18 @@
       "</div></div></td></tr>";
   }
 
-  function folderHTML(gid, name) {
+  function folderHTML(gid, name, childSet) {
     var key = gid || "__none";
     var flags = flagsInGroup(gid);
     var groupDeleted = gid ? isDeleted("group", gid, null) : false;
     var groupDirty = groupDeleted || isUnpub("group", gid);
     if (!groupDirty) {
       for (var gi = 0; gi < flags.length; gi++) {
-        if (flags[gi] && isUnpub("flag", flags[gi].id)) { groupDirty = true; break; }
+        if (flags[gi] && (isUnpub("flag", flags[gi].id) || (childSet && childSet[flags[gi].id]))) { groupDirty = true; break; }
       }
     }
     var collapsed = !!CW.state.collapsedGroups[key];
-    var rows = flags.map(folderRowHTML).join("");
+    var rows = flags.map(function (f) { return folderRowHTML(f, childSet); }).join("");
     var body = collapsed ? "" :
       '<div class="table-wrap"><table aria-label="Flags in ' + CW.esc(name) + '">' +
       "<thead><tr><th>Key</th><th>Description</th><th>Type</th><th>Default</th><th></th></tr></thead>" +
@@ -146,10 +172,11 @@
   function renderFlagFolders() {
     var box = CW.$("flag-folders");
     if (!box) return;
+    var childSet = flagChildDrafts();
     var ids = sortedGroupIds();
-    var html = ids.map(function (id) { return folderHTML(id, groupNameById(id) || id); }).join("");
+    var html = ids.map(function (id) { return folderHTML(id, groupNameById(id) || id, childSet); }).join("");
     var none = flagsInGroup("");
-    if (none.length || !ids.length) html += folderHTML("", "Default");
+    if (none.length || !ids.length) html += folderHTML("", "Default", childSet);
     box.innerHTML = html || '<p class="muted">No flags for this project.</p>';
   }
 
@@ -169,13 +196,13 @@
   function moveFlag(id, gid) {
     // Local-only: stage a flag-update draft, zero server writes.
     var label = flagKeyById(id) || id;
-    CW.drafts.draftStage("flag", {
+    var staged = CW.drafts.draftStage("flag", {
       op: "update",
       body: { group: gid || null },
       baseId: id,
       label: label,
     });
-    CW.toast("draft staged: " + label, true);
+    CW.toast(staged == null ? "no changes to stage: " + label : "draft staged: " + label, true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
@@ -263,12 +290,15 @@
     else if (id) body.group = null;
     // Local-only: stage the full POST/PATCH body as a draft (group-omission
     // quirk preserved: create omits group unless set, update sets null).
+    // Unchanged edits stage nothing (draftStage returns null) instead of
+    // inflating the unpublished count.
+    var stagedKey = null;
     if (id) {
-      CW.drafts.draftStage("flag", { op: "update", body: body, baseId: id, label: body.key });
+      stagedKey = CW.drafts.draftStage("flag", { op: "update", body: body, baseId: id, label: body.key });
     } else {
-      CW.drafts.draftStage("flag", { op: "create", body: body, label: body.key });
+      stagedKey = CW.drafts.draftStage("flag", { op: "create", body: body, label: body.key });
     }
-    CW.toast("draft staged: " + body.key, true);
+    CW.toast(stagedKey == null ? "no changes to stage: " + body.key : "draft staged: " + body.key, true);
     CW.$("flag-result").textContent = "";
     if (CW.markFormClean) CW.markFormClean("flag-form");
     closeFlagDialog();
@@ -310,9 +340,9 @@
       name = name.trim();
       if (!name) { groupStatus("group name is required"); return; }
       if (name === cur) return;
-      CW.drafts.draftStage("group", { op: "update", body: { name: name }, baseId: id, label: name });
-      groupStatus("group staged: " + name);
-      CW.toast("draft staged: " + name, true);
+      var stagedGroup = CW.drafts.draftStage("group", { op: "update", body: { name: name }, baseId: id, label: name });
+      groupStatus(stagedGroup == null ? "no changes to stage: " + name : "group staged: " + name);
+      CW.toast(stagedGroup == null ? "no changes to stage: " + name : "draft staged: " + name, true);
       CW.drafts.refreshDraftChrome();
       return { status: 200, data: {} };
     });
@@ -464,18 +494,19 @@
     };
     var id = (CW.$("flag-rules-id") && String(CW.$("flag-rules-id").value || "").trim()) || "";
     // Local-only: stage the full POST/PATCH body as a draft.
+    var ruleLabel = "rule for " + (flagKeyById(flagId) || flagId);
     if (id) {
-      CW.drafts.draftStage("rule", { op: "update", body: body, baseId: id, label: "rule for " + (flagKeyById(flagId) || flagId) });
-      CW.$("flag-rules-result").textContent = "rule staged: " + id;
+      var stagedRule = CW.drafts.draftStage("rule", { op: "update", body: body, baseId: id, label: ruleLabel });
+      CW.$("flag-rules-result").textContent = stagedRule == null ? "no changes to stage" : "rule staged: " + id;
     } else {
-      var stagedKey = CW.drafts.draftStage("rule", { op: "create", body: body, label: "rule for " + (flagKeyById(flagId) || flagId) });
+      var stagedKey = CW.drafts.draftStage("rule", { op: "create", body: body, label: ruleLabel });
       CW.$("flag-rules-result").textContent = "rule staged: " + stagedKey;
     }
     var fid = CW.$("flag-rules-flag-id");
     if (fid) fid.value = flagId;
     CW.state.activeFlagRulesId = flagId;
     if (CW.markFormClean) CW.markFormClean("flag-rules-form");
-    CW.toast("draft staged: rule for " + (flagKeyById(flagId) || flagId), true);
+    CW.toast((id && stagedRule == null ? "no changes to stage: " : "draft staged: ") + ruleLabel, true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }

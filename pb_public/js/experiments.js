@@ -224,12 +224,13 @@
     }
     body.flag = flagId;
     // Local-only: stage the full POST/PATCH body as a draft.
+    var stagedExp = null;
     if (id) {
-      CW.drafts.draftStage("experiment", { op: "update", body: body, baseId: id, label: body.name });
+      stagedExp = CW.drafts.draftStage("experiment", { op: "update", body: body, baseId: id, label: body.name });
     } else {
-      CW.drafts.draftStage("experiment", { op: "create", body: body, label: body.name });
+      stagedExp = CW.drafts.draftStage("experiment", { op: "create", body: body, label: body.name });
     }
-    CW.toast("draft staged: " + body.name, true);
+    CW.toast(stagedExp == null ? "no changes to stage: " + body.name : "draft staged: " + body.name, true);
     var resEl = CW.$("experiment-result");
     if (resEl) resEl.textContent = "";
     if (CW.markFormClean) CW.markFormClean("experiment-form");
@@ -251,13 +252,13 @@
   }
 
   function setExperimentStatus(id, status) {
-    CW.drafts.draftStage("experiment", {
+    var stagedStatus = CW.drafts.draftStage("experiment", {
       op: "update",
       body: { status: status },
       baseId: id,
       label: expNameById(id),
     });
-    CW.toast("draft staged: experiment status: " + status, true);
+    CW.toast(stagedStatus == null ? "no changes to stage" : "draft staged: experiment status: " + status, true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }

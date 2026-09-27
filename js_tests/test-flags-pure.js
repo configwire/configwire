@@ -200,6 +200,44 @@ test("isUnpub/draftOpOf/isDeleted: update badge vs delete tombstone", function (
   assert.ok(html.indexOf(" disabled>") >= 0);
 });
 
+test("flag rows highlight when child rules/experiments have drafts", function () {
+  reset();
+  h.CW.state.flags = [
+    { id: "f1", key: "withrule", type: "bool", defaultValue: false },
+    { id: "f2", key: "withexp", type: "bool", defaultValue: false },
+    { id: "f3", key: "clean", type: "bool", defaultValue: false },
+  ];
+  h.CW.state.rules = [{ id: "r1", flag: "f1", priority: 0, condition: {}, value: true }];
+  h.CW.state.rulesLoaded = true;
+  h.CW.state.experiments = [{ id: "x1", flag: "f2", name: "E" }];
+  h.CW.drafts.draftStage("rule", {
+    op: "update", baseId: "r1",
+    body: { flag: "f1", priority: 0, condition: {}, value: false }, label: "rule",
+  });
+  h.CW.drafts.draftStage("experiment", { op: "update", baseId: "x1", body: { status: "running" }, label: "E" });
+  h.CW.renderFlags();
+  var html = el("flag-folders").innerHTML;
+  var rows = html.match(/<tr class="is-unpublished">/g) || [];
+  assert.equal(rows.length, 2);
+  var badges = html.match(/<span class="badge unpublished">Unpublished<\/span>/g) || [];
+  assert.equal(badges.length, 2);
+  assert.ok(html.indexOf("clean</td>") >= 0);
+  assert.ok(html.indexOf('class="folder is-unpublished"') >= 0);
+  function menuHasDot(attr, id) {
+    var at = html.indexOf(attr + '="' + id + '"');
+    if (at < 0) return false;
+    var end = html.indexOf("</button>", at);
+    if (end < 0) return false;
+    return html.slice(at, end).indexOf("dot dirty") >= 0;
+  }
+  assert.equal(menuHasDot("data-flag-rules", "f1"), true);
+  assert.equal(menuHasDot("data-flag-experiments", "f2"), true);
+  assert.equal(menuHasDot("data-flag-rules", "f2"), false);
+  assert.equal(menuHasDot("data-flag-experiments", "f1"), false);
+  assert.equal(menuHasDot("data-flag-rules", "f3"), false);
+  assert.equal(menuHasDot("data-flag-experiments", "f3"), false);
+});
+
 test("selectableGroupIds: deleted group excluded from the group select, folder marked", function () {
   reset();
   h.CW.state.groups = { g1: "Keep", g2: "Drop" };
