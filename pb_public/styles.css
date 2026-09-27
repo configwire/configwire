@@ -215,6 +215,16 @@ code {
   letter-spacing: -0.01em;
 }
 
+/* Two-tone wordmark sampled from assets/images/banner.png:
+ * Config ≈ #9da4ad (light gray), Wire ≈ #3a9aee (banner blue). */
+.brand-config {
+  color: #9da4ad;
+}
+
+.brand-wire {
+  color: #3a9aee;
+}
+
 .brand-text small {
   color: var(--muted);
   font-size: 11px;
