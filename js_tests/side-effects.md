@@ -1,0 +1,30 @@
+# configwire js load side effects
+
+What each `pb_public/js/*.js` file registers or touches **synchronously on
+script evaluation** (load), in the order of `pb_public/index.html:511-526`.
+Deferred work (inside `DOMContentLoaded` handlers or called functions) is
+noted but does NOT run at load under the harness default
+(`readyState: "loading"`). Verified against the sources, September 2026.
+
+All 16 files are `"use strict"` IIFEs on `window.CW` rooted at `core.js:7`.
+`keys.js:5` and `boot.js:5` do `var CW = window.CW` with no `|| {}` fallback,
+so they throw if `core.js` did not load first — `core.js` MUST stay first.
+
+| # | File | Load-time side effect (or none) |
+|---|------|---------------------------------|
+| 1 | `core.js` | Creates `window.CW` (`core.js:7`); registers a `document` click listener for toast dismiss (`core.js:77`); defines and exports state + helpers (`core.js:231-256`). No fetch/timer at load: `fetch` only inside `api()`/`apiMut()` (`core.js:136`, `core.js:222`), `setTimeout` only inside `toast()` (`core.js:72`), `localStorage` only inside `loadPersistedScope()`/`persistScope()` (`core.js:106-118`). |
+| 2 | `dialog.js` | Merges `window.CW` (`dialog.js:8`); `readyState` branch (`dialog.js:273-279`): with `"loading"` it only registers a `DOMContentLoaded` listener deferring `ensureMarkup()`; with any other state it calls `ensureMarkup()` immediately, which reads `document.getElementById("cw-dialog")` (`dialog.js:34`) and, only if markup is missing, `document.createElement("dialog")` + `document.body.appendChild` (`dialog.js:36`, `dialog.js:51`). Exports `CW.confirmDialog`/`promptDialog`/`alertDialog`/`confirm` (`dialog.js:281-284`). |
+| 3 | `auth.js` | None beyond namespace writes: `var CW = window.CW` (`auth.js:5`, no fallback); assigns `CW.login`/`CW.logout`. `fetch` (`auth.js:9`) and `localStorage` (`auth.js:16`, `auth.js:22`, `auth.js:34`) only run inside those functions. |
+| 4 | `router.js` | None beyond namespace writes: `var CW = window.CW` (`router.js:5`); assigns `CW.route`, `CW.showHome`, `CW.openProject`, etc. DOM reads (`router.js:41`, `router.js:194`) only run inside called functions. |
+| 5 | `account.js` | None beyond namespace writes: `var CW = window.CW` (`account.js:5`); assigns `CW.checkSetup`, `CW.createSetup`, `CW.loadAccounts`, etc. All `fetch`/`localStorage`/DOM work is inside those functions. |
+| 6 | `scope.js` | None beyond namespace writes: `var CW = window.CW` (`scope.js:5`); assigns `CW.loadProjects`, `CW.loadEnvs`, `CW.refreshAll`, etc. All network/DOM work is inside those functions. |
+| 7 | `drafts.js` | None beyond namespace writes: `var CW = window.CW` (`drafts.js:28`); assigns the `CW.drafts` namespace object (`drafts.js:398`). `localStorage` (`drafts.js:53`, `drafts.js:90`) only runs inside called functions. |
+| 8 | `flags.js` | None beyond namespace writes: `var CW = window.CW` (`flags.js:5`); assigns `CW.openFlagDialog`, `CW.moveFlag`, group helpers, etc. All network/DOM work is inside those functions. |
+| 9 | `rules.js` | None beyond namespace writes: `var CW = window.CW` (`rules.js:5`); assigns `CW.loadRules`, `CW.deleteRule`, builder helpers, `CW.CONDITION_OPS`. All network/DOM work is inside those functions. |
+| 10 | `experiments.js` | None beyond namespace writes: `var CW = window.CW` (`experiments.js:5`); assigns experiment/variant builder helpers. All network/DOM work is inside those functions. |
+| 11 | `keys.js` | None beyond namespace writes: `var CW = window.CW` (`keys.js:5`, no fallback — core must be first); assigns `CW.loadKeys`, `CW.createKey`, `CW.randomKey`, `CW.sha256Hex`. `window.crypto.getRandomValues` (`keys.js:34-35`), `window.crypto.subtle.digest` (`keys.js:46-48`) and `TextEncoder` (`keys.js:47`) only run inside `randomKey()`/`sha256Hex()` when called — hence the harness's injectable crypto hooks. |
+| 12 | `releases.js` | None beyond namespace writes: assigns publish/dirty-state helpers (`CW.applyDrafts`, `CW.armDirtyForm`, `CW.markFormDirty`, …). `addEventListener` calls (`releases.js:41`, `releases.js:705-706`) sit inside render/arm functions, and `fetch` (`releases.js:727`, `releases.js:742`) inside called functions — none run at load. |
+| 13 | `stats.js` | None beyond namespace writes: `var CW = window.CW` (`stats.js:5`); assigns `CW.renderStats`, `CW.loadStats`, `CW.copyStatsJson`. `document.createElement` + `document.body.appendChild/removeChild` (`stats.js:119`, `stats.js:123`) only run inside the clipboard-fallback path of `copyStatsJson()`; `navigator.clipboard` likewise lazy. |
+| 14 | `json-editor.js` | None beyond namespace writes: `var CW = window.CW` (`json-editor.js:5`); assigns `CW.openJsonEditor`, `CW.closeJsonEditor`, hint helpers. No top-level DOM/fetch/timer calls. |
+| 15 | `boot.js` | `var CW = window.CW` (`boot.js:5`, no fallback); main wiring is deferred to a `DOMContentLoaded` listener (`boot.js:13`, closed `boot.js:708`) — inside it: `localStorage` session restore (`boot.js:15`), `window` hashchange listener (`boot.js:53`), delegated `document` click/keydown listeners (`boot.js:191`, `boot.js:499`, `boot.js:504`), `document.body` htmx listener (`boot.js:705`). Runs AT LOAD: exposes `window.cwAdmin` (`boot.js:711`); `readyState` branch (`boot.js:882-886`) calls `updateVersion()` immediately unless `"loading"` — that path fetches `/api/v1/meta` (`boot.js:850`) and `https://api.github.com/…` (`boot.js:862`), which is why the harness fetch stub must deny-by-default and record. |
+| 16 | `update.js` | Idempotence guard sets `window.__cwUpdateWatch` (`update.js:11-12`); `readyState` branch (`update.js:96-100`) calls `start()` immediately unless `"loading"` — that path fetches `/api/v1/meta` (`update.js:24`, via `POLL_MS` const at `update.js:14`), arms a 5-minute `setInterval` (`update.js:78`), and adds `visibilitychange`/`online` listeners (`update.js:81`, `update.js:84`). Always attempts `window.cwAdmin.checkAssetUpdate = checkNow`, guarded when `cwAdmin` is absent (`update.js:103`). Under the harness default (`readyState: "loading"`) none of the network/timer work runs at load. |
