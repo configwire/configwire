@@ -332,3 +332,129 @@ describe("drafts: refreshDraftChrome smoke", () => {
     ]);
   });
 });
+
+describe("drafts: net-zero updates stage nothing", () => {
+  it("update identical to the live record returns null and stores nothing", () => {
+    const h = fresh();
+    const out = h.CW.drafts.draftStage("flag", {
+      op: "update", baseId: "f1",
+      body: { key: "b-flag", project: "p1", defaultValue: false },
+    });
+    assert.equal(out, null);
+    assert.equal(h.CW.drafts.hasDrafts(), false);
+  });
+
+  it("update differing from the live record stages normally", () => {
+    const h = fresh();
+    const out = h.CW.drafts.draftStage("flag", {
+      op: "update", baseId: "f1", body: { defaultValue: true },
+    });
+    assert.equal(out, "f1");
+    assert.equal(h.CW.drafts.isDraft("flag", "f1"), true);
+  });
+
+  it("update reverting a pending update back to live values clears the entry", () => {
+    const h = fresh();
+    h.CW.drafts.draftStage("flag", { op: "update", baseId: "f1", body: { defaultValue: true } });
+    assert.equal(h.CW.drafts.isDraft("flag", "f1"), true);
+    const out = h.CW.drafts.draftStage("flag", {
+      op: "update", baseId: "f1",
+      body: { key: "b-flag", project: "p1", defaultValue: false },
+    });
+    assert.equal(out, null);
+    assert.equal(h.CW.drafts.isDraft("flag", "f1"), false);
+    assert.equal(h.CW.drafts.hasDrafts(), false);
+  });
+
+  it("update reverting a pending delete back to live values clears the entry", () => {
+    const h = fresh();
+    h.CW.drafts.draftStage("flag", { op: "delete", baseId: "f1", body: {} });
+    const out = h.CW.drafts.draftStage("flag", {
+      op: "update", baseId: "f1",
+      body: { key: "b-flag", project: "p1", defaultValue: false },
+    });
+    assert.equal(out, null);
+    assert.equal(h.CW.drafts.hasDrafts(), false);
+  });
+
+  it("covers groups, rules and experiments by live id", () => {
+    const h = fresh();
+    assert.equal(
+      h.CW.drafts.draftStage("group", { op: "update", baseId: "g1", body: { name: "Alpha" } }),
+      null
+    );
+    assert.equal(
+      h.CW.drafts.draftStage("rule", { op: "update", baseId: "r1", body: { flag: "f1", priority: 20 } }),
+      null
+    );
+    assert.equal(
+      h.CW.drafts.draftStage("experiment", { op: "update", baseId: "x1", body: { flag: "f1" } }),
+      null
+    );
+    assert.equal(h.CW.drafts.hasDrafts(), false);
+    assert.equal(
+      h.CW.drafts.draftStage("experiment", { op: "update", baseId: "x1", body: { status: "running" } }),
+      "x1"
+    );
+  });
+
+  it("update over a draft create (temp id) still merges, never suppresses", () => {
+    const h = fresh();
+    const t = h.CW.drafts.draftStage("flag", { op: "create", body: { key: "k" } });
+    const out = h.CW.drafts.draftStage("flag", { op: "update", baseId: t, body: { extra: 7 } });
+    assert.equal(out, t);
+    assert.deepEqual(plain(h.CW.state.drafts.flag[t].body), { key: "k", extra: 7 });
+  });
+});
+
+describe("drafts: empty-group equivalence + restore pruning + rule recreate", () => {
+  it("flag update clearing group to null matches live empty-string group", () => {
+    const h = fresh();
+    h.CW.state.flags.push({ id: "f9", key: "nogroup", project: "p1", defaultValue: false, group: "" });
+    const out = h.CW.drafts.draftStage("flag", { op: "update", baseId: "f9", body: { group: null } });
+    assert.equal(out, null);
+    assert.equal(h.CW.drafts.hasDrafts(), false);
+  });
+
+  it("restoreDrafts prunes updates that no longer differ from live", () => {
+    const h = fresh();
+    h.CW.drafts.draftStage("flag", { op: "update", baseId: "f1", body: { defaultValue: true } });
+    assert.equal(h.CW.drafts.isDraft("flag", "f1"), true);
+    h.CW.state.flags[0].defaultValue = true;
+    h.CW.drafts.restoreDrafts();
+    assert.equal(h.CW.drafts.isDraft("flag", "f1"), false);
+    assert.equal(h.CW.drafts.hasDrafts(), false);
+  });
+
+  it("rule create identical to a pending delete drops both", () => {
+    const h = fresh();
+    h.CW.state.rules.push({
+      id: "r9", flag: "f1", priority: 1,
+      condition: { field: "platform", op: "==", value: "ios" }, value: true,
+    });
+    h.CW.drafts.draftStage("rule", { op: "delete", baseId: "r9", body: {} });
+    const out = h.CW.drafts.draftStage("rule", {
+      op: "create",
+      body: { flag: "f1", priority: 1, condition: { field: "platform", op: "==", value: "ios" }, value: true },
+      label: "r",
+    });
+    assert.equal(out, null);
+    assert.equal(h.CW.drafts.hasDrafts(), false);
+  });
+
+  it("rule create differing from a pending delete keeps both", () => {
+    const h = fresh();
+    h.CW.state.rules.push({
+      id: "r9", flag: "f1", priority: 1,
+      condition: { field: "platform", op: "==", value: "ios" }, value: true,
+    });
+    h.CW.drafts.draftStage("rule", { op: "delete", baseId: "r9", body: {} });
+    const out = h.CW.drafts.draftStage("rule", {
+      op: "create",
+      body: { flag: "f1", priority: 2, condition: { field: "platform", op: "==", value: "ios" }, value: true },
+      label: "r",
+    });
+    assert.ok(out && out.indexOf("draft-rule-") === 0);
+    assert.equal(Object.keys(h.CW.state.drafts.rule).length, 2);
+  });
+});

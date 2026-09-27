@@ -98,6 +98,7 @@
   function restoreDrafts() {
     lastRestoreScope = null;
     ensureScope();
+    pruneNoopDrafts();
     return true;
   }
 
@@ -112,11 +113,162 @@
     return out;
   }
 
+  function liveBaseFor(kind, id) {
+    var key = id === undefined || id === null ? "" : String(id);
+    if (!key) return null;
+    try {
+      if (kind === "group") {
+        var groups = (CW.state && CW.state.groups) || {};
+        if (groups && typeof groups === "object" && !Array.isArray(groups) && typeof groups[key] === "string") {
+          return { id: key, name: groups[key] };
+        }
+        return null;
+      }
+      var list = null;
+      if (kind === "flag") list = CW.state ? CW.state.flags : null;
+      else if (kind === "rule") list = CW.state ? CW.state.rules : null;
+      else if (kind === "experiment") list = CW.state ? CW.state.experiments : null;
+      else return null;
+      if (!Array.isArray(list)) return null;
+      for (var i = 0; i < list.length; i++) {
+        var rec = list[i];
+        if (rec && rec.id !== undefined && rec.id !== null && String(rec.id) === key) return rec;
+      }
+    } catch (e) { return null; }
+    return null;
+  }
+
+  function definedKeys(o) {
+    var out = [];
+    for (var k in o) {
+      if (Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined) out.push(k);
+    }
+    return out;
+  }
+
+  function bodiesEqual(a, b) {
+    if (a === b) return true;
+    if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+    var aArr = Array.isArray(a), bArr = Array.isArray(b), i;
+    if (aArr || bArr) {
+      if (!aArr || !bArr || a.length !== b.length) return false;
+      for (i = 0; i < a.length; i++) {
+        if (!bodiesEqual(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    var ka = definedKeys(a), kb = definedKeys(b);
+    if (ka.length !== kb.length) return false;
+    for (i = 0; i < ka.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(b, ka[i]) || b[ka[i]] === undefined) return false;
+      if (!bodiesEqual(a[ka[i]], b[ka[i]])) return false;
+    }
+    return true;
+  }
+
+  function netZeroUpdate(kind, key, body) {
+    var base = liveBaseFor(kind, key);
+    if (!base) return false;
+    var merged = applyBody(base, body || {});
+    if (kind === "flag") {
+      // A cleared relation stages as null but reads back as "": same empty group.
+      if (merged.group === undefined || merged.group === null) merged.group = "";
+      if (base.group === undefined || base.group === null) base = applyBody(base, { group: "" });
+    }
+    return bodiesEqual(merged, base);
+  }
+
+  function newStoredEntry(kind, key, entry) {
+    var stored = {
+      op: entry.op,
+      body: copyBody(entry.body),
+      baseId: entry.baseId === undefined || entry.baseId === null ? null : String(entry.baseId),
+      tempId: entry.tempId === undefined || entry.tempId === null ? null : String(entry.tempId),
+      label: entry.label === undefined || entry.label === null ? key : String(entry.label),
+      at: Date.now(),
+    };
+    if (kind === "group" && entry.op === "delete" && Array.isArray(entry.memberIds)) {
+      stored.memberIds = entry.memberIds.slice();
+    }
+    return stored;
+  }
+
+  function ruleCreateMatchesDelete(body, deleteBaseId) {
+    var base = liveBaseFor("rule", deleteBaseId);
+    if (!base || !body || typeof body !== "object" || Array.isArray(body)) return false;
+    var keys = definedKeys(body);
+    if (!keys.length) return false;
+    for (var i = 0; i < keys.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(base, keys[i])) return false;
+      if (!bodiesEqual(body[keys[i]], base[keys[i]])) return false;
+    }
+    return true;
+  }
+
+  function coalesceRuleRecreate(bucket, body) {
+    for (var k in bucket) {
+      if (!Object.prototype.hasOwnProperty.call(bucket, k)) continue;
+      var e = bucket[k];
+      if (e && e.op === "delete" && ruleCreateMatchesDelete(body, e.baseId)) {
+        delete bucket[k];
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function pruneNoopDrafts() {
+    var changed = false;
+    var kinds = ["flag", "rule", "experiment", "group"];
+    var bucket, k, e, i;
+    for (i = 0; i < kinds.length; i++) {
+      bucket = (CW.state && CW.state.drafts) ? CW.state.drafts[kinds[i]] : null;
+      if (!bucket || typeof bucket !== "object") continue;
+      for (k in bucket) {
+        if (!Object.prototype.hasOwnProperty.call(bucket, k)) continue;
+        e = bucket[k] || {};
+        if (e.op === "update" && netZeroUpdate(kinds[i], k, e.body)) {
+          delete bucket[k];
+          changed = true;
+        }
+      }
+    }
+    var rules = (CW.state && CW.state.drafts) ? CW.state.drafts.rule : null;
+    if (rules && typeof rules === "object") {
+      var dels = [];
+      for (k in rules) {
+        if (!Object.prototype.hasOwnProperty.call(rules, k)) continue;
+        if (rules[k] && rules[k].op === "delete") dels.push(k);
+      }
+      for (k in rules) {
+        if (!Object.prototype.hasOwnProperty.call(rules, k)) continue;
+        e = rules[k] || {};
+        if (e.op !== "create") continue;
+        for (i = 0; i < dels.length; i++) {
+          if (dels[i] !== null && ruleCreateMatchesDelete(e.body, (rules[dels[i]] || {}).baseId)) {
+            delete rules[k];
+            delete rules[dels[i]];
+            dels[i] = null;
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+    if (changed) persistDrafts();
+    return changed;
+  }
+
   // Stage one draft. Coalescing rules (same key):
   // - delete over a never-published create: drop the entry entirely.
   // - update over create/update: merge bodies, keep the original op identity
   //   (a create stays a create so apply POSTs the full body once).
   // - anything over delete, or create over anything: replace.
+  // - rule create identical to a pending rule delete nets zero (snapshots
+  //   carry no rule ids): both entries are dropped.
+  // - update identical to the live record stages nothing (returns null);
+  //   an update that reverts a pending update/delete back to live values
+  //   clears that entry instead. Callers treat null as "no changes".
   // Returns the storage key (live id, or temp id for creates).
   function draftStage(kind, entry) {
     ensureScope();
@@ -141,6 +293,7 @@
       key = String(entry.baseId);
     }
     var prev = Object.prototype.hasOwnProperty.call(bucket, key) ? bucket[key] : null;
+    var suppressed = false;
     if (entry.op === "delete" && prev && prev.op === "create") {
       delete bucket[key];
     } else if (entry.op === "update" && prev && (prev.op === "create" || prev.op === "update")) {
@@ -148,26 +301,30 @@
       var patch = copyBody(entry.body);
       var k;
       for (k in patch) merged[k] = patch[k];
-      prev.body = merged;
-      if (entry.label) prev.label = String(entry.label);
-      prev.at = Date.now();
-    } else {
-      var stored = {
-        op: entry.op,
-        body: copyBody(entry.body),
-        baseId: entry.baseId === undefined || entry.baseId === null ? null : String(entry.baseId),
-        tempId: entry.tempId === undefined || entry.tempId === null ? null : String(entry.tempId),
-        label: entry.label === undefined || entry.label === null ? key : String(entry.label),
-        at: Date.now(),
-      };
-      if (kind === "group" && entry.op === "delete" && Array.isArray(entry.memberIds)) {
-        stored.memberIds = entry.memberIds.slice();
+      if (prev.op === "update" && netZeroUpdate(kind, key, merged)) {
+        delete bucket[key];
+        suppressed = true;
+      } else {
+        prev.body = merged;
+        if (entry.label) prev.label = String(entry.label);
+        prev.at = Date.now();
       }
-      bucket[key] = stored;
+    } else if (entry.op === "update") {
+      if (netZeroUpdate(kind, key, copyBody(entry.body))) {
+        if (prev) delete bucket[key];
+        suppressed = true;
+      } else {
+        bucket[key] = newStoredEntry(kind, key, entry);
+      }
+    } else if (entry.op === "create" && kind === "rule" && coalesceRuleRecreate(bucket, copyBody(entry.body))) {
+      suppressed = true;
+    } else {
+      bucket[key] = newStoredEntry(kind, key, entry);
     }
     // Creates are keyed by temp id: remember it on the entry for callers.
-    if (entry.op === "create" && !bucket[key].tempId) bucket[key].tempId = key;
+    if (entry.op === "create" && bucket[key] && !bucket[key].tempId) bucket[key].tempId = key;
     persistDrafts();
+    if (suppressed) return null;
     return key;
   }
 
