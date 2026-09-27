@@ -43,6 +43,7 @@
 | --------------------------------- | --------------------- |
 | Go                                | version per `go.mod`  |
 | `make`, `bash`, `curl`, `python3` | standard Unix tooling |
+| Node `>= 20`                      | `js_tests` only       |
 
 ---
 
@@ -371,7 +372,7 @@ See [`docs/SECURITY.md`](docs/SECURITY.md) §9 for full load test details.
 | ------------------------ | ------------------------------------------------- | -------------------------------- |
 | `make serve`             | `go run . serve`                                  | Start server on `127.0.0.1:8090` |
 | `make migrate ARGS="up"` | `go run . migrate <args>`                         | Run migrations                   |
-| `make test`              | `go build ./... && go vet ./... && go test ./...` | Build, vet, and test             |
+| `make test`              | `go build ./... && go vet ./... && go test ./...` + `dart analyze`+`dart test` + node `js_tests` suite | Build, vet, and test (Go + Dart + node) |
 | `make lint`              | `gofmt` check + `go vet`                          | Lint check                       |
 | `make e2e`               | `bash scripts/e2e.sh`                             | End-to-end tests (port 8108)     |
 
