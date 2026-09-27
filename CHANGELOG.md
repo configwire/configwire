@@ -1,0 +1,250 @@
+# Changelog
+
+All notable changes to the ConfigWire server (`configwire/`, image
+`ghcr.io/configwire/configwire`) are documented in this file.
+
+## [Unreleased]
+
+### Changed
+
+- CI now runs on `workflow_dispatch` and is driven by the local push
+  scripts (`scripts/push.sh --all`), instead of running on every push.
+  No runtime change; `gofmt` + `go vet` + `go build` remain the
+  pre-push gate for `configwire/`.
+
+## v0.0.7 — 2026-09-27
+
+### Added
+
+- Per-version fetch counts. `POST /api/v1/env/{env}/events` accepts an
+  optional `version` on `fetch` events; the server persists it on `events`
+  and `event_daily` (new `1790000007_event_version` migration) and the
+  stats endpoint can break fetches down by release version. Old SDKs that
+  omit `version` are recorded as `0`; old servers ignore the field.
+- Update check via GitHub Releases. The Admin topbar shows an update badge
+  backed by `GET /api/v1/meta` (live server version) compared against
+  `github.com/configwire/configwire` releases; the badge links to the
+  releases tab. Manual `?v=` cache-busters were removed in favor of a
+  reload-to-update watcher.
+- Experiments nested in the flag workflow. The standalone experiments nav
+  is gone; experiments are created and managed from the flag's
+  three-dot menu dialog, with a required target-flag selector in the
+  Add-experiment dialog.
+
+### Changed
+
+- **Breaking:** experiments require a target flag (`feat(server)!`).
+  `releases/snapshot.go` validates the relation and the new
+  `1790000005_experiment_flag_required` migration enforces it at the
+  schema layer. Untargeted experiment rows are rejected — attach each
+  experiment to its flag before publishing.
+- Server version is always read from the embedded `VERSION` file
+  (`appVersion()` in `main.go`). The Docker build no longer accepts a
+  `--build-arg VERSION` / `-ldflags -X main.Version` override, so the
+  file is the single source of truth for `/api/v1/meta` and the Admin
+  topbar.
+- Admin action menus consolidated into three-dot menus with leading icons
+  and a `Current` badge for flags, experiments, and releases. Flag row
+  clicks (icon or label) resolve via `closest()`; publish reloads
+  collections so new rows appear immediately; rule/experiment counts load
+  after flags to stay correct.
+- Experiment weight inputs are limited to 2 decimal places; the
+  `(no group)` flag label is renamed to `Default`; flag delete moves
+  above move-to-group with a left-aligned label.
+
+### Fixed
+
+- PocketBase cascade delete for the full project → environment → flag
+  hierarchy (`1790000006_cascade_hierarchy`), so deleting a project or
+  environment no longer orphans child rows.
+- Stats correctness pass: per-flag fetch events with a fetch-aware empty
+  state, chained flag → rules/experiments loads for accurate counts, and
+  the `event_daily` upsert index extended to
+  `(day, env, flag, variant, version)` so per-version rollups never
+  collide. A short-lived per-flag fetch experiment was reverted — fetch
+  stays a single env-wide event while exposures stay per-flag.
+- `gofmt` comment formatting in `main.go` (no behavior change).
+
+## v0.0.6 — 2026-09-26
+
+### Removed
+
+- **Breaking:** legacy global rollback route
+  `POST /api/v1/admin/releases/{version}/rollback` is removed. Use the
+  env-scoped route
+  `POST /api/v1/admin/env/{env}/releases/{version}/rollback`, which
+  resolves `(env, version)` deterministically. E2E was migrated to the
+  env-scoped rollback.
+- **Breaking:** unscoped SDK keys are rejected. `envresolve.ResolveForKey`
+  returns `ErrScopeMismatch` (→ 401) for keys with an empty `env`
+  instead of falling back to unqualified `Resolve`. Scope every SDK key
+  to its environment.
+- **Breaking:** untargeted experiments are excluded from snapshots. Rows
+  with an unset or dangling `flag` relation no longer appear as
+  `flag: ""` in release snapshots, fetch overlays, stats, or ingest.
+- **Breaking:** spike QA hooks removed (`spike_probe.go`, 148 lines).
+  There is no replacement; QA goes through the publish/fetch/stats path.
+- **Breaking:** legacy unpublished buckets dropped from the Admin UI.
+  Draft state is signaled drafts-only (badges/counts), with no legacy
+  bucket views.
+
+### Added
+
+- Topbar update check against GitHub tags, with a toast floated as a
+  bottom-right auto-dismiss snackbar.
+- `gh release create` with changelog on every tagged `configwire/` push
+  (`scripts/push-configwire.sh` / unified `push.sh` path).
+
+### Fixed
+
+- Auto-logout on 403 session expiry instead of an error toast.
+- Docker Compose pinned with `name: configwire` and
+  `container_name: configwire` to avoid the `configwire-configwire-1`
+  duplication when run from the monorepo root.
+- Docs updated for every removal above (`docs/` + `CONTRACT.md`
+  legacy-removal notes).
+
+### Migration notes (0.0.5 → 0.0.6)
+
+1. Replace global rollbacks with env-scoped rollbacks.
+2. Backfill `env` on any SDK key with an empty env — unscoped keys now
+   get 401 on fetch, ingest, and stream.
+3. Attach every experiment to its target flag; untargeted rows vanish
+   from snapshots on next publish.
+4. Remove any reliance on `spike_probe.go` endpoints and on the
+   unpublished-buckets UI.
+
+## v0.0.5 — 2026-09-25
+
+### Added
+
+- Scale indexes for retention and stats hot paths
+  (`1790000004_scale_indexes`): `events(env, ts)`,
+  `events(env, flag, ts)`, `event_daily` upsert key and day,
+  `environments(slug, project)`, `flags(key, project)`, plus
+  release-version and SDK-key-prefix indexes.
+- Local drafts until publish with staged apply: unpublished changes get
+  badges and counts, deleted drafts render red with a `Deleted` badge,
+  submits are dirty-gated, and the publish section is folded into the
+  releases card (standalone card restored after gating).
+- Themed custom dialog replacing native `alert`/`confirm`/`prompt`
+  across all delete/prompt callsites.
+- Releases card collapses to the latest 3 with a view dialog and
+  `Current` badge; SDK-keys card moves below releases, above stats.
+- Shared `apiAll` helper pages list reads past the 200-row limit;
+  sidebar ordering mirrors the detail grid with anchor scroll landing
+  below the sticky scope bar.
+
+### Changed
+
+- Stats aggregation, purge retention, SDK-key prefix lookup, latest-
+  release lookup, and env-slug resolution are served from indexed filter
+  queries instead of full scans.
+- Flag row actions collapsed into a three-dot menu; release dialog
+  fields ordered and labeled with a scrollable snapshot view.
+
+### Performance
+
+- `perf(server)` pass with parity tests: project flag counts at the DB
+  layer, indexed stats aggregation, indexed purge range queries, indexed
+  SDK-key prefix match in ingest, indexed version-desc latest-release
+  fetch, and slug-filtered env resolution. No API shape changes.
+
+## v0.0.4 — 2026-09-25
+
+### Added
+
+- Optional `description` field on the `flags` collection
+  (`1790000003_flag_description` + init migration update), surfaced in
+  the flag dialog and flag table. Empty by default; purely informational.
+- `GET /api/v1/meta` returning the live server version, rendered in the
+  Admin topbar as a GitHub link.
+- Flag dialog syncs `defaultValue` with the selected flag `type`, so
+  switching types can no longer leave a mismatched default.
+
+## v0.0.3 — 2026-09-25
+
+### Added
+
+- Flag keys accept hyphens and dots (`^[A-Za-z_][A-Za-z0-9_.-]*$`):
+  kebab-case and dotted keys such as `latest-version` and
+  `my.flag-name` are valid in the API, the Admin input, and the schema.
+  The `1790000002_flag_key_dots_dashes` migration updates live DBs;
+  fresh DBs get the new pattern from init. Code hooks in `main.go` and
+  `releases/snapshot.go` enforce the same shape.
+- README expanded with Docker, quickstart, and full API reference;
+  `CONTRACT.md` documents the flag-key shape.
+
+## v0.0.2 — 2026-09-25
+
+### Added
+
+- First-run setup and superuser account endpoints (`account/`):
+  setup wizard plus account management view wired into Admin shell
+  routing and styles.
+- Flags in collapsible group folders (folder-only flags card, group
+  dropdown, flag delete, project/env/group creates).
+- Rules managed from the flag dialog: human-readable rule cards with
+  edit/delete, rule edit form, field/operator dropdowns, typed value
+  and seed inputs, and cascade-delete of rules with their parent flag.
+- Experiments management: variant builder with explicit Apply and
+  weight validation (percent weights with auto-balanced last row),
+  variant cards replacing raw JSON, inline variant validation, and
+  create/edit/delete/status actions in dialogs.
+- Projects home grid with per-project detail view; shared JSON expand
+  dialog with live validation; usable stats filters, charts, and
+  polished loading/empty states.
+
+### Changed
+
+- Dashboard restyled to the dark pro theme (v15 polish pass, logo
+  duotone, single-accent buttons); `app.js` split into `js/` modules;
+  detail layout moved to a single full-width column.
+- Docker Compose switched to pull-only (build directive dropped).
+
+### Fixed
+
+- Security headers stamped on every response.
+- `?exp=` status override gated behind
+  `CONFIGWIRE_ENABLE_EXP_OVERRIDE=1` — without the env var the param is
+  ignored and each experiment's stored status applies.
+- Chunked empty-body publish/rollback requests correctly return 400
+  (body bytes, not `ContentLength`, are the source of truth).
+- Ingest validation hardened: `flag`/`variant`/`userHash` length caps
+  (128/64/128 chars, NUL bytes forbidden) and event timestamps clamped
+  to −90d / +5min skew, both → 400.
+- Environments enforce `project` + `slug` uniqueness; env slugs resolve
+  per project; experiments/flags scoped per project with env-scoped
+  rollback; Admin UI scoped by project qualifier with strict filters.
+- Success toasts render green (errors stay red).
+
+## v0.0.1 — 2026-09-24
+
+Initial release of the ConfigWire server.
+
+### Added
+
+- Single-binary PocketBase server with migrations for projects,
+  environments, flags, rules, experiments, SDK keys, releases,
+  `events`, and `event_daily` rollups.
+- SDK surface: `GET /api/v1/env/{env}/config` with `uid`, `platform`,
+  `appVersion`, `locale`, `country`, `attrs` targeting, ETag /
+  `If-None-Match` (304) conditional refresh, and gzip; batched
+  `POST /api/v1/env/{env}/events` analytics ingest (60 req/min per key
+  default, 2048 buffer cap, 503 on full — never silent drop); SSE
+  `GET /api/v1/env/{env}/stream` on every publish.
+- Evaluation: per-request condition evaluator, A/B experiment
+  assignment with stored-status overlays, immutable releases with
+  publish/rollback, per-env snapshots with ETags.
+- Stats query API (`GET /api/v1/admin/env/{env}/stats` with `7d`/`30d`/
+  `90d`/ISO windows, `flagFound`, rates, honest 90-day rollup history
+  with `approximate` flag) and retention purge job (raw `events`
+  30 days → `event_daily`, rollups 90 days, manual/dry-run endpoint).
+- Admin UI (HTMX shell) with multi-project CRUD, publish/rollback,
+  stats views, and SDK-key management.
+- Pull-ready GHCR image (`ghcr.io/configwire/configwire`) with
+  `Dockerfile` + `compose.yml` (named `cw-data` volume at
+  `/app/pb_data`), `Makefile` (`serve`/`migrate`/`test`/`lint`/`e2e`),
+  CI (build/vet/lint/test), and green-path E2E fixtures and suite.
+- Docs: `CONTRACT.md` wire shapes and codes, `SECURITY.md` operator
+  notes and load-test baseline, `ROTATION.md` SDK-key rotation guide.
