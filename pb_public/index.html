@@ -164,7 +164,7 @@
                 <h2 id="flags">Flags</h2>
                 <div class="card-actions"><button id="group-add-btn" type="button" class="btn secondary">+
                     group</button><button id="flag-add-btn" type="button" class="btn primary">Add
-                    flag</button><button id="refresh-flags" type="button" class="btn ghost">Refresh flags</button></div>
+                    flag</button><button id="refresh-flags" type="button" class="btn ghost">Refresh flags</button><button id="transfer-export-btn" type="button" class="btn secondary">Export</button><button id="transfer-import-btn" type="button" class="btn secondary">Import</button></div>
               </div>
               <div id="flag-folders">
                 <p class="muted">Not loaded.</p>
@@ -188,6 +188,7 @@
                 <label>baseVersion (auto-filled) <input id="publish-base" name="baseVersion" type="number" min="0"
                     required></label>
                 <button type="submit" class="btn primary" disabled>Publish new version</button>
+                <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View draft</button>
                 <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard changes</button>
               </form>
               <p id="publish-result" role="status"></p>
@@ -506,6 +507,59 @@
             <button type="button" id="release-dialog-ok" class="btn primary">Close</button>
           </div>
         </dialog>
+        <dialog id="transfer-export-dialog" aria-labelledby="transfer-export-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="transfer-export-title">Export flags</h3>
+            </div>
+            <button type="button" id="transfer-export-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
+          <p class="muted">Snapshot JSON of merged flags+rules+experiments (group = name). Copy or download, then import elsewhere.</p>
+          <textarea id="transfer-export-text" rows="14" readonly spellcheck="false" style="width:100%"></textarea>
+          <p id="transfer-export-result" role="status"></p>
+          <div class="dialog-actions">
+            <button type="button" id="transfer-export-copy" class="btn secondary">Copy</button>
+            <button type="button" id="transfer-export-download" class="btn secondary">Download</button>
+            <span class="dialog-spacer"></span>
+            <button type="button" id="transfer-export-ok" class="btn primary">Close</button>
+          </div>
+        </dialog>
+        <dialog id="transfer-import-dialog" aria-labelledby="transfer-import-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="transfer-import-title">Import flags</h3>
+            </div>
+            <button type="button" id="transfer-import-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
+          <p class="muted">Paste snapshot JSON ({flags, experiments}). Import stages drafts — nothing publishes until Publish. Existing keys merge; rules per flag are replaced.</p>
+          <textarea id="transfer-import-text" rows="14" spellcheck="false" placeholder='{"flags": [...], "experiments": [...]}' style="width:100%"></textarea>
+          <div>
+            <input id="transfer-import-file" type="file" accept="application/json,.json">
+          </div>
+          <p id="transfer-import-result" role="status"></p>
+          <div class="dialog-actions">
+            <button type="button" id="transfer-import-stage" class="btn primary">Stage drafts</button>
+            <span class="dialog-spacer"></span>
+            <button type="button" id="transfer-import-cancel" class="btn ghost">Cancel</button>
+          </div>
+        </dialog>
+        <dialog id="transfer-diff-dialog" aria-labelledby="transfer-diff-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="transfer-diff-title">Draft snapshot</h3>
+            </div>
+            <button type="button" id="transfer-diff-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
+          <p class="muted">Live vs merged (draft) snapshot. Green = added, red = removed, amber = modified with old → new.</p>
+          <div id="transfer-diff-detail"></div>
+          <div class="dialog-actions">
+            <span class="dialog-spacer"></span>
+            <button type="button" id="transfer-diff-ok" class="btn primary">Close</button>
+          </div>
+        </dialog>
       </section>
     </main>
   </div>
@@ -521,6 +575,7 @@
   <script src="/js/experiments.js"></script>
   <script src="/js/keys.js"></script>
   <script src="/js/releases.js"></script>
+  <script src="/js/transfer.js"></script>
   <script src="/js/stats.js"></script>
   <script src="/js/json-editor.js"></script>
   <script src="/js/boot.js"></script>

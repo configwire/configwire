@@ -16,7 +16,8 @@
  *   toast(.ok), login-*, admin-section, view-home/detail, project-*
   *   (.project-card, .project-card-stats), scope-bar, flag-*
  *   (.flag-default-label, #flag-rules-dialog/-list/-form, .rule-*), exp-*, experiment-*, key-* (#key-once),
- *   release-*, publish-*, setup-*, account-*(#account-list/-create-form/-result,
+ *   release-*, transfer-* (.diff-file/.diff-badge/.diff-hunk/.diff-line/.diff-stat,
+ *   .diff-field/.diff-nest/.diff-flag-exps, .staged-list, #transfer-export/-import/-diff-dialog), publish-*, setup-*, account-*(#account-list/-create-form/-result,
  *   #view-account), stats-* (.stats-tiles/.stats-tile(-num/-label),
  *   .stats-guide/.stats-echo-quiet/.stats-count/.stats-split/.stats-chart
  *   (.is-empty)/.stats-bars/.stats-bar-row(-label/-track/-fill/-pct)/.stats-donut/
@@ -447,6 +448,15 @@ code {
   display: inline-block;
   box-shadow: 0 0 6px rgba(94, 234, 212, 0.65);
   flex-shrink: 0;
+}
+
+.dot.dirty {
+  background: var(--warn);
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.65);
+}
+
+#flag-folders .flag-menu button[role="menuitem"] .dot {
+  margin-left: auto;
 }
 
 main {
@@ -2359,7 +2369,10 @@ dialog#flag-rules-dialog,
 dialog#flag-experiments-dialog,
 dialog#flag-dialog,
 dialog#experiment-dialog,
-dialog#release-dialog {
+dialog#release-dialog,
+dialog#transfer-export-dialog,
+dialog#transfer-import-dialog,
+dialog#transfer-diff-dialog {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -2408,6 +2421,19 @@ dialog#experiment-dialog {
 
 dialog#release-dialog {
   width: min(560px, 92vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+dialog#transfer-export-dialog,
+dialog#transfer-import-dialog {
+  width: min(640px, 94vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+dialog#transfer-diff-dialog {
+  width: min(760px, 94vw);
   max-height: 88dvh;
   overflow-y: auto;
 }
@@ -2479,7 +2505,10 @@ dialog#flag-rules-dialog::backdrop,
 dialog#flag-experiments-dialog::backdrop,
 dialog#flag-dialog::backdrop,
 dialog#experiment-dialog::backdrop,
-dialog#release-dialog::backdrop {
+dialog#release-dialog::backdrop,
+dialog#transfer-export-dialog::backdrop,
+dialog#transfer-import-dialog::backdrop,
+dialog#transfer-diff-dialog::backdrop {
   background: rgba(8, 11, 18, 0.75);
   backdrop-filter: blur(4px);
 }
@@ -2489,7 +2518,10 @@ dialog#flag-rules-dialog h3,
 dialog#flag-experiments-dialog h3,
 dialog#flag-dialog h3,
 dialog#experiment-dialog h3,
-dialog#release-dialog h3 {
+dialog#release-dialog h3,
+dialog#transfer-export-dialog h3,
+dialog#transfer-import-dialog h3,
+dialog#transfer-diff-dialog h3 {
   margin: 0 0 var(--space-1);
   font-size: 17px;
   color: var(--text);
@@ -2900,4 +2932,252 @@ section.card.has-unpublished {
 #publish-hint.is-dirty {
   color: var(--warn);
   font-weight: 600;
+}
+
+/* ---- Transfer dialogs (flag import/export + draft snapshot) ---- */
+dialog#transfer-export-dialog .muted,
+dialog#transfer-import-dialog .muted,
+dialog#transfer-diff-dialog .muted {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: var(--space-3);
+}
+
+#transfer-export-text,
+#transfer-import-text {
+  width: 100%;
+  min-height: 200px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  resize: vertical;
+}
+
+#transfer-export-text:focus-visible,
+#transfer-import-text:focus-visible {
+  outline: none;
+  border-color: rgba(94, 234, 212, 0.55);
+}
+
+#transfer-export-result,
+#transfer-import-result {
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
+  min-height: 1em;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+#transfer-import-file {
+  background: transparent;
+  border: none;
+  padding: 0;
+  height: auto;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: var(--space-2);
+}
+
+#transfer-import-file::file-selector-button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  margin-right: var(--space-2);
+  cursor: pointer;
+}
+
+#transfer-diff-detail h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#transfer-diff-detail .diff-stat {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 var(--space-3);
+}
+
+#transfer-diff-detail .diff-file {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-3);
+  overflow: hidden;
+}
+
+#transfer-diff-detail .diff-file.diff-added {
+  background: rgba(94, 234, 212, 0.06);
+  border-color: rgba(94, 234, 212, 0.45);
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+#transfer-diff-detail .diff-file.diff-removed {
+  background: rgba(248, 113, 113, 0.06);
+  border-color: rgba(248, 113, 113, 0.45);
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+#transfer-diff-detail .diff-file.diff-modified {
+  background: rgba(251, 191, 36, 0.06);
+  border-color: rgba(251, 191, 36, 0.45);
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+#transfer-diff-detail .diff-file.diff-flag-exps {
+  background: rgba(251, 191, 36, 0.06);
+  border-color: rgba(251, 191, 36, 0.45);
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+#transfer-diff-detail .diff-field {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+
+#transfer-diff-detail .diff-nest {
+  margin: 0 var(--space-3) var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+#transfer-diff-detail .diff-nest .diff-file {
+  margin-bottom: 0;
+}
+
+#transfer-diff-detail .diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+}
+
+#transfer-diff-detail .diff-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: var(--muted);
+}
+
+#transfer-diff-detail .diff-added .diff-badge {
+  color: var(--ok);
+  border-color: rgba(94, 234, 212, 0.45);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+#transfer-diff-detail .diff-removed .diff-badge {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+#transfer-diff-detail .diff-modified .diff-badge {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+#transfer-diff-detail .diff-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+#transfer-diff-detail .diff-hunk {
+  margin: 0;
+  max-height: 40dvh;
+  overflow: auto;
+  background: var(--panel-2);
+  border-top: 1px solid var(--border);
+  padding: var(--space-2) 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+#transfer-diff-detail .diff-line {
+  display: block;
+  padding: 0 var(--space-3) 0 0;
+  overflow-wrap: normal;
+}
+
+#transfer-diff-detail .diff-line .diff-gutter {
+  display: inline-block;
+  width: 2.5em;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--muted-dim);
+  user-select: none;
+}
+
+#transfer-diff-detail .diff-line.add {
+  background: rgba(94, 234, 212, 0.1);
+}
+
+#transfer-diff-detail .diff-line.add .diff-gutter {
+  color: var(--ok);
+}
+
+#transfer-diff-detail .diff-line.del {
+  background: rgba(248, 113, 113, 0.1);
+}
+
+#transfer-diff-detail .diff-line.del .diff-gutter {
+  color: var(--danger);
+}
+
+#transfer-diff-detail .staged-list {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+}
+
+#transfer-diff-detail .staged-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+#transfer-diff-detail .staged-create .diff-badge {
+  color: var(--ok);
+  border-color: rgba(94, 234, 212, 0.45);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+#transfer-diff-detail .staged-update .diff-badge {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+#transfer-diff-detail .staged-delete .diff-badge {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.08);
 }

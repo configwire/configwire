@@ -237,6 +237,142 @@
       if (CW.closeReleaseDialog) CW.closeReleaseDialog();
       else { var dlg = CW.$("release-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
+    CW.on("transfer-export-btn", "click", function () {
+      try {
+        if (typeof CW.openExportDialog !== "function") { CW.toast("export unavailable"); return; }
+        CW.openExportDialog();
+      } catch (e) { CW.toast((e && e.message) || "export failed"); }
+    });
+    CW.on("transfer-import-btn", "click", function () {
+      try {
+        if (typeof CW.openImportDialog !== "function") { CW.toast("import unavailable"); return; }
+        CW.openImportDialog();
+      } catch (e) { CW.toast((e && e.message) || "import failed"); }
+    });
+    CW.on("transfer-draft-view-btn", "click", function () {
+      try {
+        if (typeof CW.openDraftSnapshotDialog !== "function") { CW.toast("draft snapshot unavailable"); return; }
+        CW.openDraftSnapshotDialog();
+      } catch (e) { CW.toast((e && e.message) || "draft snapshot failed"); }
+    });
+    CW.on("transfer-export-close", "click", function () {
+      try {
+        if (typeof CW.closeExportDialog !== "function") return;
+        CW.closeExportDialog();
+      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+    });
+    CW.on("transfer-export-ok", "click", function () {
+      try {
+        if (typeof CW.closeExportDialog !== "function") return;
+        CW.closeExportDialog();
+      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+    });
+    CW.on("transfer-export-copy", "click", function () {
+      try {
+        var ta = CW.$("transfer-export-text");
+        var v = ta && ta.value != null ? String(ta.value) : "";
+        if (!v) { CW.toast("nothing to copy"); return; }
+        if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(v).then(function () { CW.toast("copied", true); }, function () { CW.toast("copy failed"); });
+        } else {
+          var tmp = document.createElement("textarea");
+          tmp.value = v;
+          document.body.appendChild(tmp);
+          tmp.select();
+          try { document.execCommand("copy"); CW.toast("copied", true); }
+          catch (e2) { CW.toast("copy failed"); }
+          document.body.removeChild(tmp);
+        }
+      } catch (e) { CW.toast((e && e.message) || "copy failed"); }
+    });
+    CW.on("transfer-export-download", "click", function () {
+      try {
+        var ta = CW.$("transfer-export-text");
+        var v = ta && ta.value != null ? String(ta.value) : "";
+        if (!v) { CW.toast("nothing to download"); return; }
+        var blob = new Blob([v], { type: "application/json" });
+        var URLobj = window.URL || window.webkitURL;
+        var url = URLobj.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "configwire-flags.json";
+        document.body.appendChild(a);
+        if (a.click) a.click();
+        document.body.removeChild(a);
+        try { URLobj.revokeObjectURL(url); } catch (e2) { /* best-effort */ }
+      } catch (e) { CW.toast((e && e.message) || "download failed"); }
+    });
+    CW.on("transfer-import-close", "click", function () {
+      try {
+        if (typeof CW.closeImportDialog !== "function") return;
+        CW.closeImportDialog();
+      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+    });
+    CW.on("transfer-import-cancel", "click", function () {
+      try {
+        if (typeof CW.closeImportDialog !== "function") return;
+        CW.closeImportDialog();
+      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+    });
+    CW.on("transfer-import-stage", "click", function () {
+      try {
+        if (typeof CW.parseTransferSnapshot !== "function" ||
+            typeof CW.validateTransferSnapshot !== "function" ||
+            typeof CW.importTransferSnapshot !== "function") { CW.toast("import unavailable"); return; }
+        var ta = CW.$("transfer-import-text");
+        var raw = ta && ta.value != null ? String(ta.value) : "";
+        var parsed = CW.parseTransferSnapshot(raw);
+        if (!parsed || !parsed.ok) {
+          var perr = (parsed && parsed.error) || "invalid snapshot";
+          var resEl = CW.$("transfer-import-result");
+          if (resEl) resEl.textContent = perr;
+          else CW.toast(perr);
+          return;
+        }
+        var validated = CW.validateTransferSnapshot(parsed.snapshot);
+        if (!validated || !validated.ok) {
+          var verr = (validated && validated.error) || "invalid snapshot";
+          var resEl2 = CW.$("transfer-import-result");
+          if (resEl2) resEl2.textContent = verr;
+          else CW.toast(verr);
+          return;
+        }
+        var counts = CW.importTransferSnapshot(parsed.snapshot) || {};
+        var resEl3 = CW.$("transfer-import-result");
+        if (resEl3) resEl3.textContent = "staged: " + JSON.stringify(counts);
+        if (typeof CW.closeImportDialog === "function") CW.closeImportDialog();
+        CW.toast("import staged", true);
+      } catch (e) { CW.toast((e && e.message) || "import failed"); }
+    });
+    CW.on("transfer-import-file", "change", function (ev) {
+      try {
+        var input = (ev && ev.target) || CW.$("transfer-import-file");
+        var f = input && input.files ? input.files[0] : null;
+        if (!f) return;
+        if (typeof FileReader === "undefined") { CW.toast("file import unavailable"); return; }
+        var rd = new FileReader();
+        rd.onload = function () {
+          try {
+            var ta = CW.$("transfer-import-text");
+            if (ta) ta.value = rd.result != null ? String(rd.result) : "";
+          } catch (e) { CW.toast((e && e.message) || "file read failed"); }
+        };
+        rd.onerror = function () { CW.toast("file read failed"); };
+        rd.readAsText(f);
+      } catch (e) { CW.toast((e && e.message) || "file read failed"); }
+    });
+    CW.on("transfer-diff-close", "click", function () {
+      try {
+        if (typeof CW.closeDraftSnapshotDialog !== "function") return;
+        CW.closeDraftSnapshotDialog();
+      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+    });
+    CW.on("transfer-diff-ok", "click", function () {
+      try {
+        if (typeof CW.closeDraftSnapshotDialog !== "function") return;
+        CW.closeDraftSnapshotDialog();
+      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+    });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
@@ -589,6 +725,21 @@
         if (CW.openReleaseDialog) CW.openReleaseDialog(viewId);
         return;
       }
+      var expId = null;
+      if (t) {
+        if (t.closest) {
+          var eb = t.closest("[data-export-release]");
+          if (eb && eb.getAttribute) expId = eb.getAttribute("data-export-release");
+        } else if (t.getAttribute) {
+          expId = t.getAttribute("data-export-release");
+        }
+      }
+      if (expId) {
+        if (inMenu) closeReleaseMenus();
+        if (CW.exportReleaseSnapshot) CW.exportReleaseSnapshot(expId);
+        else CW.toast("export unavailable");
+        return;
+      }
       var rb = t && t.closest ? t.closest("[data-rollback-version]") : null;
       if (!rb && t && t.getAttribute && t.getAttribute("data-rollback-version")) rb = t;
       var v = rb && rb.getAttribute ? rb.getAttribute("data-rollback-version") : null;
@@ -781,6 +932,16 @@
     get balanceVariantsBuilder() { return CW.balanceVariantsBuilder; },
     get resetVariantsBuilder() { return CW.resetVariantsBuilder; },
     get recalcLastVariantWeight() { return CW.recalcLastVariantWeight; },
+    get buildTransferSnapshot() { return CW.buildTransferSnapshot; },
+    get parseTransferSnapshot() { return CW.parseTransferSnapshot; },
+    get validateTransferSnapshot() { return CW.validateTransferSnapshot; },
+    get importTransferSnapshot() { return CW.importTransferSnapshot; },
+    get diffTransferSnapshots() { return CW.diffTransferSnapshots; },
+    get releaseSnapshotToTransfer() { return CW.releaseSnapshotToTransfer; },
+    get exportReleaseSnapshot() { return CW.exportReleaseSnapshot; },
+    get openExportDialog() { return CW.openExportDialog; },
+    get openImportDialog() { return CW.openImportDialog; },
+    get openDraftSnapshotDialog() { return CW.openDraftSnapshotDialog; },
   };
 })();
 
