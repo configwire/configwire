@@ -177,14 +177,13 @@ Ref: `configwire/ingest/handler.go:108-109`.
 Request:
 
 ```json
-{"events": [{"kind": "exposure", "flag": "launch_flag", "variant": "treatment", "userHash": "4017c6d850aedf6b", "ts": "2026-09-22T00:00:00Z"}]}
+{"events": [{"kind": "exposure", "variant": "treatment", "userHash": "4017c6d850aedf6b", "ts": "2026-09-22T00:00:00Z"}]}
 ```
 
 - `kind` must be `fetch` or `exposure`.
-- `flag`, `variant`, `userHash`, `ts` are all optional. Unknown flag
-  keys are stored with the flag relation unset (variant preserved).
-  Flag keys resolve scoped to the event env's project (key + project,
-  never global key): the same key under another project never matches.
+- `variant`, `userHash`, `ts` are all optional. `version` is an
+  optional non-negative int (fetched release version; SDK fetch events
+  carry it); absent means 0. Negative then `400`.
 - `ts` accepts RFC3339 string, unix-seconds number, or absent/null
   (server time). Anything else then `400`.
 - Raw `userId`/`ip` keys are strictly rejected (presence, not value,
@@ -218,73 +217,67 @@ Flush bound: buffered channel (cap 2048), flush every 1s or 500 rows;
 worst-case ingest lag about 1s plus write time (bounded at 2s).
 Ref: `configwire/ingest/ingest.go:25-28`.
 
-## 5. Stats — `GET /api/v1/admin/env/{env}/stats?flag=X&since=7d`
+## 5. Stats — `GET /api/v1/admin/env/{env}/stats?since=7d`
 
-Ref: `configwire/stats/stats.go:262-335` (handler), `:253-255` (route + superuser-only). Superuser-only;
+Ref: `configwire/stats/stats.go` (handler) (route + superuser-only). Superuser-only;
 SDK-key-only or unauth then `401`.
 
 Success `200`:
 
 ```json
-{"fetches": 3, "exposures": 2, "perVariant": {"control": 1, "treatment": 1}, "version": 1, "echo": {"env": "dev", "flag": "launch_flag", "since": "90d", "sinceDays": 90, "cutoff": "2026-06-25T04:08:22Z", "horizon": "90d", "rollupHorizon": "2026-08-24T00:00:00Z"}, "flagFound": true, "total": 5, "rates": {"control": 0.5, "treatment": 0.5}, "sources": {"events": 2, "rollups": 3}, "approximate": true}
+{"fetches": 3, "exposures": 2, "perVariant": {"control": 1, "treatment": 1}, "perVersion": {"1": 3}, "version": 1, "echo": {"env": "dev", "since": "90d", "sinceDays": 90, "cutoff": "2026-06-25T04:08:22Z", "horizon": "90d", "rollupHorizon": "2026-08-24T00:00:00Z"}, "total": 5, "rates": {"control": 0.5, "treatment": 0.5}, "sources": {"events": 2, "rollups": 3}, "approximate": true}
 ```
 
+- Env-wide stats with `since` only: every event in the env window
+  counts together; there is no per-key filtering.
 - Additive-compat: the old keys (`fetches`, `exposures`,
   `perVariant`, `version`) are byte-identical to the frozen shape;
   every other key is additive only. Old clients ignore unknown JSON
-  fields; nothing is renamed or removed.
+  fields.
 - Exact integer counts, no rounding. `perVariant` covers exposures
   only, verbatim variant names (including `""` if stored); both
-  sources merge perVariant keys verbatim.
+  sources merge perVariant keys verbatim. `perVersion` covers fetches
+  only, keyed by fetched release version (JSON keys are strings);
+  both sources merge perVersion keys verbatim.
 - `version` is the env's max release version.
 - `userHash` is never read (aggregate counts only, no PII in the
-  response). Ref: `:362-381`.
-- `echo`: `env`/`flag` are the verbatim request values (`flag` is
-  `""` when absent); `since`/`sinceDays` carry the EFFECTIVE window
-  after the 90d clamp; `cutoff` is the UTC RFC3339 window start
-  (now-UTC minus days); `horizon` keeps the human-readable window
-  label (same string as `since`, for example `"7d"`); `rollupHorizon`
-  is the UTC-midnight RFC3339 split between raw events and pre-purge
-  daily rollups. Ref: `:113-147`.
-- `flagFound`: true when `?flag=` is absent (unfiltered) or the key
-  resolves; false on unknown keys (including path-ish `../x`), which
-  then return zeros with `200` and version populated, never `404`.
-  `?flag=` resolves scoped to the stats env's project (key +
-  project, never global key), so the same key under another project
-  never pollutes counts. Events with unset flag relation drop out
-  under any `?flag=` filter, count when absent. Ref: `:119-127,285-295`.
-- `total` is fetches + exposures, never rounded. Ref: `:108-111`.
+  response).
+- `echo`: `env` is the verbatim request value; `since`/`sinceDays`
+  carry the EFFECTIVE window after the 90d clamp; `cutoff` is the
+  UTC RFC3339 window start (now-UTC minus days); `horizon` keeps the
+  human-readable window label (same string as `since`, for example
+  `"7d"`); `rollupHorizon` is the UTC-midnight RFC3339 split between
+  raw events and pre-purge daily rollups.
+- `total` is fetches + exposures, never rounded.
 - `rates` is per-variant exposure shares (`perVariant[v] /
   exposures`, display-math only, counts never rounded);
-  `exposures == 0` yields `{}` (never NaN/null). Ref: `:94-106`.
+  `exposures == 0` yields `{}` (never NaN/null).
 - `sources`: `events` is the events-side total, `rollups` the
   rollups-side total. `approximate` is `rollupsTotal > 0`: merged
   windows are summed-but-flagged-approximate (rollup counters can
   carry a crash-window overshoot, so merged windows never claim
   exactness); events-only windows are exact (`approximate: false`).
-  Ref: `:201-221,311-313`.
 - Disjoint-merge rule: `horizon = DayBucket(now - 30d)` (UTC midnight,
   the same day grain purge rolls up into). Raw events count when
   `ts >= max(cutoff, horizon)`; rollup buckets count when
   `cutoffDay <= day < horizon` (exactly-at-cutoff kept, boundary day
   stays raw-side). Disjoint by construction, so a crash-window row
   present in BOTH sources still counts once (plus `approximate: true`
-  marks the taint). Ref: `:149-168,177-199,209-221`.
-- Flag join: both sources join on the once-per-request stored FlagID
-  (resolved once, never re-resolved per row/bucket), so
-  renamed/orphaned flags keep their history. Ref: `:285-294,338-360`.
+  marks the taint).
+- `series` ("series"): additive daily breakdown alongside the frozen keys, shape `series: [{"day": "2026-09-21", "fetches": 2, "exposures": 1}]`. Dense zero-filled chronological over `SeriesDays`, day grain is `purge.DayBucket` UTC `YYYY-MM-DD`, length covers the since window. Disjoint rule: events `ts >= max(cutoff, horizon)`, rollups `cutoffDay <= day < horizon`, boundary day stays raw-side. Series sums equal totals (`fetches`/`exposures`); `approximate`/`sources` unchanged. Additive-compat: old clients ignore unknown `"series"`. Ref: `configwire/stats/stats_series.go` (`SeriesPoint`, `SeriesDays`, disjoint rule). Each point also carries `versions`: per-day fetch counts by fetched release version (exposures have no version), with `sum(versions)==fetches` per point; JSON `map[int]int` marshals with string keys; zero-fetch days render `versions:{}` (never null).
 - `since` grammar: `?since=<N>d`, absent/blank means 7d default,
   `N > 90` clamped to 90d (never an error), `N < 1` or wrong shape
   (`abc`, `-5d`, `0d`, `7h`, bare `7`) then `400`. Cutoff is
   now-UTC minus days; raw rows with ts before the event cutoff or
-  zero ts excluded. Ref: `:51-67`.
+  zero ts excluded.
 - Unknown env slug then `404`. Optional `?project=<projectId>`
   disambiguates a slug shared by several projects (`400` ambiguous
-  without it). Ref: `:267-270`.
-- Aggregation is an in-Go O(n) scan over `events` plus one O(n) scan
-  over `event_daily` (v1-appropriate; indexed replacement is the
-  documented follow-up past ~100k rows).
-  Ref: `:16-21,223-250,338-381`.
+  without it).
+- Aggregation is env-wide only over indexed filters (env + ts/day):
+  `loadRows` selects events by env and ts window, `loadRollups`
+  selects `event_daily` by env and day window; the frozen
+  `Aggregate`/`AggregateRollups` helpers re-apply the same
+  predicates in-Go.
 
 ## 6. Stream — `GET /api/v1/env/{env}/stream`
 
@@ -331,20 +324,20 @@ ticker purges with `cutoff = now - 30d`. Ref: `:284-296`.
 
 ## 8. Status-code index (exact bodies)
 
-| Code | Meaning | Body | Ref |
-| ---- | ------- | ---- | --- |
-| 200 | fetch config / publish / rollback / stats / purge | shapes in sections 1, 2, 3, 5, 7 | fetch `:340-346`, releases `:148,257`, stats `:168-173`, purge `:320-335` |
-| 202 | events accepted | `{"accepted": N, "status": 202}` | ingest handler `:170` |
-| 204 | fetch CORS preflight (`OPTIONS`) | empty | fetch `:93-101` |
-| 304 | fetch not modified (exact etag match) | empty | fetch `:326-328` |
-| 400 | bad publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:70-76,193-195`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go` |
-| 401 | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths) | ingest `:213-241`, fetch `:289-300`, spike `:49-60` |
-| 404 | unknown env slug / unknown release version | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}` | fetch `:294-297`, releases `:220-221` |
-| 409 | stale publish baseVersion (no write) | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}` | releases `:102-108` |
-| 413 | ingest body/event too large; fetch attrs too large is 414 | `{"message": "body exceeds 128KB.", "status": 413}` | ingest `:252-262` |
-| 414 | fetch attrs over 8192 bytes | `{"message": "attrs too large: max 8192 bytes", "status": 414}` | fetch `:302-306` |
-| 429 | ingest rate limit hit | `{"message": "Rate limit exceeded.", "status": 429}` | ingest handler `:124-126` |
-| 503 | ingest buffer full (cap 2048, retry) | `{"message": "Ingest buffer full, retry.", "status": 503}` | ingest handler `:164-168` |
+| Code | Meaning                                                                               | Body                                                                                                                   | Ref                                                                                               |
+| ---- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 200  | fetch config / publish / rollback / stats / purge                                     | shapes in sections 1, 2, 3, 5, 7                                                                                       | fetch `:340-346`, releases `:148,257`, stats `:168-173`, purge `:320-335`                         |
+| 202  | events accepted                                                                       | `{"accepted": N, "status": 202}`                                                                                       | ingest handler `:170`                                                                             |
+| 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:93-101`                                                                                   |
+| 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:326-328`                                                                                  |
+| 400  | bad publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:70-76,193-195`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go` |
+| 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:213-241`, fetch `:289-300`, spike `:49-60`                                               |
+| 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:294-297`, releases `:220-221`                                                             |
+| 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:102-108`                                                                               |
+| 413  | ingest body/event too large; fetch attrs too large is 414                             | `{"message": "body exceeds 128KB.", "status": 413}`                                                                    | ingest `:252-262`                                                                                 |
+| 414  | fetch attrs over 8192 bytes                                                           | `{"message": "attrs too large: max 8192 bytes", "status": 414}`                                                        | fetch `:302-306`                                                                                  |
+| 429  | ingest rate limit hit                                                                 | `{"message": "Rate limit exceeded.", "status": 429}`                                                                   | ingest handler `:124-126`                                                                         |
+| 503  | ingest buffer full (cap 2048, retry)                                                  | `{"message": "Ingest buffer full, retry.", "status": 503}`                                                             | ingest handler `:164-168`                                                                         |
 
 ## 9. Staleness bound
 
@@ -357,7 +350,7 @@ Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.d
 ## 10. Retention
 
 Raw `events` rows live 30 days, daily `event_daily` rollups keyed
-`(day, env, flag, variant)` live 90 days. Cutoff is strictly-older-than
+`(day, env, variant, version)` live 90 days. Cutoff is strictly-older-than
 (`ts` before cutoff deleted, exactly-equal kept, zero-ts kept).
 Rollup-before-delete runs in the same op (upsert then delete; a crash
 between them double-counts only the in-flight bucket on re-run, and a

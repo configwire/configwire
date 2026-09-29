@@ -5,6 +5,20 @@ All notable changes to the ConfigWire server (`configwire/`, image
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** per-event flag attribution removed.
+  `POST /api/v1/env/{env}/events` takes kind/variant/userHash/version
+  only; purge/stats are env-wide. The `1790000008_drop_event_flag`
+  migration drops the `events.flag` / `event_daily.flag` columns and
+  re-keys the rollup upsert to `(day, env, variant, version)`.
+
+### Changed
+
+- Stats is env-wide only: `GET /api/v1/admin/env/{env}/stats?since=`
+  returns env-wide counts with no per-key breakdown. Series points
+  carry `versions` (per-version fetch lines).
+
 ## v0.0.8 — 2026-09-28
 
 ### Added

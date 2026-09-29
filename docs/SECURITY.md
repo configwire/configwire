@@ -59,7 +59,7 @@ binary plus operator procedure.
 - Retention (enforced by the `configwire/purge` daily job + manual
   `POST /api/v1/admin/maintenance/purge`, superuser-only):
   - **raw `events` rows: 30 days**, then rolled up and deleted;
-  - **daily `event_daily` rollups `(day, env, flag, variant)`: 90 days**;
+  - **daily `event_daily` rollups `(day, env, variant, version)`: 90 days**;
   - rollups carry counts only — no PII survives past the raw window.
 
 ## 4. Rate limits — 60/min default per key

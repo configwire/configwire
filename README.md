@@ -191,14 +191,14 @@ curl -s http://127.0.0.1:8109/api/v1/env/dev/config \
 # Send fetch + exposure events
 curl -s -X POST http://127.0.0.1:8109/api/v1/env/dev/events \
   -H 'X-ConfigWire-Key: cw-qs-demo-key-001' -H 'Content-Type: application/json' \
-  -d '{"events":[{"kind":"fetch","flag":"launch_flag"},{"kind":"exposure","flag":"launch_flag","variant":"control","userHash":"abc123"}]}'
+  -d '{"events":[{"kind":"fetch"},{"kind":"exposure","variant":"control","userHash":"abc123"}]}'
 # Expected: {"accepted":2,...}
 
 # Query stats (after ~3s for ingest to flush)
 sleep 3
-curl -s "http://127.0.0.1:8109/api/v1/admin/env/dev/stats?flag=launch_flag&since=7d" \
+curl -s "http://127.0.0.1:8109/api/v1/admin/env/dev/stats?since=7d" \
   -H "Authorization: $TOKEN"
-# Expected: {"fetches":1,"exposures":1,...,"flagFound":true,"total":2,...}
+# Expected: {"fetches":1,"exposures":1,...,"total":2,...}
 ```
 
 **6. Cleanup**
@@ -256,8 +256,8 @@ Content-Type: application/json
 ```json
 {
   "events": [
-    {"kind": "fetch",    "flag": "launch_flag"},
-    {"kind": "exposure", "flag": "launch_flag", "variant": "control", "userHash": "abc123"}
+    {"kind": "fetch"},
+    {"kind": "exposure", "variant": "control", "userHash": "abc123"}
   ]
 }
 ```
@@ -285,7 +285,7 @@ All admin paths require a superuser token: `Authorization: <token>` (bare or `Be
 | ------ | ----------------------------------------------------- | ---------------------------------------------------------- |
 | `POST` | `/api/v1/admin/env/{env}/publish`                     | Publish a new immutable release                            |
 | `POST` | `/api/v1/admin/env/{env}/releases/{version}/rollback` | Roll back to a previous release (republishes as a new row) |
-| `GET`  | `/api/v1/admin/env/{env}/stats`                       | Query flag stats                                           |
+| `GET`  | `/api/v1/admin/env/{env}/stats`                       | Query env stats                                            |
 | `POST` | `/api/v1/admin/maintenance/purge`                     | Trigger event purge (`?dry=1` for dry run)                 |
 
 ### Publish 
@@ -302,7 +302,7 @@ curl -X POST http://127.0.0.1:8090/api/v1/admin/env/dev/publish \
 ### Stats
 
 ```
-GET /api/v1/admin/env/{env}/stats?flag=<key>&since=<window>
+GET /api/v1/admin/env/{env}/stats?since=<window>
 ```
 
 `since` accepts: `7d`, `30d`, `90d`, or an ISO timestamp.
