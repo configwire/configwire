@@ -3,21 +3,58 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
-## [Unreleased]
+## v0.1.0 — 2026-09-29
 
 ### Removed
 
 - **Breaking:** per-event flag attribution removed.
   `POST /api/v1/env/{env}/events` takes kind/variant/userHash/version
-  only; purge/stats are env-wide. The `1790000008_drop_event_flag`
-  migration drops the `events.flag` / `event_daily.flag` columns and
-  re-keys the rollup upsert to `(day, env, variant, version)`.
+  only; `flag` is no longer accepted or stored. The
+  `1790000008_drop_event_flag` migration drops the `events.flag` /
+  `event_daily.flag` columns and re-keys the rollup upsert to
+  `(day, env, variant, version)`.
+- **Breaking:** per-flag stats filtering removed. `GET
+  /api/v1/admin/env/{env}/stats` no longer accepts `?flag=`; the
+  `flagFound` and `echo.flag` response keys are gone. Stats is
+  env-wide only.
+
+### Added
+
+- Daily stats series. The stats response gains an additive `series`
+  array (`[{day, fetches, exposures, versions}]`, dense zero-filled
+  chronological over the window, UTC `YYYY-MM-DD` day grain) using
+  the same disjoint raw/rollup merge rule as the totals, so series
+  sums equal `fetches`/`exposures`. Each point carries `versions`
+  (per-day fetch counts by release version, `sum(versions) ==
+  fetches` per point; zero-fetch days render `versions:{}`).
+  Old clients ignore the new key.
 
 ### Changed
 
 - Stats is env-wide only: `GET /api/v1/admin/env/{env}/stats?since=`
-  returns env-wide counts with no per-key breakdown. Series points
-  carry `versions` (per-version fetch lines).
+  returns env-wide counts with no per-key breakdown. Aggregation runs
+  over indexed env + ts/day filters (`loadRows`/`loadRollups`) with
+  the frozen `Aggregate`/`AggregateRollups` helpers re-applying the
+  same window.
+- Admin stats view drops the flag filter and renders the daily
+  series chart (fetches/exposures per day with per-version fetch
+  lines); node `js_tests/test-stats.js` and the E2E series harness
+  cover the env-wide shape.
+- Docker publish workflow hardened with a smoke-test gate (native
+  image built first, `--help` run before publishing) and
+  supply-chain metadata (OCI source/revision/version labels, long-sha
+  tag, semver-without-`v` tag, `latest` only for stable refs).
+- Docs updated for every change above (`README.md` + `docs/` +
+  `CONTRACT.md` stats/events shapes).
+
+### Migration notes (0.0.8 → 0.1.0)
+
+1. Stop sending `flag` on ingest events; the field is ignored.
+2. Replace `GET .../stats?flag=X&since=` with env-wide `?since=`
+   and drop any reads of `flagFound` / `echo.flag`.
+3. Read per-day trends from `series` (with per-point `versions`);
+   totals, `rates`, `sources`, and `approximate` semantics are
+   unchanged.
 
 ## v0.0.8 — 2026-09-28
 
