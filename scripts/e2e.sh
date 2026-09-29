@@ -189,14 +189,14 @@ cp /tmp/cw-t17-fetch1.json /tmp/cw-t17-fetch-stage2.json
 
 # ---- STAGE 3: exposures via T9 route + stats --------------------------------
 echo "--- STAGE 3: 1 fetch + 3 exposures -> stats ---"
-EV='{"events":[{"kind":"fetch","flag":"exp_bool","variant":"","userHash":"aaaabbbbccccdddd"},{"kind":"exposure","flag":"exp_bool","variant":"control","userHash":"aaaabbbbccccdddd"},{"kind":"exposure","flag":"exp_bool","variant":"control","userHash":"bbbbccccddddeeee"},{"kind":"exposure","flag":"exp_bool","variant":"treatment","userHash":"ccccddddeeeeffff"}]}'
+EV='{"events":[{"kind":"fetch","variant":"","userHash":"aaaabbbbccccdddd"},{"kind":"exposure","variant":"control","userHash":"aaaabbbbccccdddd"},{"kind":"exposure","variant":"control","userHash":"bbbbccccddddeeee"},{"kind":"exposure","variant":"treatment","userHash":"ccccddddeeeeffff"}]}'
 CODE=$(curl -s -o /tmp/cw-t17-ev.json -w "%{http_code}" --max-time 10 -X POST \
   "$BASE_URL/api/v1/env/e2e/events" -H "X-ConfigWire-Key: $SDK_KEY" \
   -H "Content-Type: application/json" -d "$EV" 2>/dev/null || echo "000")
 [ "$CODE" = "202" ] && pass "ingest 202 (1 fetch + 3 exposures)" || fail "ingest (code $CODE)"
 sleep 3  # batcher flush lag (~1s, T9 note)
 CODE=$(curl -s -o /tmp/cw-t17-stats.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/admin/env/e2e/stats?flag=exp_bool&since=7d" \
+  "$BASE_URL/api/v1/admin/env/e2e/stats?since=7d" \
   -H "Authorization: $TOKEN" 2>/dev/null || echo "000")
 [ "$CODE" = "200" ] && pass "stats 200" || fail "stats (code $CODE)"
 python3 - <<'EOF' && pass "stats exact {fetches:1, exposures:3, perVariant}" || fail "stats exact"
@@ -208,7 +208,7 @@ ok = (d.get('fetches') == exp['fetches']
       and d.get('perVariant') == exp['perVariant'])
 sys.exit(0 if ok else 1)
 EOF
-python3 - <<'EOF' && pass "stats new keys {flagFound,echo,total,rates,sources,approximate:false}" || fail "stats new keys"
+python3 - <<'EOF' && pass "stats new keys {echo,total,rates,sources,approximate:false}" || fail "stats new keys"
 import json, sys
 d = json.load(open('/tmp/cw-t17-stats.json'))
 exp = json.load(open('e2e/fixtures/expected.json'))['stage3_stats']
@@ -218,10 +218,10 @@ sources = d.get('sources', {})
 expecho = exp['echo']
 exprates = exp['rates']
 expsources = exp['sources']
-ok = (d.get('flagFound') is True
+ok = ('flagFound' not in d
+      and 'flag' not in echo
       and d.get('total') == exp['total'] == d.get('fetches') + d.get('exposures')
       and echo.get('env') == expecho['env']
-      and echo.get('flag') == expecho['flag']
       and echo.get('since') == expecho['since']
       and echo.get('sinceDays') == expecho['sinceDays']
       and echo.get('horizon') == expecho['since']
@@ -235,25 +235,10 @@ ok = (d.get('flagFound') is True
 sys.exit(0 if ok else 1)
 EOF
 
-# ---- STAGE 3F: failure asserts (unknown flag zeros + malformed since 400) ---
-echo "--- STAGE 3F: unknown flag 200-zeros + malformed since 400 ---"
-CODE=$(curl -s -o /tmp/cw-t17-stats-unknown.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/admin/env/e2e/stats?flag=no-such-flag-xyz&since=7d" \
-  -H "Authorization: $TOKEN" 2>/dev/null || echo "000")
-[ "$CODE" = "200" ] && pass "stats unknown flag 200" || fail "stats unknown flag (code $CODE)"
-python3 - <<'EOF' && pass "stats unknown flag zeros + flagFound:false" || fail "stats unknown flag zeros"
-import json, sys
-d = json.load(open('/tmp/cw-t17-stats-unknown.json'))
-ok = (d.get('fetches') == 0
-      and d.get('exposures') == 0
-      and d.get('perVariant') == {}
-      and d.get('flagFound') is False
-      and d.get('total') == 0
-      and d.get('approximate') is False)
-sys.exit(0 if ok else 1)
-EOF
+# ---- STAGE 3F: malformed since 400 ---
+echo "--- STAGE 3F: malformed since 400 ---"
 CODE=$(curl -s -o /tmp/cw-t17-stats-badsince.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/admin/env/e2e/stats?flag=exp_bool&since=abc" \
+  "$BASE_URL/api/v1/admin/env/e2e/stats?since=abc" \
   -H "Authorization: $TOKEN" 2>/dev/null || echo "000")
 [ "$CODE" = "400" ] && pass "stats malformed since 400" || fail "stats malformed since (code $CODE)"
 
@@ -261,7 +246,7 @@ CODE=$(curl -s -o /tmp/cw-t17-stats-badsince.json -w "%{http_code}" --max-time 1
 echo "--- STAGE 3B: seed ~35d-old events -> purge -> 90d vs 7d ---"
 OLD_TS="$(python3 -c "from datetime import datetime,timedelta,timezone; print((datetime.now(timezone.utc)-timedelta(days=35)).strftime('%Y-%m-%d %H:%M:%S.000Z'))")"
 mkold() { # kind variant userHash outfile
-  su_post "$C/events/records" "{\"env\":\"$ENVID\",\"flag\":\"$F3\",\"kind\":\"$1\",\"variant\":\"$2\",\"userHash\":\"$3\",\"ts\":\"$OLD_TS\"}" "$4"
+  su_post "$C/events/records" "{\"env\":\"$ENVID\",\"kind\":\"$1\",\"variant\":\"$2\",\"userHash\":\"$3\",\"ts\":\"$OLD_TS\"}" "$4"
 }
 [ "$(mkold fetch "" oldfetch01aaaabbbb /tmp/cw-t17-old1.json)" = "200" ] \
   && pass "seed old fetch 1/2 (~35d)" || fail "seed old fetch 1/2"
@@ -288,7 +273,7 @@ ok = (d.get('deleted') == exp['liveDeleted'] and d.get('dry') is False)
 sys.exit(0 if ok else 1)
 EOF
 CODE=$(curl -s -o /tmp/cw-t17-stats-90d.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/admin/env/e2e/stats?flag=exp_bool&since=90d" \
+  "$BASE_URL/api/v1/admin/env/e2e/stats?since=90d" \
   -H "Authorization: $TOKEN" 2>/dev/null || echo "000")
 [ "$CODE" = "200" ] && pass "stats 90d 200" || fail "stats 90d (code $CODE)"
 python3 - <<'EOF' && pass "stats 90d rolled-up {fetches:3, exposures:4, approximate:true}" || fail "stats 90d rolled-up"
@@ -301,7 +286,7 @@ ok = (d.get('fetches') == exp['fetches']
       and d.get('exposures') == exp['exposures']
       and d.get('perVariant') == exp['perVariant']
       and d.get('total') == exp['total']
-      and d.get('flagFound') is True
+      and 'flagFound' not in d
       and d.get('approximate') is True
       and sources.get('events') == exp['sources']['events']
       and sources.get('rollups') == exp['sources']['rollups'] > 0
@@ -310,7 +295,7 @@ ok = (d.get('fetches') == exp['fetches']
 sys.exit(0 if ok else 1)
 EOF
 CODE=$(curl -s -o /tmp/cw-t17-stats-7d.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/admin/env/e2e/stats?flag=exp_bool&since=7d" \
+  "$BASE_URL/api/v1/admin/env/e2e/stats?since=7d" \
   -H "Authorization: $TOKEN" 2>/dev/null || echo "000")
 [ "$CODE" = "200" ] && pass "stats 7d 200 (post-purge)" || fail "stats 7d post-purge (code $CODE)"
 python3 - <<'EOF' && pass "stats 7d excludes history {approximate:false, rollups:0}" || fail "stats 7d excludes history"
@@ -322,6 +307,7 @@ ok = (d.get('fetches') == exp['fetches']
       and d.get('exposures') == exp['exposures']
       and d.get('perVariant') == exp['perVariant']
       and d.get('total') == exp['total']
+      and 'flagFound' not in d
       and d.get('approximate') is False
       and sources.get('events') == exp['sources']['events']
       and sources.get('rollups') == exp['sources']['rollups'])
