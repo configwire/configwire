@@ -17,8 +17,6 @@ function fullData() {
     exposures: 100,
     perVariant: { control: 60, treatment: 40 },
     perVersion: { 1: 30, 2: 70 },
-    echo: { flag: "launch_flag", since: "7d", cutoff: "2026-09-01" },
-    flagFound: true,
     approximate: false,
   };
 }
@@ -51,11 +49,9 @@ test("renderStats bars/donut math sums to exposures and stores lastStatsText", f
   // Split line (stats.js:26-34) and perVersion line (stats.js:81-85).
   assert.ok(html.indexOf("control: 60 (60.0%), treatment: 40 (40.0%)") !== -1, "split wrong: " + html);
   assert.ok(html.indexOf("v1: 30, v2: 70") !== -1, "versions wrong: " + html);
-  // Echo line (stats.js:57-61).
-  assert.ok(
-    html.indexOf("flag launch_flag · since 7d · cutoff 2026-09-01") !== -1,
-    "echo wrong: " + html
-  );
+  // Since-only filters: no flag echo line is ever rendered.
+  assert.ok(html.indexOf("flag ") === -1, "flag echo must be gone: " + html);
+  assert.ok(html.indexOf("stats-echo-quiet") === -1, "quiet echo must be gone: " + html);
 });
 
 test("renderStats pins approximate:true marker", function () {
@@ -68,22 +64,6 @@ test("renderStats pins approximate:true marker", function () {
   var ctx2 = freshStats();
   ctx2.CW.renderStats(plain);
   assert.ok(statsHTML(ctx2).indexOf("approximate") === -1);
-});
-
-test("renderStats flagFound:false keeps zero wall plus warning", function () {
-  var ctx = freshStats();
-  ctx.CW.renderStats({
-    version: 1, fetches: 0, exposures: 0,
-    perVariant: {}, perVersion: {}, echo: { flag: "nope", since: "7d" },
-    flagFound: false,
-  });
-  var html = statsHTML(ctx);
-  // stats.js:69: flagFound:false forces the populated branch even at zero.
-  assert.ok(html.indexOf("stats-count") !== -1, "expected populated zero wall: " + html);
-  assert.ok(
-    html.indexOf("<p role=\"alert\">warning: unknown flag — showing zeros (flagFound:false).</p>") !== -1,
-    "missing unknown-flag warning: " + html
-  );
 });
 
 test("renderStats echoes lastStatsError as escaped alert", function () {
@@ -99,15 +79,16 @@ test("renderStats true-empty onboarding state and empty chart", function () {
   var ctx = freshStats();
   ctx.CW.renderStats({
     version: 0, fetches: 0, exposures: 0,
-    perVariant: {}, perVersion: {}, echo: {}, flagFound: true,
+    perVariant: {}, perVersion: {},
   });
   var html = statsHTML(ctx);
   assert.ok(html.indexOf("No stats yet") !== -1, "missing onboarding guide: " + html);
-  assert.ok(html.indexOf("stats-echo-quiet") !== -1, "missing quiet echo: " + html);
+  assert.ok(html.indexOf("stats-echo-quiet") === -1, "quiet echo must be gone: " + html);
+  assert.ok(html.indexOf("flag ") === -1, "flag echo must be gone: " + html);
   var ctx2 = freshStats();
   ctx2.CW.renderStats({
     version: 1, fetches: 5, exposures: 0,
-    perVariant: {}, perVersion: {}, echo: {}, flagFound: true,
+    perVariant: {}, perVersion: {},
   });
   assert.ok(
     statsHTML(ctx2).indexOf("No exposures yet") !== -1,
@@ -203,7 +184,6 @@ test("copyStatsJson with empty text says nothing to copy; missing status falls b
 
 test("loadStats shows Loading placeholder then stores lastStatsText on success", async function () {
   var ctx = freshStats();
-  ctx.CW.$("stats-flag").value = "launch_flag";
   ctx.CW.$("stats-since").value = "30d";
   ctx.CW.state.projectId = "p1";
   var data = fullData();
@@ -223,14 +203,13 @@ test("loadStats shows Loading placeholder then stores lastStatsText on success",
   assert.equal(ctx.CW.state.lastStatsText, JSON.stringify(data, null, 2));
   assert.equal(ctx.CW.state.lastStatsError, "");
   assert.ok(
-    seenUrl === "/api/v1/admin/env/dev/stats?since=30d&flag=launch_flag&project=p1",
+    seenUrl === "/api/v1/admin/env/dev/stats?since=30d&project=p1",
     "unexpected stats url: " + seenUrl
   );
 });
 
 test("loadStats defaults empty since to 7d", async function () {
   var ctx = freshStats();
-  ctx.CW.$("stats-flag").value = "";
   ctx.CW.$("stats-since").value = "";
   var seenUrl = null;
   ctx.CW.api = function (url) {
@@ -239,7 +218,7 @@ test("loadStats defaults empty since to 7d", async function () {
   };
   await ctx.CW.loadStats();
   assert.ok(seenUrl.indexOf("since=7d") !== -1, "unexpected stats url: " + seenUrl);
-  assert.ok(seenUrl.indexOf("flag=") === -1, "empty flag must be omitted: " + seenUrl);
+  assert.ok(seenUrl.indexOf("flag=") === -1, "flag param must never be sent: " + seenUrl);
 });
 
 test("loadStats 500 keeps previous lastStats rendered with first-line error", async function () {
@@ -281,19 +260,287 @@ test("loadStats error with no prior stats renders Loading failed wall", async fu
   assert.ok(html.indexOf("down") !== -1, "missing error text: " + html);
 });
 
-// --- renderStatsFlagOptions (stats.js:129-146; no CW.drafts loaded -> state.flags) ---
+// --- series stacked-area chart + per-version bars (stats.js renderSeries/bindSeriesTip/renderVerBars) ---
 
-test("renderStatsFlagOptions lists sorted flags; stale selection round-trips", function () {
+test("renderStats series svg is a stacked area chart with axes, tooltip and hover targets", function () {
   var ctx = freshStats();
-  ctx.CW.state.flags = [{ key: "b" }, { key: "a" }, { key: "" }, null, { key: "c", _draftDeleted: true }];
-  ctx.CW.renderStatsFlagOptions();
-  assert.equal(
-    ctx.CW.$("stats-flag").innerHTML,
-    '<option value="">All flags</option>' +
-      '<option value="a">a</option><option value="b">b</option>'
+  var data = fullData();
+  data.series = [
+    { day: "2026-09-01", fetches: 10, exposures: 5 },
+    { day: "2026-09-02", fetches: 100, exposures: 20 },
+    { day: "2026-09-03", fetches: 50, exposures: 50 },
+  ];
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  // Stacked totals 15/120/100 -> max 120 (stats.js renderSeries).
+  assert.ok(html.indexOf('class="stats-series-wrap"') !== -1, "missing series wrap: " + html);
+  assert.ok(html.indexOf('tabindex="0"') !== -1, "wrap must be keyboard-focusable: " + html);
+  assert.ok(html.indexOf('data-count="3"') !== -1, "missing data-count: " + html);
+  assert.ok(html.indexOf('data-peak="120"') !== -1, "missing data-peak 120: " + html);
+  assert.ok(html.indexOf('class="stats-series"') !== -1, "missing series svg: " + html);
+  assert.ok(html.indexOf('role="img"') !== -1, "missing role=img: " + html);
+  assert.ok(
+    html.indexOf('aria-label="Daily fetches and exposures for 3 days, 09-01 to 09-03, peak 120"') !== -1,
+    "missing series aria-label range+peak: " + html
   );
-  ctx.CW.$("stats-flag").value = "zzz";
-  ctx.CW.renderStatsFlagOptions();
-  var html = ctx.CW.$("stats-flag").innerHTML;
-  assert.ok(html.indexOf('<option value="zzz" selected>zzz</option>') !== -1, "stale kept: " + html);
+  assert.ok(html.indexOf('viewBox="0 0 560 220"') !== -1, "wrong viewBox 560x220: " + html);
+  // Exactly two stacked fills + two smooth strokes, no legacy grouped bars.
+  assert.equal(html.split("<path").length - 1, 4, "must be 2 areas + 2 smooth lines: " + html);
+  assert.equal(html.split("stats-area-fetch").length - 1, 1, "fetch area wrong: " + html);
+  assert.equal(html.split("stats-area-exposure").length - 1, 1, "exposure area wrong: " + html);
+  assert.ok(html.indexOf("stats-series-bar-") === -1, "legacy bar rects must be gone: " + html);
+  assert.equal(html.split("<title>").length - 1, 2, "one title per area path: " + html);
+  // Smoothed areas use bezier curves (3 points -> Catmull-Rom).
+  var fetchD = /stats-area-fetch" d="([^"]+)/.exec(html);
+  assert.ok(fetchD && fetchD[1].indexOf("C") !== -1, "fetch area must be smoothed: " + html);
+  // Grid + axes: max=120 -> ticks 0/40/80/120; 3d shows every day label.
+  assert.equal(html.split('class="stats-grid"').length - 1, 4, "gridline count wrong: " + html);
+  assert.ok(html.indexOf('class="stats-tick"') !== -1, "missing y ticks: " + html);
+  assert.ok(html.indexOf(">0<") !== -1, "missing y tick 0: " + html);
+  assert.ok(html.indexOf(">120<") !== -1, "missing y tick max: " + html);
+  assert.equal(html.split('class="stats-x"').length - 1, 3, "x label count wrong: " + html);
+  assert.ok(html.indexOf(">09-01<") !== -1, "missing x label 09-01: " + html);
+  assert.ok(html.indexOf(">09-03<") !== -1, "missing x label 09-03: " + html);
+  // Hover affordances: crosshair line + dots hidden, hit overlay, tooltip hidden+empty.
+  assert.ok(html.indexOf('class="stats-hover"') !== -1, "missing hover line: " + html);
+  assert.ok(html.indexOf('class="stats-dot-fetch"') !== -1, "missing fetch dot: " + html);
+  assert.ok(html.indexOf('class="stats-dot-exposure"') !== -1, "missing exposure dot: " + html);
+  assert.ok(html.indexOf('class="stats-hit"') !== -1, "missing hit overlay: " + html);
+  assert.ok(html.indexOf('<div class="stats-tip" hidden></div>') !== -1, "tooltip must be hidden+empty: " + html);
+  // Interactivity is wired via the exposed binder (stub DOM has no inner nodes).
+  assert.equal(typeof ctx.CW.bindSeriesTip, "function", "binder must be exposed");
+});
+
+test("renderStats series scales y to max stacked total; fetches-only still paints", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.series = [
+    { day: "d1", fetches: 10, exposures: 5 },
+    { day: "d2", fetches: 100, exposures: 20 },
+  ];
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  // Stacked totals 15/120 -> peak 120 drives the y scale, not per-kind max.
+  assert.ok(html.indexOf('data-peak="120"') !== -1, "peak must be stacked total 120: " + html);
+  assert.ok(html.indexOf("peak 120") !== -1, "aria peak must be 120: " + html);
+  assert.ok(html.indexOf(">120<") !== -1, "y tick max must be 120: " + html);
+  var ctx2 = freshStats();
+  var data2 = fullData();
+  data2.series = [
+    { day: "2026-09-01", fetches: 5, exposures: 0 },
+    { day: "2026-09-02", fetches: 7, exposures: 0 },
+  ];
+  ctx2.CW.renderStats(data2);
+  var html2 = statsHTML(ctx2);
+  assert.ok(html2.indexOf('class="stats-series"') !== -1, "fetches-only must render areas: " + html2);
+  assert.equal(html2.split("<path").length - 1, 4, "fetches-only keeps 2 areas + 2 lines: " + html2);
+  assert.ok(html2.indexOf('data-peak="7"') !== -1, "fetches-only peak must be 7: " + html2);
+  assert.ok(html2.indexOf("stats-series-empty") === -1, "fetches-only is not empty: " + html2);
+});
+
+test("renderStats series sparse x labels on long windows; single day paints a band", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.series = [];
+  for (var i = 0; i < 30; i++) {
+    var dd = (i < 9 ? "0" : "") + (i + 1);
+    data.series.push({ day: "2026-08-" + dd, fetches: i + 1, exposures: 0 });
+  }
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  // 30d: every 7th + last -> 0,7,14,21,28,29 (6 labels, not 30).
+  assert.equal(html.split('class="stats-x"').length - 1, 6, "30d must sparsify x labels: " + html);
+  assert.ok(html.indexOf(">08-01<") !== -1, "missing first x label: " + html);
+  assert.ok(html.indexOf(">08-30<") !== -1, "missing last x label: " + html);
+  var ctx2 = freshStats();
+  var data2 = fullData();
+  data2.series = [{ day: "2026-09-05", fetches: 4, exposures: 3 }];
+  ctx2.CW.renderStats(data2);
+  var html2 = statsHTML(ctx2);
+  assert.ok(html2.indexOf('data-count="1"') !== -1, "single day count wrong: " + html2);
+  assert.ok(html2.indexOf('data-peak="7"') !== -1, "single day peak must stack to 7: " + html2);
+  assert.ok(
+    html2.indexOf("for 1 day, 09-05, peak 7") !== -1,
+    "single day aria wrong: " + html2
+  );
+  assert.equal(html2.split("<path").length - 1, 4, "single day keeps 2 areas + 2 lines: " + html2);
+});
+
+test("bindSeriesTip is a safe no-op without parsed nodes and clamps bad values", function () {
+  var ctx = freshStats();
+  assert.doesNotThrow(function () { ctx.CW.bindSeriesTip(); });
+  var data = fullData();
+  data.series = [
+    { day: "2026-09-01", fetches: -5, exposures: "9" },
+    { day: "2026-09-02", fetches: "xx", exposures: -2 },
+  ];
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  // -5 clamps to 0, "9" coerces to 9, "xx" to 0: totals 9/0 -> peak 9.
+  assert.ok(html.indexOf('data-peak="9"') !== -1, "sanitized peak must be 9: " + html);
+  assert.doesNotThrow(function () { ctx.CW.bindSeriesTip(); });
+});
+
+test("renderStats per-version bars scale to max and sort numerically", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.perVersion = { 1: 10, 2: 100, 10: 50 };
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  // maxV=100 -> 10.0% / 100.0% / 50.0% (stats.js:53).
+  assert.ok(html.indexOf("width: 10.0%") !== -1, "missing v1 width: " + html);
+  assert.ok(html.indexOf("width: 100.0%") !== -1, "missing v2 width: " + html);
+  assert.ok(html.indexOf("width: 50.0%") !== -1, "missing v10 width: " + html);
+  assert.ok(html.indexOf('aria-label="v2 100.0%"') !== -1, "missing v2 aria-label: " + html);
+  assert.ok(html.indexOf('class="stats-ver-row stats-bar-row"') !== -1, "missing dual row class: " + html);
+  assert.ok(html.indexOf('class="stats-ver-fill stats-bar-fill"') !== -1, "missing dual fill class: " + html);
+  var i1 = html.indexOf(">v1<");
+  var i2 = html.indexOf(">v2<");
+  var i10 = html.indexOf(">v10<");
+  assert.ok(i1 !== -1 && i2 !== -1 && i10 !== -1, "missing version labels: " + html);
+  assert.ok(i1 < i2 && i2 < i10, "versions must sort numerically 1,2,10: " + html);
+});
+
+test("renderStats populated branch shows empty-series note when series missing/empty/all-zero", function () {
+  var cases = [
+    { name: "missing", series: undefined },
+    { name: "empty", series: [] },
+    {
+      name: "all-zero",
+      series: [
+        { day: "d1", fetches: 0, exposures: 0 },
+        { day: "d2", fetches: 0, exposures: 0 },
+      ],
+    },
+  ];
+  cases.forEach(function (c) {
+    var ctx = freshStats();
+    var data = fullData();
+    if (c.series !== undefined) data.series = c.series;
+    ctx.CW.renderStats(data);
+    var html = statsHTML(ctx);
+    assert.ok(html.indexOf("stats-count") !== -1, c.name + ": must stay populated: " + html);
+    assert.ok(html.indexOf("stats-series-empty") !== -1, c.name + ": missing empty note: " + html);
+    assert.ok(
+      html.indexOf("No daily activity in this window.") !== -1,
+      c.name + ": missing empty text: " + html
+    );
+    assert.ok(html.indexOf("<svg") === -1, c.name + ": must have no svg: " + html);
+  });
+});
+
+test("renderStats true-empty branch renders no svg even with series present", function () {
+  var ctx = freshStats();
+  ctx.CW.renderStats({
+    version: 0, fetches: 0, exposures: 0,
+    perVariant: {}, perVersion: {},
+    series: [{ day: "d1", fetches: 5, exposures: 5 }],
+  });
+  var html = statsHTML(ctx);
+  assert.ok(html.indexOf("No stats yet") !== -1, "missing onboarding guide: " + html);
+  assert.ok(html.indexOf("<svg") === -1, "true-empty must have no svg: " + html);
+  assert.ok(html.indexOf("stats-series") === -1, "true-empty must have no series markup: " + html);
+});
+
+// --- per-version series lines (stats.js renderSeries versions/legend/tip/aria) ---
+
+test("renderStats series draws one smooth line per version with legend and aria", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.series = [
+    { day: "2026-09-21", fetches: 9, exposures: 0, versions: { 0: 6, 24: 3 } },
+    { day: "2026-09-22", fetches: 5, exposures: 1, versions: { 0: 1, 24: 4 } },
+    { day: "2026-09-23", fetches: 7, exposures: 2, versions: { 0: 7, 24: 0 } },
+  ];
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  // 2 areas + 2 base lines + 2 version lines = 6 paths.
+  assert.equal(html.split("<path").length - 1, 6, "must be 2 areas + 2 lines + 2 version lines: " + html);
+  assert.equal(html.split("stats-line-ver").length - 1, 4, "two version lines (class x2 each): " + html);
+  assert.ok(html.indexOf('data-version="0"') !== -1, "missing v0 line: " + html);
+  assert.ok(html.indexOf('data-version="24"') !== -1, "missing v24 line: " + html);
+  // Distinct solid 1.5px strokes from the ver palette.
+  var strokes = [];
+  var re = /stats-line-ver[^>]*stroke="([^"]+)"/g;
+  var m;
+  while ((m = re.exec(html)) !== null) strokes.push(m[1]);
+  assert.equal(strokes.length, 2, "two version strokes: " + html);
+  assert.ok(strokes[0] !== strokes[1], "version strokes must differ: " + strokes);
+  assert.ok(html.indexOf('stroke-width="1.5"') !== -1, "version lines must be 1.5px: " + html);
+  // Smoothed (3 points -> bezier) with native titles.
+  var v0d = /data-version="0" d="([^"]+)/.exec(html);
+  assert.ok(v0d && v0d[1].indexOf("C") !== -1, "v0 line must be smoothed: " + html);
+  assert.ok(html.indexOf("<title>v0 ") !== -1, "missing v0 title: " + html);
+  assert.ok(html.indexOf("<title>v24 ") !== -1, "missing v24 title: " + html);
+  // Legend swatches + aria range.
+  assert.equal(html.split("stats-legend-ver").length - 1, 2, "two legend entries: " + html);
+  assert.ok(html.indexOf(">v0<") !== -1, "missing v0 legend label: " + html);
+  assert.ok(html.indexOf(">v24<") !== -1, "missing v24 legend label: " + html);
+  assert.ok(html.indexOf("versions v0, v24") !== -1, "aria must list versions: " + html);
+  // Y-scale stays on the stacked total (9/6/9 -> peak 9).
+  assert.ok(html.indexOf('data-peak="9"') !== -1, "peak must stay stacked total 9: " + html);
+  // Areas + bars below intact.
+  assert.ok(html.indexOf("stats-area-fetch") !== -1, "fetch area lost: " + html);
+  assert.ok(html.indexOf("stats-area-exposure") !== -1, "exposure area lost: " + html);
+  assert.ok(html.indexOf("stats-ver-row") !== -1, "per-version bars lost: " + html);
+});
+
+test("seriesTipText shows per-version counts for the hovered day", function () {
+  var ctx = freshStats();
+  var withVer = ctx.CW.seriesTipText({ day: "2026-09-21", fetches: 9, exposures: 0, versions: { 0: 6, 24: 3 } });
+  assert.ok(
+    withVer === "2026-09-21 — 9 fetches (v0: 6, v24: 3) · 0 exposures · total 9",
+    "tooltip wrong: " + withVer
+  );
+  var plain = ctx.CW.seriesTipText({ day: "d1", fetches: 10, exposures: 5, versions: null });
+  assert.equal(plain, "d1 — 10 fetches · 5 exposures · total 15", "plain tooltip wrong: " + plain);
+  var empty = ctx.CW.seriesTipText({ day: "d2", fetches: 4, exposures: 1, versions: {} });
+  assert.equal(empty, "d2 — 4 fetches · 1 exposures · total 5", "empty-versions tooltip wrong: " + empty);
+});
+
+test("renderStats series tolerates missing/empty versions with areas intact", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.series = [
+    { day: "2026-09-01", fetches: 5, exposures: 1 },
+    { day: "2026-09-02", fetches: 7, exposures: 0, versions: {} },
+  ];
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  assert.ok(html.indexOf("stats-line-ver") === -1, "no version lines expected: " + html);
+  assert.ok(html.indexOf("stats-legend-ver") === -1, "no version legend expected: " + html);
+  assert.equal(html.split("<path").length - 1, 4, "areas + base lines intact: " + html);
+  assert.ok(html.indexOf("versions v") === -1, "aria must not list versions: " + html);
+});
+
+test("renderStats escapes version keys and version-day labels", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.series = [
+    { day: "<b>day", fetches: 5, exposures: 0, versions: { "<img>": 5 } },
+    { day: "d2", fetches: 3, exposures: 0, versions: { "<img>": 3 } },
+  ];
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  assert.ok(html.indexOf("&lt;b&gt;da") !== -1, "day not escaped: " + html);
+  assert.ok(html.indexOf("&lt;img&gt;") !== -1, "version key not escaped: " + html);
+  assert.ok(html.indexOf("<img>") === -1, "raw version key leaked: " + html);
+  assert.ok(html.indexOf("<b>day") === -1, "raw day leaked: " + html);
+});
+
+test("renderStats escapes series day and variant XSS probes", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.perVariant = { "<img>": 60, ok: 40 };
+  data.series = [{ day: "<b>", fetches: 5, exposures: 5 }];
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  assert.ok(html.indexOf("&lt;img&gt;") !== -1, "variant not escaped: " + html);
+  assert.ok(html.indexOf("&lt;b&gt;") !== -1, "series day not escaped: " + html);
+  assert.ok(
+    html.indexOf(">&lt;b&gt;<") !== -1,
+    "day x label not escaped: " + html
+  );
+  assert.ok(html.indexOf("<img>") === -1, "raw variant tag leaked: " + html);
+  assert.ok(html.indexOf("<b>") === -1, "raw day tag leaked: " + html);
 });

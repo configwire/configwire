@@ -28,7 +28,6 @@
     renderFlagFolders();
     renderFlagGroupSelect();
     renderFlagSelects();
-    CW.renderStatsFlagOptions();
   }
 
   function flagsInGroup(gid) {
@@ -118,7 +117,6 @@
     var svgOpen = '<svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
     var rulesIcon = svgOpen + '<path d="M2.5 5h11"/><circle cx="6" cy="5" r="1.6"/><path d="M2.5 11h11"/><circle cx="10" cy="11" r="1.6"/></svg>';
     var expsIcon = svgOpen + '<path d="M6 2h4"/><path d="M7 2v4.5L3.5 12a1.5 1.5 0 0 0 1.3 2.5h6.4a1.5 1.5 0 0 0 1.3-2.5L9 6.5V2"/><path d="M5.5 10h5"/></svg>';
-    var statsIcon = svgOpen + '<path d="M2.5 13.5h11"/><path d="M4 11V8"/><path d="M8 11V4.5"/><path d="M12 11V6.5"/></svg>';
     var editIcon = svgOpen + '<path d="M11 2.5l2.5 2.5L5 13.5l-3.2 1 1-3.2z"/></svg>';
     var deleteIcon = svgOpen + '<path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4"/><path d="M6.5 7v4"/><path d="M9.5 7v4"/></svg>';
     return '<tr' + rowClass + "><td>" + CW.esc(f.key) + badge + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
@@ -128,7 +126,6 @@
       '<div class="flag-menu" role="menu" hidden>' +
       '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + rulesIcon + "<span>" + CW.esc(rulesLabel) + "</span>" + ruleDot + "</button>" +
       '<button type="button" role="menuitem" data-flag-experiments="' + CW.esc(f.id) + '">' + expsIcon + "<span>" + CW.esc(expsLabel) + "</span>" + expDot + "</button>" +
-      '<button type="button" role="menuitem" data-stats-flag="' + CW.esc(f.key) + '">' + statsIcon + "<span>stats</span></button>" +
       '<button type="button" role="menuitem" data-edit-flag="' + CW.esc(f.id) + '">' + editIcon + "<span>edit</span></button>" +
       '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">' + deleteIcon + "<span>delete</span></button>" +
       '<span class="flag-menu-label">Move to group</span>' +

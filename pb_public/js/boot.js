@@ -82,7 +82,6 @@
       CW.loadKeys().catch(function () {});
       CW.loadStats().catch(function () {});
     });
-    CW.on("stats-flag", "change", function () { CW.loadStats().catch(function () {}); });
     CW.on("stats-since", "change", function () { CW.loadStats().catch(function () {}); });
     CW.on("refresh-flags", "click", function () { CW.loadFlags().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-releases", "click", function () { CW.loadReleases().catch(function (e) { CW.toast(e.message); }); });
@@ -545,27 +544,6 @@
         });
         return;
       }
-      var k = act("data-stats-flag");
-      if (k) {
-        var sflag = CW.$("stats-flag");
-        if (sflag) {
-          var hasOpt = false;
-          for (var i = 0; i < sflag.options.length; i++) {
-            if (sflag.options[i].value === k) { hasOpt = true; break; }
-          }
-          if (!hasOpt) {
-            var opt = document.createElement("option");
-            opt.value = k;
-            opt.textContent = k;
-            sflag.appendChild(opt);
-          }
-          sflag.value = k;
-        }
-        CW.loadStats().catch(function () {});
-        var card = CW.$("stats") && CW.$("stats").closest ? CW.$("stats").closest("section") : null;
-        if (card && card.scrollIntoView) card.scrollIntoView();
-        return;
-      }
       var fid = act("data-edit-flag");
       if (fid) {
         var flagList = CW.drafts ? CW.drafts.mergedFlags() : CW.state.flags;
@@ -608,7 +586,7 @@
       }
       var inMenu = t && t.closest ? t.closest(".flag-menu") : null;
       if (inMenu) {
-        var itemBtn = t.closest("[data-flag-rules],[data-flag-experiments],[data-stats-flag],[data-edit-flag],[data-delete-flag]");
+        var itemBtn = t.closest("[data-flag-rules],[data-flag-experiments],[data-edit-flag],[data-delete-flag]");
         flagRowClick(ev);
         if (itemBtn) closeFlagMenus();
         return;

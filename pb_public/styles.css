@@ -19,7 +19,7 @@
  *   release-*, transfer-* (.diff-file/.diff-badge/.diff-hunk/.diff-line/.diff-stat,
  *   .diff-field/.diff-nest/.diff-flag-exps, .staged-list, #transfer-export/-import/-diff-dialog), publish-*, setup-*, account-*(#account-list/-create-form/-result,
  *   #view-account), stats-* (.stats-tiles/.stats-tile(-num/-label),
- *   .stats-guide/.stats-echo-quiet/.stats-count/.stats-split/.stats-chart
+ *   .stats-guide/.stats-count/.stats-split/.stats-chart
  *   (.is-empty)/.stats-bars/.stats-bar-row(-label/-track/-fill/-pct)/.stats-donut/
  *   .stats-empty/.stats-copy-row(.is-secondary)), json-* (.json-row/.json-hint
  *   (.ok/.err)/.json-expand/.json-field-label/.invalid/.valid),
@@ -1113,7 +1113,7 @@ td code {
 /* ---- Flag row ⋯ action menu (renderer contract: js/flags.js folderRowHTML
  * emits td.flag-actions-cell > .flag-menu-wrap > button.flag-menu-btn
  * ([data-flag-menu], aria-haspopup=menu) + .flag-menu[role=menu][hidden]
- * holding the same data-flag-rules / data-stats-flag / data-edit-flag /
+ * holding the same data-flag-rules / data-edit-flag /
  * data-delete-flag buttons boot.js already delegates, plus the
  * select[data-move-flag] moved inside the menu). Absolute positioning needs
  * visible overflow on both ancestors or bottom rows get clipped. */
@@ -1862,19 +1862,34 @@ section[aria-labelledby="releases"] hr {
 /* ---- Stats card (scoped to section[aria-labelledby="stats"] + #stats-view only;
  * reuses :root tokens + .card/.btn/.ghost/.muted/.badge patterns. No new font/icon/dep.
  * Renderer contract (js/stats.js renderStats — order stable):
- * selects #stats-flag/#stats-since + button #refresh-stats; #stats-view holds
- * EITHER the true-empty branch (exposures==0, flag known: tiles
+ * selects #stats-since only + button #refresh-stats; #stats-view holds
+ * EITHER the true-empty branch (fetches==0 && exposures==0: tiles
  * <div class="stats-tiles"> (.stats-tile × 3, muted numbers), guide
- * <p class="stats-guide">, quiet echo <p class="muted stats-echo-quiet"> — NO
- * chart div, NO .stats-count/.stats-split) OR the data/unknown-flag branch:
+ * <p class="stats-guide"> — NO
+ * chart div, NO .stats-count/.stats-split) OR the data branch:
  * count <p class="stats-count">s, split <p class="stats-split">, chart
  * <div class="stats-chart"> (bars .stats-bars/.stats-bar-row + optional
  * .stats-donut conic-gradient, or .is-empty with .stats-empty note when
- * exposures==0), one .muted echo <p>, optional .muted approximate <p>,
- * optional [role=alert] flagFound warning <p>, copy row
+ * exposures==0), optional .muted approximate <p>,
+ * copy row
  * <p class="stats-copy-row"> (.is-secondary when true-empty;
  * #stats-copy.btn.ghost + #stats-copy-status.muted[role=status]), optional
- * trailing [role=alert] error <p>. */
+ * trailing [role=alert] error <p>. Series stacked-area time-series
+ * (js/stats.js renderSeries/bindSeriesTip): focusable
+ * <div class="stats-series-wrap" tabindex="0" data-count data-peak> holding
+ * legend <div class="stats-series-legend"> (fetch/exposure items +
+ * per-version .stats-legend-ver swatches) +
+ * <svg class="stats-series" role=img viewBox 560x220> (grid .stats-grid
+ * lines + .stats-tick y labels + .stats-x day labels, smooth stacked areas
+ * .stats-area-fetch/.stats-area-exposure with <title>, per-version smooth
+ * .stats-line-ver strokes (data-version, <title> vX total), hover .stats-hover
+ * line + .stats-dot-fetch/.stats-dot-exposure dots, transparent .stats-hit
+ * overlay) + <div class="stats-tip" hidden> (filled via textContent on
+ * mousemove/keyboard); empty <p class="muted stats-series-empty">),
+ * per-version
+ * <div class="stats-ver"> (.stats-ver-row.stats-bar-row reusing
+ * .stats-bar-label/.stats-bar-track/.stats-bar-fill/.stats-bar-pct as
+ * .stats-ver-label/.stats-ver-track/.stats-ver-fill/.stats-ver-pct). */
 section[aria-labelledby="stats"] form.inline-form {
   display: flex;
   flex-wrap: wrap;
@@ -1915,22 +1930,41 @@ section[aria-labelledby="stats"] form.inline-form button {
   font-variant-numeric: tabular-nums;
 }
 
-/* Counts prominent: larger semibold numbers; echo stays muted small. */
+/* Counts prominent: metric cards grid with larger semibold numbers. */
+#stats-view .stats-counts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
 #stats-view p.stats-count {
-  font-size: 13px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin: 0;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--muted);
-  margin-bottom: var(--space-1);
+  gap: 2px;
 }
 
 #stats-view p.stats-count strong {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text);
+  line-height: 1.2;
 }
 
 #stats-view p.stats-split {
-  font-size: 13px;
+  display: none;
 }
 
 /* Variant-split chart: bars carry the data, donut is a conic-gradient echo of
@@ -2003,13 +2037,7 @@ section[aria-labelledby="stats"] form.inline-form button {
 }
 
 #stats-view .stats-chart.is-empty {
-  display: block;
-  margin: var(--space-1) 0 var(--space-2);
-}
-
-#stats-view .stats-empty {
-  font-size: 12px;
-  margin: 0;
+  display: none;
 }
 
 /* True-empty branch only (tiles/guide/quiet-echo/secondary-copy): muted tiles
@@ -2056,11 +2084,6 @@ section[aria-labelledby="stats"] form.inline-form button {
   color: var(--text);
 }
 
-#stats-view p.stats-echo-quiet {
-  font-size: 11px;
-  opacity: 0.55;
-}
-
 #stats-view p.stats-copy-row.is-secondary {
   opacity: 0.7;
 }
@@ -2077,8 +2100,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   font-size: 12px;
 }
 
-/* echo line: flag · since · cutoff */
-/* Approximate badge: second .muted <p> (echo is always first). Mirrors .badge pill. */
+/* Approximate badge: lone .muted <p>. Mirrors .badge pill. */
 #stats-view p.muted+p.muted {
   display: inline-block;
   font-size: 10px;
@@ -2092,17 +2114,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   color: var(--muted);
 }
 
-/* flagFound warning vs error share [role=alert] markup; the error line is always
- * appended last, so :not(:last-child) selects the warning (amber) only. */
-#stats-view p[role="alert"]:not(:last-child) {
-  color: var(--warn);
-  border: 1px solid rgba(251, 191, 36, 0.35);
-  background: rgba(251, 191, 36, 0.08);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  font-size: 13px;
-}
-
+/* Load error [role=alert] line appended last. */
 #stats-view p[role="alert"]:last-child {
   color: var(--danger);
   border: 1px solid var(--danger);
@@ -2139,6 +2151,280 @@ section[aria-labelledby="stats"] form.inline-form button {
 @keyframes stats-shimmer {
   50% {
     opacity: 0.45;
+  }
+}
+
+/* Series stacked-area chart (renderSeries): fixed 560x220 viewBox with
+ * padded plot (left 36, bottom 22, top 8, right 8); wrapper scrolls only
+ * under 420px so the card never overflows the page. */
+#stats-view .stats-series-wrap {
+  position: relative;
+  overflow-x: auto;
+  margin: var(--space-3) 0 var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+  background: rgba(15, 23, 42, 0.28);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+}
+
+#stats-view .stats-series-legend {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#stats-view .stats-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#stats-view .stats-legend-item strong {
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+#stats-view .stats-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+#stats-view .stats-dot-fetch-bg {
+  background: #3b82f6;
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+}
+
+#stats-view .stats-dot-exposure-bg {
+  background: #5eead4;
+  box-shadow: 0 0 6px rgba(94, 234, 212, 0.4);
+}
+
+#stats-view .stats-series {
+  width: 100%;
+  height: auto;
+  display: block;
+  min-width: 420px;
+}
+
+#stats-view .stats-grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+#stats-view .stats-grid:first-of-type {
+  stroke: var(--border-soft);
+  stroke-dasharray: none;
+}
+
+#stats-view .stats-tick,
+#stats-view .stats-x {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+#stats-view .stats-area-fetch {
+  fill: url(#cw-stat-fetch-grad);
+  stroke: none;
+}
+
+#stats-view .stats-area-exposure {
+  fill: url(#cw-stat-expo-grad);
+  stroke: none;
+}
+
+#stats-view .stats-line-fetch {
+  stroke: #3b82f6;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#stats-view .stats-line-exposure {
+  stroke: #5eead4;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#stats-view .stats-line-ver {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+
+#stats-view .stats-legend-ver {
+  font-weight: 600;
+}
+
+#stats-view .stats-hover {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+#stats-view .stats-dot-fetch {
+  fill: #3b82f6;
+  stroke: var(--panel-2);
+  stroke-width: 2;
+}
+
+#stats-view .stats-dot-exposure {
+  fill: #5eead4;
+  stroke: var(--panel-2);
+  stroke-width: 2;
+}
+
+#stats-view .stats-hit {
+  fill: transparent;
+}
+
+#stats-view .stats-tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+  max-width: 280px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  font-variant-numeric: tabular-nums;
+}
+
+#stats-view .stats-tip-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+#stats-view p.stats-series-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Per-version bars (renderVerBars): mirror .stats-bar-row grid so the
+/* dual stats-bar-* stats-ver-* classes share one layout. */
+#stats-view .stats-ver {
+  margin: var(--space-3) 0 var(--space-2);
+  padding: var(--space-3);
+  background: rgba(15, 23, 42, 0.28);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  min-width: 0;
+}
+
+#stats-view .stats-ver-title {
+  margin: 0 0 var(--space-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#stats-view .stats-ver-row {
+  display: grid;
+  grid-template-columns: minmax(48px, 80px) 1fr auto;
+  gap: var(--space-3);
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  margin-bottom: var(--space-2);
+}
+
+#stats-view .stats-ver-row:last-child {
+  margin-bottom: 0;
+}
+
+#stats-view .stats-ver-label {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stats-view .stats-ver-track {
+  display: block;
+  height: 8px;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+#stats-view .stats-ver-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#stats-view .stats-ver-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
+  min-width: 36px;
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  #stats-view .stats-counts {
+    grid-template-columns: 1fr;
+  }
+
+  #stats-view .stats-ver-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  #stats-view .stats-ver-pct {
+    text-align: left;
+  }
+
+  #stats-view .stats-tip {
+    font-size: 11px;
+    max-width: 200px;
+  }
+
+  #stats-view .stats-line-ver {
+    stroke-width: 1.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  #stats-view .stats-ver-fill,
+  #stats-view .stats-bar-fill,
+  #stats-view .stats-series,
+  #stats-view .stats-tip,
+  #stats-view .stats-line-ver,
+  #stats-view[aria-busy="true"] {
+    transition: none;
+    animation: none;
   }
 }
 
