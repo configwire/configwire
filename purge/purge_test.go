@@ -43,32 +43,31 @@ func TestBuildRollupsMath(t *testing.T) {
 	dayA := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
 	dayB := time.Date(2026, 8, 14, 10, 0, 0, 0, time.UTC)
 	rows := []EventRow{
-		{EnvID: "e1", FlagID: "f1", Kind: "fetch", Ts: dayA},
-		{EnvID: "e1", FlagID: "f1", Kind: "fetch", Ts: dayA.Add(time.Hour)},
-		{EnvID: "e1", FlagID: "f1", Kind: "exposure", Variant: "control", Ts: dayA},
-		{EnvID: "e1", FlagID: "f1", Kind: "exposure", Variant: "control", Ts: dayA.Add(2 * time.Hour)},
-		{EnvID: "e1", FlagID: "f1", Kind: "exposure", Variant: "treatment", Ts: dayA},
-		{EnvID: "e1", FlagID: "f1", Kind: "fetch", Ts: dayB},
-		{EnvID: "e2", FlagID: "f1", Kind: "fetch", Ts: dayA},
-		{EnvID: "e1", FlagID: "", Kind: "exposure", Variant: "control", Ts: dayA},
-		{EnvID: "e1", FlagID: "f1", Kind: "weird", Variant: "control", Ts: dayA}, // unknown kind ignored
-		{EnvID: "e1", FlagID: "f1", Kind: "exposure", Variant: "control"},        // zero ts skipped
+		{EnvID: "e1", Kind: "fetch", Ts: dayA},
+		{EnvID: "e1", Kind: "fetch", Ts: dayA.Add(time.Hour)},
+		{EnvID: "e1", Kind: "exposure", Variant: "control", Ts: dayA},
+		{EnvID: "e1", Kind: "exposure", Variant: "control", Ts: dayA.Add(2 * time.Hour)},
+		{EnvID: "e1", Kind: "exposure", Variant: "treatment", Ts: dayA},
+		{EnvID: "e1", Kind: "fetch", Ts: dayB},
+		{EnvID: "e2", Kind: "fetch", Ts: dayA},
+		{EnvID: "e1", Kind: "exposure", Variant: "control", Ts: dayA.Add(3 * time.Hour)},
+		{EnvID: "e1", Kind: "weird", Variant: "control", Ts: dayA}, // unknown kind ignored
+		{EnvID: "e1", Kind: "exposure", Variant: "control"},        // zero ts skipped
 	}
 	got := BuildRollups(rows)
 	byKey := map[string]Rollup{}
 	for _, b := range got {
-		byKey[b.Day.Format("2006-01-02")+"|"+b.EnvID+"|"+b.FlagID+"|"+b.Variant] = b
+		byKey[b.Day.Format("2006-01-02")+"|"+b.EnvID+"|"+b.Variant] = b
 	}
-	if len(got) != 6 {
-		t.Fatalf("BuildRollups produced %d buckets, want 6: %+v", len(got), got)
+	if len(got) != 5 {
+		t.Fatalf("BuildRollups produced %d buckets, want 5: %+v", len(got), got)
 	}
 	want := map[string]Rollup{
-		"2026-08-13|e1|f1|":          {Fetches: 2},
-		"2026-08-13|e1|f1|control":   {Exposures: 2},
-		"2026-08-13|e1|f1|treatment": {Exposures: 1},
-		"2026-08-14|e1|f1|":          {Fetches: 1},
-		"2026-08-13|e2|f1|":          {Fetches: 1},
-		"2026-08-13|e1||control":     {Exposures: 1},
+		"2026-08-13|e1|":          {Fetches: 2},
+		"2026-08-13|e1|control":   {Exposures: 3},
+		"2026-08-13|e1|treatment": {Exposures: 1},
+		"2026-08-14|e1|":          {Fetches: 1},
+		"2026-08-13|e2|":          {Fetches: 1},
 	}
 	for k, w := range want {
 		b, ok := byKey[k]

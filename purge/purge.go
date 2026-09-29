@@ -3,7 +3,7 @@
 //
 // Rollup-before-delete runs in the SAME operation: rows strictly older
 // than the cutoff are first aggregated into event_daily upserts keyed by
-// (day, env, flag, variant), then the raw rows are deleted. Stale
+// (day, env, variant, version), then the raw rows are deleted. Stale
 // event_daily rows older than 90d (cutoff minus RollupRetentionDays minus
 // RawRetentionDays) are deleted too. Raw releases/rollups collections are
 // never touched — events only.
@@ -11,7 +11,7 @@
 // CRASH SEMANTIC: upserts land before deletes, so a crash can never lose
 // data silently — at worst the crashed batch is counted twice on re-run
 // (upsert re-adds the same rows' counts, then delete finishes). The
-// (day,env,flag,variant) KEY itself is idempotent (one row per key, never
+// (day,env,variant,version) KEY itself is idempotent (one row per key, never
 // duplicates); only the counters of the in-flight bucket can overshoot on
 // a crash exactly between upsert and delete. Re-running the purge
 // converges (second run finds nothing to delete).
@@ -51,18 +51,16 @@ const (
 // DB-free so rollup math is unit-testable on fake rows.
 type EventRow struct {
 	EnvID   string
-	FlagID  string // "" when the ingest-time flag key matched nothing (relation unset)
 	Kind    string // "fetch" | "exposure"
 	Variant string // verbatim stored variant ("" possible, counted as-is)
 	Version int
 	Ts      time.Time
 }
 
-// Rollup is one per-(day, env, flag, variant, version) aggregate bucket stored in event_daily.
+// Rollup is one per-(day, env, variant, version) aggregate bucket stored in event_daily.
 type Rollup struct {
 	Day       time.Time // UTC midnight of the event day
 	EnvID     string
-	FlagID    string
 	Variant   string
 	Version   int
 	Fetches   int
@@ -85,7 +83,7 @@ func ShouldDelete(ts, cutoff time.Time) bool {
 	return ts.Before(cutoff)
 }
 
-// BuildRollups folds rows into per-(day,env,flag,variant,version) buckets purely
+// BuildRollups folds rows into per-(day,env,variant,version) buckets purely
 // (no I/O). Unknown kinds are ignored (same fail-closed posture as
 // stats.Aggregate); zero-ts rows are skipped (unkeepable per ShouldDelete
 // they are never in the delete set either).
@@ -93,7 +91,6 @@ func BuildRollups(rows []EventRow) []Rollup {
 	type key struct {
 		day     string // YYYY-MM-DD UTC
 		env     string
-		flag    string
 		variant string
 		version int
 	}
@@ -104,10 +101,10 @@ func BuildRollups(rows []EventRow) []Rollup {
 			continue
 		}
 		day := DayBucket(r.Ts)
-		k := key{day: day.Format("2006-01-02"), env: r.EnvID, flag: r.FlagID, variant: r.Variant, version: r.Version}
+		k := key{day: day.Format("2006-01-02"), env: r.EnvID, variant: r.Variant, version: r.Version}
 		b, ok := byKey[k]
 		if !ok {
-			b = &Rollup{Day: day, EnvID: r.EnvID, FlagID: r.FlagID, Variant: r.Variant, Version: r.Version}
+			b = &Rollup{Day: day, EnvID: r.EnvID, Variant: r.Variant, Version: r.Version}
 			byKey[k] = b
 			order = append(order, k)
 		}
@@ -155,7 +152,7 @@ func rollupRangeExpr(rollupCutoff time.Time) dbx.Expression {
 
 // emptyOrNull matches the old in-Go GetString equality exactly: PocketBase
 // reads both ” and NULL back as "", so an empty bucket value must match
-// either storage (unset env/flag relations may persist as ” or NULL).
+// either storage (an unset env relation may persist as ” or NULL).
 func emptyOrNull(col, val string) dbx.Expression {
 	if val == "" {
 		return dbx.Or(dbx.HashExp{col: ""}, dbx.NewExp(col+" IS NULL"))
@@ -188,7 +185,6 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 		doomed = append(doomed, r)
 		doomedRows = append(doomedRows, EventRow{
 			EnvID:   r.GetString("env"),
-			FlagID:  r.GetString("flag"),
 			Kind:    r.GetString("kind"),
 			Variant: r.GetString("variant"),
 			Version: r.GetInt("version"),
@@ -259,9 +255,9 @@ func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 }
 
 // upsertRollups adds each bucket's counts onto the matching event_daily
-// row — found per bucket with an indexed find on (day,env,flag,variant,version)
+// row — found per bucket with an indexed find on (day,env,variant,version)
 // (day as a [midnight,midnight+24h) range, which is exactly the old
-// Format("2006-01-02") equality for any stored time-of-day; env/flag match
+// Format("2006-01-02") equality for any stored time-of-day; env matches
 // ”-or-NULL exactly like the old GetString comparison) — or creates the
 // row when absent. Re-running with the same buckets converges to one row
 // per key — the upsert key is idempotent even though counters add (see
@@ -283,7 +279,6 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 				"d1": dateParam(dayEnd),
 			}),
 			emptyOrNull("env", b.EnvID),
-			emptyOrNull("flag", b.FlagID),
 			dbx.HashExp{"variant": b.Variant},
 		)
 		if err != nil {
@@ -302,9 +297,6 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 			match.Set("day", b.Day)
 			if b.EnvID != "" {
 				match.Set("env", b.EnvID)
-			}
-			if b.FlagID != "" {
-				match.Set("flag", b.FlagID)
 			}
 			match.Set("variant", b.Variant)
 			if hasVersionField {

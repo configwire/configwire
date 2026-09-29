@@ -77,7 +77,7 @@ func parityTestApp(t *testing.T) *tests.TestApp {
 	return app
 }
 
-func seedEvent(t *testing.T, app *tests.TestApp, env, flag, kind, variant string, ts time.Time, setTs bool) string {
+func seedEvent(t *testing.T, app *tests.TestApp, env, kind, variant string, ts time.Time, setTs bool) string {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId("events")
 	if err != nil {
@@ -85,7 +85,6 @@ func seedEvent(t *testing.T, app *tests.TestApp, env, flag, kind, variant string
 	}
 	rec := core.NewRecord(col)
 	rec.Set("env", env)
-	rec.Set("flag", flag)
 	rec.Set("kind", kind)
 	rec.Set("variant", variant)
 	if setTs {
@@ -97,7 +96,7 @@ func seedEvent(t *testing.T, app *tests.TestApp, env, flag, kind, variant string
 	return rec.Id
 }
 
-func seedDaily(t *testing.T, app *tests.TestApp, day time.Time, setDay bool, env, flag, variant string, fetches, exposures int) string {
+func seedDaily(t *testing.T, app *tests.TestApp, day time.Time, setDay bool, env, variant string, fetches, exposures int) string {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId("event_daily")
 	if err != nil {
@@ -108,7 +107,6 @@ func seedDaily(t *testing.T, app *tests.TestApp, day time.Time, setDay bool, env
 		rec.Set("day", day)
 	}
 	rec.Set("env", env)
-	rec.Set("flag", flag)
 	rec.Set("variant", variant)
 	rec.Set("fetches", fetches)
 	rec.Set("exposures", exposures)
@@ -170,24 +168,24 @@ func TestPurgeMatchesOracleDeletionSet(t *testing.T) {
 	cutoff := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC) // ms-aligned
 	oldDay := DayBucket(cutoff.AddDate(0, 0, -35))
 
-	idOld := seedEvent(t, app, "e1", "f1", "fetch", "", cutoff.AddDate(0, 0, -35), true)
-	idOld2 := seedEvent(t, app, "e1", "f1", "exposure", "control", cutoff.AddDate(0, 0, -35).Add(time.Hour), true)
-	idEdgeOlder := seedEvent(t, app, "e1", "f1", "fetch", "", cutoff.Add(-time.Nanosecond), true)
-	idWeird := seedEvent(t, app, "e1", "f1", "weird", "", cutoff.AddDate(0, 0, -35), true)
-	idNoFlag := seedEvent(t, app, "e1", "", "fetch", "", cutoff.AddDate(0, 0, -35), true)
-	idAt := seedEvent(t, app, "e1", "f1", "fetch", "", cutoff, true)
-	idNewer := seedEvent(t, app, "e1", "f1", "fetch", "", cutoff.Add(time.Hour), true)
-	idZero := seedEvent(t, app, "e1", "f1", "fetch", "", time.Time{}, false)
-	idFresh := seedEvent(t, app, "e1", "f1", "fetch", "", time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC), true)
+	idOld := seedEvent(t, app, "e1", "fetch", "", cutoff.AddDate(0, 0, -35), true)
+	idOld2 := seedEvent(t, app, "e1", "exposure", "control", cutoff.AddDate(0, 0, -35).Add(time.Hour), true)
+	idEdgeOlder := seedEvent(t, app, "e1", "fetch", "", cutoff.Add(-time.Nanosecond), true)
+	idWeird := seedEvent(t, app, "e1", "weird", "", cutoff.AddDate(0, 0, -35), true)
+	idNoFlag := seedEvent(t, app, "e1", "fetch", "", cutoff.AddDate(0, 0, -35), true)
+	idAt := seedEvent(t, app, "e1", "fetch", "", cutoff, true)
+	idNewer := seedEvent(t, app, "e1", "fetch", "", cutoff.Add(time.Hour), true)
+	idZero := seedEvent(t, app, "e1", "fetch", "", time.Time{}, false)
+	idFresh := seedEvent(t, app, "e1", "fetch", "", time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC), true)
 
 	rollupCutoff := cutoff.AddDate(0, 0, -(RollupRetentionDays - RawRetentionDays))
-	idStale := seedDaily(t, app, rollupCutoff.AddDate(0, 0, -1), true, "e1", "f1", "", 3, 1)
-	idEdge := seedDaily(t, app, rollupCutoff, true, "e1", "f1", "", 3, 1)
-	idDailyFresh := seedDaily(t, app, cutoff.AddDate(0, 0, -1), true, "e1", "f1", "", 3, 1)
-	idDailyZero := seedDaily(t, app, time.Time{}, false, "e1", "f1", "", 3, 1)
-	// Pre-existing bucket for the doomed (oldDay,e1,f1,"") key: the purge
+	idStale := seedDaily(t, app, rollupCutoff.AddDate(0, 0, -1), true, "e1", "", 3, 1)
+	idEdge := seedDaily(t, app, rollupCutoff, true, "e1", "", 3, 1)
+	idDailyFresh := seedDaily(t, app, cutoff.AddDate(0, 0, -1), true, "e1", "", 3, 1)
+	idDailyZero := seedDaily(t, app, time.Time{}, false, "e1", "", 3, 1)
+	// Pre-existing bucket for the doomed (oldDay,e1,"") key: the purge
 	// must ADD onto it, never duplicate it.
-	seedDaily(t, app, oldDay, true, "e1", "f1", "", 10, 5)
+	seedDaily(t, app, oldDay, true, "e1", "", 10, 5)
 
 	wantEvents, wantDaily := oracleDeleteSet(t, app, cutoff)
 	for _, id := range []string{idOld, idOld2, idEdgeOlder, idWeird, idNoFlag} {
@@ -242,19 +240,20 @@ func TestPurgeMatchesOracleDeletionSet(t *testing.T) {
 	}
 
 	// Rollup-before-delete: doomed rows landed in event_daily, merged onto
-	// the pre-existing bucket (10 fetches + 1 from idOld = 11, exposures 5).
+	// the pre-existing bucket (10 fetches + 2 from idOld/idNoFlag = 12,
+	// exposures 5).
 	var matches []*core.Record
 	for _, r := range mustAllDaily(t, app) {
 		if r.GetDateTime("day").Time().UTC().Format("2006-01-02") == oldDay.Format("2006-01-02") &&
-			r.GetString("env") == "e1" && r.GetString("flag") == "f1" && r.GetString("variant") == "" {
+			r.GetString("env") == "e1" && r.GetString("variant") == "" {
 			matches = append(matches, r)
 		}
 	}
 	if len(matches) != 1 {
-		t.Fatalf("want exactly 1 row for the (day,e1,f1,\"\") key, got %d (upsert must find-or-create)", len(matches))
+		t.Fatalf("want exactly 1 row for the (day,e1,\"\") key, got %d (upsert must find-or-create)", len(matches))
 	}
-	if got := matches[0].GetInt("fetches"); got != 11 {
-		t.Fatalf("merged fetches = %d, want 11 (10 pre-existing + 1 rolled)", got)
+	if got := matches[0].GetInt("fetches"); got != 12 {
+		t.Fatalf("merged fetches = %d, want 12 (10 pre-existing + 2 rolled)", got)
 	}
 	if got := matches[0].GetInt("exposures"); got != 5 {
 		t.Fatalf("merged exposures = %d, want 5 (untouched)", got)
@@ -285,14 +284,14 @@ func mustAllDaily(t *testing.T, app *tests.TestApp) []*core.Record {
 }
 
 // TestUpsertFindOrCreateIndexed seeds a collision directly against the
-// (day,env,flag,variant) key and proves the indexed upsert adds onto the
+// (day,env,variant) key and proves the indexed upsert adds onto the
 // existing row instead of inserting a duplicate.
 func TestUpsertFindOrCreateIndexed(t *testing.T) {
 	app := parityTestApp(t)
 	day := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
-	seedDaily(t, app, day, true, "e9", "f9", "v", 2, 1)
+	seedDaily(t, app, day, true, "e9", "v", 2, 1)
 	if err := upsertRollups(app, []Rollup{{
-		Day: day, EnvID: "e9", FlagID: "f9", Variant: "v", Fetches: 3, Exposures: 4,
+		Day: day, EnvID: "e9", Variant: "v", Fetches: 3, Exposures: 4,
 	}}); err != nil {
 		t.Fatalf("upsertRollups: %v", err)
 	}
@@ -304,15 +303,15 @@ func TestUpsertFindOrCreateIndexed(t *testing.T) {
 		t.Fatalf("upsert = fetches=%d exposures=%d, want 5/5",
 			rows[0].GetInt("fetches"), rows[0].GetInt("exposures"))
 	}
-	// Empty-flag key (unset relation stores ''): found, not duplicated.
-	seedDaily(t, app, day, true, "e9", "", "", 1, 0)
+	// Empty-variant key (stores ''): found, not duplicated.
+	seedDaily(t, app, day, true, "e9", "", 1, 0)
 	if err := upsertRollups(app, []Rollup{{
 		Day: day, EnvID: "e9", Variant: "", Fetches: 2,
 	}}); err != nil {
-		t.Fatalf("upsertRollups empty-flag: %v", err)
+		t.Fatalf("upsertRollups empty-variant: %v", err)
 	}
 	rows = mustAllDaily(t, app)
 	if len(rows) != 2 {
-		t.Fatalf("empty-flag upsert duplicated: %d rows, want 2", len(rows))
+		t.Fatalf("empty-variant upsert duplicated: %d rows, want 2", len(rows))
 	}
 }
