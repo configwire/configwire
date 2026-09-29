@@ -1,11 +1,11 @@
-// Filtered-query parity + index-proof tests for the stats hot path.
+// Env-wide parity + index-proof tests for the stats hot path.
 //
 // The loadRows/loadRollups loaders must query by indexed filter
-// (env[, flag], ts/day range) instead of full-scanning. These tests pin:
+// (env, ts/day range) instead of full-scanning. These tests pin:
 //   - TestStatsParityNoScan: no FindAllRecords on the hot path (RED
 //     pre-fix when the scan was present, GREEN post-fix).
 //   - TestStatsParityRows / TestStatsParityRollups: on seeded mixed
-//     env/flag rows, the new filtered queries aggregated through the
+//     env rows, the new indexed queries aggregated through the
 //     FROZEN pure functions equal the old full-scan logic byte-for-byte
 //     (diff-test oracle: FindAllRecords + project + Aggregate).
 //   - TestExplainStatsIndexes: EXPLAIN QUERY PLAN proves the on-disk
@@ -64,8 +64,8 @@ func extractFuncBody(t *testing.T, src, prefix string) string {
 
 // statsFilteredTestApp builds a TestApp with events + event_daily
 // collections carrying the exact on-disk scale index names from migration
-// 1790000004 (env/flag/ts + day shapes). Relation targets are plain text
-// holding the env/flag ids: the loaders only read them via GetString,
+// 1790000004 (env/ts + day shapes). Relation targets are plain text
+// holding the env ids: the loaders only read them via GetString,
 // exactly like the handler path.
 func statsFilteredTestApp(t *testing.T) *tests.TestApp {
 	t.Helper()
@@ -78,7 +78,6 @@ func statsFilteredTestApp(t *testing.T) *tests.TestApp {
 	events := core.NewBaseCollection("events")
 	for _, f := range []string{
 		`{"type":"text","name":"env"}`,
-		`{"type":"text","name":"flag"}`,
 		`{"type":"text","name":"variant"}`,
 		`{"type":"text","name":"kind"}`,
 		`{"type":"date","name":"ts"}`,
@@ -88,7 +87,6 @@ func statsFilteredTestApp(t *testing.T) *tests.TestApp {
 		}
 	}
 	events.AddIndex("idx_events_env_ts", false, "env, ts", "")
-	events.AddIndex("idx_events_env_flag_ts", false, "env, flag, ts", "")
 	if err := app.Save(events); err != nil {
 		t.Fatalf("save events collection: %v", err)
 	}
@@ -97,7 +95,6 @@ func statsFilteredTestApp(t *testing.T) *tests.TestApp {
 	for _, f := range []string{
 		`{"type":"date","name":"day"}`,
 		`{"type":"text","name":"env"}`,
-		`{"type":"text","name":"flag"}`,
 		`{"type":"text","name":"variant"}`,
 		`{"type":"number","name":"fetches"}`,
 		`{"type":"number","name":"exposures"}`,
@@ -106,7 +103,7 @@ func statsFilteredTestApp(t *testing.T) *tests.TestApp {
 			t.Fatalf("add event_daily field %s: %v", f, err)
 		}
 	}
-	daily.AddIndex("idx_event_daily_upsert_key", true, "day, env, flag, variant", "")
+	daily.AddIndex("idx_event_daily_upsert_key", true, "day, env, variant", "")
 	daily.AddIndex("idx_event_daily_day", false, "day", "")
 	if err := app.Save(daily); err != nil {
 		t.Fatalf("save event_daily collection: %v", err)
@@ -114,7 +111,7 @@ func statsFilteredTestApp(t *testing.T) *tests.TestApp {
 	return app
 }
 
-func seedEvent(t *testing.T, app *tests.TestApp, env, flag, kind, variant string, ts time.Time) {
+func seedEvent(t *testing.T, app *tests.TestApp, env, kind, variant string, ts time.Time) {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId("events")
 	if err != nil {
@@ -122,7 +119,6 @@ func seedEvent(t *testing.T, app *tests.TestApp, env, flag, kind, variant string
 	}
 	rec := core.NewRecord(col)
 	rec.Set("env", env)
-	rec.Set("flag", flag)
 	rec.Set("kind", kind)
 	rec.Set("variant", variant)
 	rec.Set("ts", ts)
@@ -131,7 +127,7 @@ func seedEvent(t *testing.T, app *tests.TestApp, env, flag, kind, variant string
 	}
 }
 
-func seedBucket(t *testing.T, app *tests.TestApp, day time.Time, env, flag, variant string, fetches, exposures int) {
+func seedBucket(t *testing.T, app *tests.TestApp, day time.Time, env, variant string, fetches, exposures int) {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId("event_daily")
 	if err != nil {
@@ -140,7 +136,6 @@ func seedBucket(t *testing.T, app *tests.TestApp, day time.Time, env, flag, vari
 	rec := core.NewRecord(col)
 	rec.Set("day", day)
 	rec.Set("env", env)
-	rec.Set("flag", flag)
 	rec.Set("variant", variant)
 	rec.Set("fetches", fetches)
 	rec.Set("exposures", exposures)
@@ -149,50 +144,50 @@ func seedBucket(t *testing.T, app *tests.TestApp, day time.Time, env, flag, vari
 	}
 }
 
-// seedMixedStats writes mixed env/flag rows around one fixed now0 and
+// seedMixedStats writes mixed env rows around one fixed now0 and
 // returns it so cutoffs stay put between seeding and assertion.
+// Rows across the old per-flag splits now share one env-wide bucket,
+// so their sums demonstrably merge.
 func seedMixedStats(t *testing.T, app *tests.TestApp) time.Time {
 	t.Helper()
 	now0 := time.Now().UTC()
 	horizon0 := HorizonFor(now0)
-	cutoff90 := now0.Add(-90 * 24 * time.Hour)
 	eventCutoff7 := EventCutoffFor(now0.Add(-7*24*time.Hour), horizon0)
 
-	// Events: e1/f1 core, e1/f2 + unset-relation siblings, e2 other-env,
-	// 100d stale pair, and the 7d-window boundary pair.
-	seedEvent(t, app, "e1", "f1", "fetch", "", now0)
-	seedEvent(t, app, "e1", "f1", "fetch", "", now0)
-	seedEvent(t, app, "e1", "f1", "exposure", "control", now0)
-	seedEvent(t, app, "e1", "f1", "exposure", "control", now0)
-	seedEvent(t, app, "e1", "f1", "exposure", "treatment", now0)
-	seedEvent(t, app, "e1", "f2", "fetch", "", now0)
-	seedEvent(t, app, "e1", "f2", "exposure", "control", now0)
-	seedEvent(t, app, "e1", "", "fetch", "", now0)
-	seedEvent(t, app, "e1", "", "exposure", "", now0)
-	seedEvent(t, app, "e2", "f1", "fetch", "", now0)
-	seedEvent(t, app, "e2", "f1", "exposure", "control", now0)
-	seedEvent(t, app, "e1", "f1", "fetch", "", now0.Add(-100*24*time.Hour))
-	seedEvent(t, app, "e1", "f1", "exposure", "control", now0.Add(-100*24*time.Hour))
-	seedEvent(t, app, "e1", "f1", "fetch", "", eventCutoff7)
-	seedEvent(t, app, "e1", "f1", "fetch", "", eventCutoff7.Add(-time.Second))
+	// Events: e1 core rows plus unset-variant sibling,
+	// e2 other-env, 100d stale pair, and the 7d-window boundary pair.
+	seedEvent(t, app, "e1", "fetch", "", now0)
+	seedEvent(t, app, "e1", "fetch", "", now0)
+	seedEvent(t, app, "e1", "exposure", "control", now0)
+	seedEvent(t, app, "e1", "exposure", "control", now0)
+	seedEvent(t, app, "e1", "exposure", "treatment", now0)
+	seedEvent(t, app, "e1", "fetch", "", now0)
+	seedEvent(t, app, "e1", "exposure", "control", now0)
+	seedEvent(t, app, "e1", "fetch", "", now0)
+	seedEvent(t, app, "e1", "exposure", "", now0)
+	seedEvent(t, app, "e2", "fetch", "", now0)
+	seedEvent(t, app, "e2", "exposure", "control", now0)
+	seedEvent(t, app, "e1", "fetch", "", now0.Add(-100*24*time.Hour))
+	seedEvent(t, app, "e1", "exposure", "control", now0.Add(-100*24*time.Hour))
+	seedEvent(t, app, "e1", "fetch", "", eventCutoff7)
+	seedEvent(t, app, "e1", "fetch", "", eventCutoff7.Add(-time.Second))
 
-	// Rollups: history pair, other-flag/other-env/unset siblings,
+	// Rollups: history pair, other-env/unset siblings,
 	// exactly-at-90d-cutoff kept, stale pair, raw-side boundary day.
-	cutoffDay90 := purge.DayBucket(cutoff90)
-	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e1", "f1", "control", 7, 9)
-	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e1", "f1", "treatment", 1, 2)
-	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e1", "f2", "control", 4, 5)
-	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e2", "f1", "control", 6, 7)
-	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e1", "", "", 2, 3)
-	seedBucket(t, app, cutoffDay90, "e1", "f1", "control", 3, 4)
-	seedBucket(t, app, cutoffDay90.AddDate(0, 0, -1), "e1", "f1", "control", 50, 60)
-	seedBucket(t, app, horizon0, "e1", "f1", "control", 11, 13)
-	seedBucket(t, app, horizon0.AddDate(0, 0, -100), "e1", "f1", "control", 21, 22)
+	cutoffDay90 := purge.DayBucket(now0.Add(-90 * 24 * time.Hour))
+	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e1", "control", 11, 14)
+	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e1", "treatment", 1, 2)
+	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e2", "control", 6, 7)
+	seedBucket(t, app, horizon0.AddDate(0, 0, -5), "e1", "", 2, 3)
+	seedBucket(t, app, cutoffDay90, "e1", "control", 3, 4)
+	seedBucket(t, app, cutoffDay90.AddDate(0, 0, -1), "e1", "control", 50, 60)
+	seedBucket(t, app, horizon0, "e1", "control", 11, 13)
+	seedBucket(t, app, horizon0.AddDate(0, 0, -100), "e1", "control", 21, 22)
 	return now0
 }
 
-// oldEventRows is the pre-fix oracle: full scan + project, filtered only
-// by the frozen Aggregate afterwards.
+// oldEventRows is the pre-fix oracle: full scan + project, aggregated
+// only by the frozen Aggregate afterwards (env-wide).
 func oldEventRows(t *testing.T, app *tests.TestApp) []EventRow {
 	t.Helper()
 	recs, err := app.FindAllRecords("events")
@@ -203,7 +198,6 @@ func oldEventRows(t *testing.T, app *tests.TestApp) []EventRow {
 	for _, r := range recs {
 		rows = append(rows, EventRow{
 			EnvID:   r.GetString("env"),
-			FlagID:  r.GetString("flag"),
 			Kind:    r.GetString("kind"),
 			Variant: r.GetString("variant"),
 			Ts:      r.GetDateTime("ts").Time(),
@@ -212,7 +206,7 @@ func oldEventRows(t *testing.T, app *tests.TestApp) []EventRow {
 	return rows
 }
 
-// oldRollups is the pre-fix oracle for event_daily.
+// oldRollups is the pre-fix oracle for event_daily (env-wide).
 func oldRollups(t *testing.T, app *tests.TestApp) []purge.Rollup {
 	t.Helper()
 	recs, err := app.FindAllRecords("event_daily")
@@ -224,28 +218,12 @@ func oldRollups(t *testing.T, app *tests.TestApp) []purge.Rollup {
 		out = append(out, purge.Rollup{
 			Day:       r.GetDateTime("day").Time(),
 			EnvID:     r.GetString("env"),
-			FlagID:    r.GetString("flag"),
 			Variant:   r.GetString("variant"),
 			Fetches:   r.GetInt("fetches"),
 			Exposures: r.GetInt("exposures"),
 		})
 	}
 	return out
-}
-
-type flagCase struct {
-	name       string
-	flagID     string
-	filterFlag bool
-}
-
-var parityFlagCases = []flagCase{
-	{"unfiltered", "", false},
-	{"flag f1", "f1", true},
-	{"unknown flag", "no-such-flag", true},
-	// Exact-mirror edge: an unmatched ?flag= resolves to flagID "" with
-	// the filter on, which matches unset-relation rows in BOTH paths.
-	{"unset-relation filter", "", true},
 }
 
 // TestStatsParityRows diff-tests the new indexed loadRows against the old
@@ -260,38 +238,36 @@ func TestStatsParityRows(t *testing.T) {
 		cutoff := now0.Add(-time.Duration(days) * 24 * time.Hour)
 		horizon := HorizonFor(now0)
 		eventCutoff := EventCutoffFor(cutoff, horizon)
-		for _, tc := range parityFlagCases {
-			want := Aggregate(oracle, "e1", tc.flagID, tc.filterFlag, eventCutoff)
-			got, err := loadRows(app, "e1", tc.flagID, tc.filterFlag, eventCutoff)
-			if err != nil {
-				t.Fatalf("%dd %s: loadRows: %v", days, tc.name, err)
-			}
-			if gotAgg := Aggregate(got, "e1", tc.flagID, tc.filterFlag, eventCutoff); !reflect.DeepEqual(gotAgg, want) {
-				t.Errorf("%dd %s: filtered Aggregate = %+v, want scan-oracle %+v", days, tc.name, gotAgg, want)
-			}
+		want := Aggregate(oracle, "e1", eventCutoff)
+		got, err := loadRows(app, "e1", eventCutoff)
+		if err != nil {
+			t.Fatalf("%dd: loadRows: %v", days, err)
+		}
+		if gotAgg := Aggregate(got, "e1", eventCutoff); !reflect.DeepEqual(gotAgg, want) {
+			t.Errorf("%dd: indexed Aggregate = %+v, want scan-oracle %+v", days, gotAgg, want)
 		}
 	}
 
-	// The filter must bite: unfiltered 7d over e1 keeps only live e1 rows,
+	// The filter must bite: env-wide 7d over e1 keeps only live e1 rows,
 	// strictly fewer than the seeded scan (other-env + stale excluded).
 	eventCutoff7 := EventCutoffFor(now0.Add(-7*24*time.Hour), HorizonFor(now0))
-	live, err := loadRows(app, "e1", "", false, eventCutoff7)
+	live, err := loadRows(app, "e1", eventCutoff7)
 	if err != nil {
-		t.Fatalf("loadRows unfiltered 7d: %v", err)
+		t.Fatalf("loadRows env-wide 7d: %v", err)
 	}
 	if len(live) >= len(oracle) {
-		t.Errorf("filtered 7d returned %d rows over %d seeded; filter excluded nothing", len(live), len(oracle))
+		t.Errorf("indexed 7d returned %d rows over %d seeded; filter excluded nothing", len(live), len(oracle))
 	}
 	for _, r := range live {
 		if r.EnvID != "e1" {
-			t.Errorf("filtered 7d leaked other-env row %+v", r)
+			t.Errorf("indexed 7d leaked other-env row %+v", r)
 		}
 		// Millisecond grain: stored ts truncates to DefaultDateLayout, so
 		// a row within 1ms below the cutoff is the documented superset
 		// slop the frozen Aggregate narrows back down — anything older
 		// is a real leak.
 		if r.Ts.Before(eventCutoff7.Add(-time.Millisecond)) {
-			t.Errorf("filtered 7d leaked pre-cutoff row %+v", r)
+			t.Errorf("indexed 7d leaked pre-cutoff row %+v", r)
 		}
 	}
 }
@@ -309,45 +285,43 @@ func TestStatsParityRollups(t *testing.T) {
 		horizon := HorizonFor(now0)
 		cutoffDay := purge.DayBucket(cutoff)
 		eventCutoff := EventCutoffFor(cutoff, horizon)
-		for _, tc := range parityFlagCases {
-			want := AggregateRollups(oracle, "e1", tc.flagID, tc.filterFlag, cutoffDay, horizon)
-			got, err := loadRollups(app, "e1", tc.flagID, tc.filterFlag, cutoffDay, horizon)
-			if err != nil {
-				t.Fatalf("%dd %s: loadRollups: %v", days, tc.name, err)
-			}
-			if gotAgg := AggregateRollups(got, "e1", tc.flagID, tc.filterFlag, cutoffDay, horizon); !reflect.DeepEqual(gotAgg, want) {
-				t.Errorf("%dd %s: filtered AggregateRollups = %+v, want scan-oracle %+v", days, tc.name, gotAgg, want)
-			}
+		want := AggregateRollups(oracle, "e1", cutoffDay, horizon)
+		got, err := loadRollups(app, "e1", cutoffDay, horizon)
+		if err != nil {
+			t.Fatalf("%dd: loadRollups: %v", days, err)
+		}
+		if gotAgg := AggregateRollups(got, "e1", cutoffDay, horizon); !reflect.DeepEqual(gotAgg, want) {
+			t.Errorf("%dd: indexed AggregateRollups = %+v, want scan-oracle %+v", days, gotAgg, want)
+		}
 
-			// Merged end-to-end parity for the same window+flag.
-			wantEvents := Aggregate(oracleEvents, "e1", tc.flagID, tc.filterFlag, eventCutoff)
-			gotEvents, err := loadRows(app, "e1", tc.flagID, tc.filterFlag, eventCutoff)
-			if err != nil {
-				t.Fatalf("%dd %s: loadRows: %v", days, tc.name, err)
-			}
-			wantMerged := MergeStats(wantEvents, want)
-			gotMerged := MergeStats(
-				Aggregate(gotEvents, "e1", tc.flagID, tc.filterFlag, eventCutoff),
-				AggregateRollups(got, "e1", tc.flagID, tc.filterFlag, cutoffDay, horizon),
-			)
-			if !reflect.DeepEqual(gotMerged, wantMerged) {
-				t.Errorf("%dd %s: filtered merged = %+v, want scan-oracle %+v", days, tc.name, gotMerged, wantMerged)
-			}
+		// Merged end-to-end parity for the same window.
+		wantEvents := Aggregate(oracleEvents, "e1", eventCutoff)
+		gotEvents, err := loadRows(app, "e1", eventCutoff)
+		if err != nil {
+			t.Fatalf("%dd: loadRows: %v", days, err)
+		}
+		wantMerged := MergeStats(wantEvents, want)
+		gotMerged := MergeStats(
+			Aggregate(gotEvents, "e1", eventCutoff),
+			AggregateRollups(got, "e1", cutoffDay, horizon),
+		)
+		if !reflect.DeepEqual(gotMerged, wantMerged) {
+			t.Errorf("%dd: indexed merged = %+v, want scan-oracle %+v", days, gotMerged, wantMerged)
 		}
 	}
 
-	// Spot value: 90d flag-f1 merges the history buckets with the
+	// Spot value: 90d env-wide merges the history buckets with the
 	// at-cutoff bucket; stale/raw-side/other excluded.
 	cutoff90 := now0.Add(-90 * 24 * time.Hour)
 	horizon := HorizonFor(now0)
-	buckets, err := loadRollups(app, "e1", "f1", true, purge.DayBucket(cutoff90), horizon)
+	buckets, err := loadRollups(app, "e1", purge.DayBucket(cutoff90), horizon)
 	if err != nil {
-		t.Fatalf("loadRollups 90d f1: %v", err)
+		t.Fatalf("loadRollups 90d: %v", err)
 	}
-	st := AggregateRollups(buckets, "e1", "f1", true, purge.DayBucket(cutoff90), horizon)
-	// history (7,9) + treatment (1,2) + at-cutoff (3,4).
-	if st.Fetches != 11 || st.Exposures != 15 {
-		t.Errorf("90d f1 rollups = %+v, want {Fetches:11 Exposures:15}", st)
+	st := AggregateRollups(buckets, "e1", purge.DayBucket(cutoff90), horizon)
+	// history control (11,14) + treatment (1,2) + unset (2,3) + at-cutoff (3,4).
+	if st.Fetches != 17 || st.Exposures != 23 {
+		t.Errorf("90d env-wide rollups = %+v, want {Fetches:17 Exposures:23}", st)
 	}
 }
 
@@ -381,7 +355,7 @@ func stamp(t time.Time) string {
 }
 
 // TestExplainStatsIndexes proves the on-disk scale indexes serve the exact
-// filter shapes the loaders emit — no full-table scan at any window.
+// env-wide filter shapes the loaders emit — no full-table scan at any window.
 func TestExplainStatsIndexes(t *testing.T) {
 	app := statsFilteredTestApp(t)
 	now0 := seedMixedStats(t, app)
@@ -391,20 +365,14 @@ func TestExplainStatsIndexes(t *testing.T) {
 
 	join := func(details []string) string { return strings.Join(details, "\n") }
 
-	flagged := explainDetails(t, app,
-		`EXPLAIN QUERY PLAN SELECT * FROM "events" WHERE "env" = 'e1' AND "flag" = 'f1' AND "ts" >= '`+stamp(eventCutoff)+`'`)
-	if !strings.Contains(join(flagged), "idx_events_env_flag_ts") {
-		t.Errorf("flag-filtered events plan misses idx_events_env_flag_ts:\n%s", join(flagged))
-	}
-
-	unfiltered := explainDetails(t, app,
+	envOnly := explainDetails(t, app,
 		`EXPLAIN QUERY PLAN SELECT * FROM "events" WHERE "env" = 'e1' AND "ts" >= '`+stamp(eventCutoff)+`'`)
-	if !strings.Contains(join(unfiltered), "idx_events_env_ts") {
-		t.Errorf("unfiltered events plan misses idx_events_env_ts:\n%s", join(unfiltered))
+	if !strings.Contains(join(envOnly), "idx_events_env_ts") {
+		t.Errorf("env-wide events plan misses idx_events_env_ts:\n%s", join(envOnly))
 	}
 
 	daily := explainDetails(t, app,
-		`EXPLAIN QUERY PLAN SELECT * FROM "event_daily" WHERE "env" = 'e1' AND "flag" = 'f1' AND "day" >= '`+stamp(cutoffDay)+`' AND "day" < '`+stamp(horizon)+`'`)
+		`EXPLAIN QUERY PLAN SELECT * FROM "event_daily" WHERE "env" = 'e1' AND "day" >= '`+stamp(cutoffDay)+`' AND "day" < '`+stamp(horizon)+`'`)
 	if !strings.Contains(join(daily), "idx_event_daily") {
 		t.Errorf("event_daily plan misses idx_event_daily_*:\n%s", join(daily))
 	}

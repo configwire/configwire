@@ -1,6 +1,6 @@
 // Package stats implements the stats query API.
 //
-//	GET /api/v1/admin/env/{env}/stats?flag=X&since=7d
+//	GET /api/v1/admin/env/{env}/stats?since=7d
 //
 // A small read-model over the events rows that T9 persists. Aggregate
 // counts only — userHash never leaves the server through this endpoint
@@ -8,18 +8,17 @@
 //
 // SINCE GRAMMAR: ?since=<N>d (days), default 7d when absent, clamped to a
 // max of 90d. Malformed values (abc, -5d, 0d, 7h, bare numbers) -> 400.
-// FLAG POLICY: ?flag=<key> filters by flag relation -> key resolution;
-// unknown flag keys (including path-ish "../x") -> zeros with 200, never
-// 404. Unknown env slugs -> 404. Auth is superuser-only via
+// ENV POLICY: stats are env-wide only; there is no per-key filtering.
+// Unknown env slugs -> 404. Auth is superuser-only via
 // apis.RequireSuperuserAuth().
 //
 // SCALE NOTE: aggregation runs in-Go over indexed filter queries —
-// loadRows selects events by (env[, flag], ts >= cutoff) and loadRollups
-// selects event_daily by (env[, flag], cutoffDay <= day < horizon), served
-// by idx_events_env_ts / idx_events_env_flag_ts and
-// idx_event_daily_upsert_key / idx_event_daily_day. The frozen Aggregate /
-// AggregateRollups helpers re-apply the same predicates in-Go, so the DB
-// prefilter is a pure subset narrowing: identical results, no full scan.
+// loadRows selects events by (env, ts >= cutoff) and loadRollups
+// selects event_daily by (env, cutoffDay <= day < horizon), served
+// by idx_events_env_ts and idx_event_daily_upsert_key /
+// idx_event_daily_day. The frozen Aggregate / AggregateRollups helpers
+// re-apply the same predicates in-Go, so the DB prefilter is a pure
+// subset narrowing: identical results, no full scan.
 package stats
 
 import (
@@ -77,10 +76,10 @@ func errBadSince() error {
 }
 
 // EventRow is the minimal event projection Aggregate needs — pure and
-// DB-free so aggregation is unit-testable on fake rows.
+// DB-free so aggregation is unit-testable on fake rows. Stats aggregate
+// env-wide with no flag reads.
 type EventRow struct {
 	EnvID   string
-	FlagID  string // "" when the ingest-time flag key matched nothing (relation unset)
 	Kind    string // "fetch" | "exposure"
 	Variant string // verbatim stored variant ("" possible, counted as-is)
 	Version int
@@ -120,28 +119,17 @@ func EffectiveSince(days int) string {
 	return strconv.Itoa(days) + "d"
 }
 
-// FlagFound reports whether the ?flag= filter resolved: true when the
-// param is absent (unfiltered) or the key resolves via MatchFlag;
-// false on unknown keys (zeros with 200, never 404).
-func FlagFound(flagKey string, matched bool) bool {
-	if flagKey == "" {
-		return true
-	}
-	return matched
-}
-
-// EchoFor builds the echo block purely (unit-testable): env/flag are
-// verbatim request values, since/sinceDays/horizon carry the EFFECTIVE
+// EchoFor builds the echo block purely (unit-testable): env is the
+// verbatim request value, since/sinceDays/horizon carry the EFFECTIVE
 // window after the 90d clamp, cutoff is the UTC RFC3339 window start,
 // and rollupHorizon is the UTC RFC3339 midnight that splits raw events
 // from pre-purge daily rollups (see HorizonFor). horizon keeps its original
 // label meaning ("7d"); rollupHorizon is the additive machine-readable
 // split point, so old clients keep parsing horizon untouched.
-func EchoFor(envSlug, flagKey string, days int, cutoff, horizon time.Time) map[string]any {
+func EchoFor(envSlug string, days int, cutoff, horizon time.Time) map[string]any {
 	since := EffectiveSince(days)
 	return map[string]any{
 		"env":           envSlug,
-		"flag":          flagKey,
 		"since":         since,
 		"sinceDays":     days,
 		"cutoff":        cutoff.UTC().Format(time.RFC3339),
@@ -172,20 +160,15 @@ func EventCutoffFor(cutoff, horizon time.Time) time.Time {
 }
 
 // AggregateRollups folds event_daily buckets into Stats purely (no I/O).
-// Filter order mirrors Aggregate: env -> flag (stored FlagID resolved
-// once per request, never re-resolved per bucket, so renamed/orphaned
-// flags keep their history) -> day-grain cutoff (day >= cutoffDay kept,
-// exactly-at-cutoff kept, zero-day skipped) -> horizon (day < horizon;
-// the boundary day stays raw-side) -> counts (fetches+exposures added,
-// perVariant over exposures only, verbatim variant incl "", perVersion
-// over fetches only by stored version).
-func AggregateRollups(buckets []purge.Rollup, envID, flagID string, filterByFlag bool, cutoffDay, horizon time.Time) Stats {
+// Filter order mirrors Aggregate: env match -> day-grain cutoff
+// (day >= cutoffDay kept, exactly-at-cutoff kept, zero-day skipped) ->
+// horizon (day < horizon; the boundary day stays raw-side) -> counts
+// (fetches+exposures added, perVariant over exposures only, verbatim
+// variant incl "", perVersion over fetches only by stored version).
+func AggregateRollups(buckets []purge.Rollup, envID string, cutoffDay, horizon time.Time) Stats {
 	out := Stats{PerVariant: map[string]int{}, PerVersion: map[int]int{}}
 	for _, b := range buckets {
 		if b.EnvID != envID {
-			continue
-		}
-		if filterByFlag && b.FlagID != flagID {
 			continue
 		}
 		if b.Day.IsZero() || b.Day.Before(cutoffDay) {
@@ -235,18 +218,13 @@ func MergeStats(events, rollups Stats) Stats {
 }
 
 // Aggregate folds rows into Stats purely (no I/O). Filters: envID must
-// match; when filterByFlag is true only rows whose flag relation equals
-// flagID match (rows with an unset flag relation are excludable and drop
-// out here); rows with ts before cutoff (or zero ts, which proves no
-// recency) are excluded. Fetches and exposures are both flag-filtered;
+// match; rows with ts before cutoff (or zero ts, which proves no
+// recency) are excluded. All flags in the env count together;
 // PerVariant counts exposures only.
-func Aggregate(rows []EventRow, envID, flagID string, filterByFlag bool, cutoff time.Time) Stats {
+func Aggregate(rows []EventRow, envID string, cutoff time.Time) Stats {
 	out := Stats{PerVariant: map[string]int{}, PerVersion: map[int]int{}}
 	for _, r := range rows {
 		if r.EnvID != envID {
-			continue
-		}
-		if filterByFlag && r.FlagID != flagID {
 			continue
 		}
 		if r.Ts.IsZero() || r.Ts.Before(cutoff) {
@@ -271,7 +249,7 @@ func Register(se *core.ServeEvent) {
 
 // Order: 401 (superuser, via middleware) -> 404 (unknown env slug) ->
 // 400 (ambiguous slug without ?project=, or malformed since) -> 200
-// (counts, or zeros for unknown flags).
+// (env-wide counts).
 // Uses re.App for every request-scoped lookup (never a captured app).
 func getStats(re *core.RequestEvent) error {
 	security.SetHeaders(re)
@@ -292,34 +270,18 @@ func getStats(re *core.RequestEvent) error {
 	horizon := HorizonFor(now)
 	cutoffDay := purge.DayBucket(cutoff)
 
-	// Flag filter by relation -> key resolution SCOPED to the env's
-	// project (key + project, never global key). Unknown flag keys yield
-	// zeros with 200 (not 404): there is simply nothing recorded under
-	// that key. Events whose flag relation is unset never match a filter.
-	flagKey := re.Request.URL.Query().Get("flag")
-	flagID := ""
-	filterByFlag := false
-	matched := false
-	if flagKey != "" {
-		filterByFlag = true
-		if rows, rerr := envresolve.FlagRows(re.App); rerr == nil {
-			flagID, matched = envresolve.MatchFlag(rows, flagKey, env.GetString("project"))
-		}
-	}
-	flagFound := FlagFound(flagKey, matched)
-
 	eventCutoff := EventCutoffFor(cutoff, horizon)
-	rows, err := loadRows(re.App, env.Id, flagID, filterByFlag, eventCutoff)
+	rows, err := loadRows(re.App, env.Id, eventCutoff)
 	if err != nil {
 		return err
 	}
-	stEvents := Aggregate(rows, env.Id, flagID, filterByFlag, eventCutoff)
+	stEvents := Aggregate(rows, env.Id, eventCutoff)
 
-	buckets, err := loadRollups(re.App, env.Id, flagID, filterByFlag, cutoffDay, horizon)
+	buckets, err := loadRollups(re.App, env.Id, cutoffDay, horizon)
 	if err != nil {
 		return err
 	}
-	stRollups := AggregateRollups(buckets, env.Id, flagID, filterByFlag, cutoffDay, horizon)
+	stRollups := AggregateRollups(buckets, env.Id, cutoffDay, horizon)
 	st := MergeStats(stEvents, stRollups)
 
 	eventsTotal := TotalFor(stEvents)
@@ -333,7 +295,14 @@ func getStats(re *core.RequestEvent) error {
 
 	rates := RatesFor(st)
 	total := TotalFor(st)
-	echo := EchoFor(slug, flagKey, days, cutoff, horizon)
+	echo := EchoFor(slug, days, cutoff, horizon)
+
+	// Series window matches the totals window: every counted row lands on
+	// exactly one series day, so series sums equal totals.
+	daysList := SeriesDays(cutoffDay, now)
+	evMap := BuildEventSeries(rows, env.Id, eventCutoff)
+	roMap := BuildRollupSeries(buckets, env.Id, cutoffDay, horizon)
+	series := MergeSeries(evMap, roMap, daysList)
 
 	return re.JSON(http.StatusOK, map[string]any{
 		"fetches":     st.Fetches,
@@ -342,11 +311,11 @@ func getStats(re *core.RequestEvent) error {
 		"perVersion":  st.PerVersion,
 		"version":     version,
 		"echo":        echo,
-		"flagFound":   flagFound,
 		"total":       total,
 		"rates":       rates,
 		"sources":     map[string]any{"events": eventsTotal, "rollups": rollupsTotal},
 		"approximate": approximate,
+		"series":      series,
 	})
 }
 
@@ -360,22 +329,16 @@ func dateParam(t time.Time) string {
 }
 
 // loadRollups projects the event_daily collection into purge.Rollup
-// buckets by indexed filter: env equality, optional flag equality, and
-// the day window cutoffDay <= day < horizon (history-side of the purge
-// split; the boundary day stays raw-side). Flag joins use the stored
-// FlagID verbatim (relation unset -> ""), resolved once per request in
-// getStats — historic rows are never re-resolved against the current key
-// set. userHash never exists on this collection (counts only).
-func loadRollups(app core.App, envID, flagID string, filterByFlag bool, cutoffDay, horizon time.Time) ([]purge.Rollup, error) {
+// buckets by indexed filter: env equality and the day window
+// cutoffDay <= day < horizon (history-side of the purge split; the
+// boundary day stays raw-side). userHash never exists on this
+// collection (counts only).
+func loadRollups(app core.App, envID string, cutoffDay, horizon time.Time) ([]purge.Rollup, error) {
 	filter := "env = {:env} && day >= {:cutoffDay} && day < {:horizon}"
 	params := dbx.Params{
 		"env":       envID,
 		"cutoffDay": dateParam(cutoffDay),
 		"horizon":   dateParam(horizon),
-	}
-	if filterByFlag {
-		filter = "env = {:env} && flag = {:flag} && day >= {:cutoffDay} && day < {:horizon}"
-		params["flag"] = flagID
 	}
 	recs, err := app.FindRecordsByFilter("event_daily", filter, "", 0, 0, params)
 	if err != nil {
@@ -386,7 +349,6 @@ func loadRollups(app core.App, envID, flagID string, filterByFlag bool, cutoffDa
 		out = append(out, purge.Rollup{
 			Day:       r.GetDateTime("day").Time(),
 			EnvID:     r.GetString("env"),
-			FlagID:    r.GetString("flag"),
 			Variant:   r.GetString("variant"),
 			Version:   r.GetInt("version"),
 			Fetches:   r.GetInt("fetches"),
@@ -397,19 +359,15 @@ func loadRollups(app core.App, envID, flagID string, filterByFlag bool, cutoffDa
 }
 
 // loadRows projects the events collection into EventRows by indexed
-// filter: env equality, optional flag equality, and ts >= cutoff (the
-// live side of the purge split; zero-ts rows sort below any cutoff and
-// drop out in the DB, as in Aggregate). userHash is deliberately never
-// read — aggregate counts only.
-func loadRows(app core.App, envID, flagID string, filterByFlag bool, cutoff time.Time) ([]EventRow, error) {
+// filter: env equality and ts >= cutoff (the live side of the purge
+// split; zero-ts rows sort below any cutoff and drop out in the DB, as
+// in Aggregate). userHash is deliberately never read — aggregate counts
+// only.
+func loadRows(app core.App, envID string, cutoff time.Time) ([]EventRow, error) {
 	filter := "env = {:env} && ts >= {:cutoff}"
 	params := dbx.Params{
 		"env":    envID,
 		"cutoff": dateParam(cutoff),
-	}
-	if filterByFlag {
-		filter = "env = {:env} && flag = {:flag} && ts >= {:cutoff}"
-		params["flag"] = flagID
 	}
 	recs, err := app.FindRecordsByFilter("events", filter, "", 0, 0, params)
 	if err != nil {
@@ -419,7 +377,6 @@ func loadRows(app core.App, envID, flagID string, filterByFlag bool, cutoff time
 	for _, r := range recs {
 		rows = append(rows, EventRow{
 			EnvID:   r.GetString("env"),
-			FlagID:  r.GetString("flag"),
 			Kind:    r.GetString("kind"),
 			Variant: r.GetString("variant"),
 			Version: r.GetInt("version"),
