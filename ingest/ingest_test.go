@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -75,17 +74,49 @@ func body(t *testing.T, events []any) []byte {
 	return b
 }
 
-func ev(kind, flag string) map[string]any {
-	return map[string]any{"kind": kind, "flag": flag, "variant": "control", "userHash": "abcdef0123456789"}
+func ev(kind string) map[string]any {
+	return map[string]any{"kind": kind, "variant": "control", "userHash": "abcdef0123456789"}
 }
 
 func TestValidateBodyOK(t *testing.T) {
-	events, aerr := ValidateBody(body(t, []any{ev("fetch", "f1"), ev("exposure", "f2")}))
+	events, aerr := ValidateBody(body(t, []any{ev("fetch"), ev("exposure")}))
 	if aerr != nil {
 		t.Fatalf("valid batch rejected: %v", aerr)
 	}
-	if len(events) != 2 || events[0].Kind != "fetch" || events[1].Flag != "f2" {
+	if len(events) != 2 || events[0].Kind != "fetch" || events[1].Variant != "control" {
 		t.Fatalf("unexpected decode: %+v", events)
+	}
+}
+
+func TestValidateBodyIgnoresUnknownKeys(t *testing.T) {
+	e := ev("exposure")
+	e["traceId"] = "abc"
+	events, aerr := ValidateBody(body(t, []any{e}))
+	if aerr != nil {
+		t.Fatalf("unknown keys must be accepted-but-ignored: %v", aerr)
+	}
+	if len(events) != 1 || events[0].Kind != "exposure" || events[0].Variant != "control" {
+		t.Fatalf("unexpected decode: %+v", events)
+	}
+	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Variant: events[0].Variant, UserHash: events[0].UserHash, Ts: time.Now().UTC(), Version: events[0].Version}
+	if se.Kind != "exposure" || se.Variant != "control" {
+		t.Fatalf("stored event must carry env-wide fields only: %+v", se)
+	}
+}
+
+func TestValidateBodyIgnoresLegacyFlag(t *testing.T) {
+	e := ev("exposure")
+	e["flag"] = "launch_flag"
+	events, aerr := ValidateBody(body(t, []any{e}))
+	if aerr != nil {
+		t.Fatalf("legacy flag key must be accepted-but-ignored: %v", aerr)
+	}
+	if len(events) != 1 || events[0].Kind != "exposure" || events[0].Variant != "control" || events[0].UserHash != "abcdef0123456789" {
+		t.Fatalf("unexpected decode: %+v", events)
+	}
+	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Variant: events[0].Variant, UserHash: events[0].UserHash, Ts: time.Now().UTC(), Version: events[0].Version}
+	if se.Kind != "exposure" || se.Variant != "control" {
+		t.Fatalf("stored event must carry env-wide fields only: %+v", se)
 	}
 }
 
@@ -102,7 +133,7 @@ func TestValidateBodyMinimal(t *testing.T) {
 func TestValidateBodyTooLarge(t *testing.T) {
 	many := make([]any, MaxBatchEvents+1)
 	for i := range many {
-		many[i] = ev("fetch", "f")
+		many[i] = ev("fetch")
 	}
 	_, aerr := ValidateBody(body(t, many))
 	if aerr == nil || aerr.Status != 400 {
@@ -112,7 +143,7 @@ func TestValidateBodyTooLarge(t *testing.T) {
 
 func TestValidateBodyRejectsPII(t *testing.T) {
 	for _, key := range []string{"userId", "ip"} {
-		e := ev("exposure", "f")
+		e := ev("exposure")
 		e[key] = "raw-value"
 		_, aerr := ValidateBody(body(t, []any{e}))
 		if aerr == nil || aerr.Status != 400 {
@@ -120,7 +151,7 @@ func TestValidateBodyRejectsPII(t *testing.T) {
 		}
 	}
 	// Null-valued keys are presence too.
-	e := ev("exposure", "f")
+	e := ev("exposure")
 	e["userId"] = nil
 	if _, aerr := ValidateBody(body(t, []any{e})); aerr == nil || aerr.Status != 400 {
 		t.Fatalf("null userId must be 400, got %v", aerr)
@@ -128,7 +159,7 @@ func TestValidateBodyRejectsPII(t *testing.T) {
 }
 
 func TestValidateBodyBogusKind(t *testing.T) {
-	_, aerr := ValidateBody(body(t, []any{ev("bogus", "f")}))
+	_, aerr := ValidateBody(body(t, []any{ev("bogus")}))
 	if aerr == nil || aerr.Status != 400 {
 		t.Fatalf("bogus kind must be 400, got %v", aerr)
 	}
@@ -218,7 +249,7 @@ func TestValidateBodyTsClamp(t *testing.T) {
 }
 
 func TestValidateBodyOversizedEvent(t *testing.T) {
-	e := ev("fetch", "f")
+	e := ev("fetch")
 	e["variant"] = strings.Repeat("v", 70<<10) // >64KB single event
 	_, aerr := ValidateBody(body(t, []any{e}))
 	if aerr == nil || aerr.Status != 413 {
@@ -298,7 +329,7 @@ func TestLimiterWindow(t *testing.T) {
 func TestValidateBodyExactly100(t *testing.T) {
 	many := make([]any, 100)
 	for i := range many {
-		many[i] = ev("fetch", fmt.Sprintf("f%d", i))
+		many[i] = ev("fetch")
 	}
 	events, aerr := ValidateBody(body(t, many))
 	if aerr != nil {

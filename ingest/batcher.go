@@ -12,7 +12,6 @@ import (
 // never raw PII (see hash.go).
 type StoredEvent struct {
 	EnvID    string
-	FlagID   string // "" when the flag key matched nothing; relation left unset
 	Kind     string
 	Variant  string
 	UserHash string
@@ -132,9 +131,6 @@ func (b *Batcher) flush(items []StoredEvent) {
 		rec := core.NewRecord(col)
 		if it.EnvID != "" {
 			rec.Set("env", it.EnvID)
-		}
-		if it.FlagID != "" {
-			rec.Set("flag", it.FlagID)
 		}
 		rec.Set("kind", it.Kind)
 		rec.Set("variant", it.Variant)

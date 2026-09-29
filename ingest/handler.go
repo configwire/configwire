@@ -128,34 +128,15 @@ func postEvents(re *core.RequestEvent) error {
 		return writeAPIError(re, aerr)
 	}
 	now := time.Now().UTC()
-	flagIDs := make(map[string]string, len(events))
-	// Flag resolution is scoped to the env's project once per request
-	// (key + project, never global key): the same key under another
-	// project never matches, so events can't attach to a foreign flag.
-	flagRows, _ := envresolve.FlagRows(re.App)
-	projectID := env.GetString("project")
 	stored := make([]StoredEvent, 0, len(events))
 	for _, ev := range events {
 		ts := ev.Ts
 		if ts.IsZero() {
 			ts = now
 		}
-		flagID := ""
-		if ev.Flag != "" {
-			if id, ok := flagIDs[ev.Flag]; ok {
-				flagID = id
-			} else {
-				// Best-effort flag resolution: unknown flag keys are stored
-				// with the relation unset (variant/kind/userHash preserved)
-				// rather than rejecting the batch — the schema has no
-				// flagKey text field and migrations are owned elsewhere.
-				flagID, _ = envresolve.MatchFlag(flagRows, ev.Flag, projectID)
-				flagIDs[ev.Flag] = flagID
-			}
-		}
 		stored = append(stored, StoredEvent{
-			EnvID: env.Id, FlagID: flagID,
-			Kind: ev.Kind, Variant: ev.Variant,
+			EnvID: env.Id,
+			Kind:  ev.Kind, Variant: ev.Variant,
 			UserHash: ResolveUserHash(ev.UserHash, ""), Ts: ts,
 			Version: ev.Version,
 		})

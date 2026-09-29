@@ -5,9 +5,9 @@
 //
 //	POST /api/v1/env/:env/events
 //	Header: X-ConfigWire-Key: <full sdk key>
-//	Body: {"events":[{"kind":"fetch|exposure","flag":"<flag key>","variant":"<name>",
+//	Body: {"events":[{"kind":"fetch|exposure","variant":"<name>",
 //	    "userHash":"<opaque>", "ts":"2026-09-22T00:00:00Z | 1726870000"}]}
-//	flag/variant/userHash/ts are all optional; ts accepts RFC3339 string or
+//	variant/userHash/ts are all optional; ts accepts RFC3339 string or
 //	unix-seconds number, absent means server time. Raw "userId"/"ip" keys are
 //	STRICTLY REJECTED (400) — PII must never reach storage.
 //
@@ -55,8 +55,6 @@ const (
 	DefaultRateLimit = 60
 	// RateWindow is the fixed per-key rate-limit window.
 	RateWindow = time.Minute
-	// MaxFlagLen bounds flag keys in runes (chars); over-limit → 400.
-	MaxFlagLen = 128
 	// MaxVariantLen bounds variant names in runes (chars); over-limit → 400.
 	MaxVariantLen = 64
 	// MaxUserHashLen bounds opaque user hashes in runes (chars); over-limit → 400.
@@ -70,7 +68,6 @@ const (
 // EventIn is one validated ingest event with server-normalized timestamp.
 type EventIn struct {
 	Kind     string
-	Flag     string
 	Variant  string
 	UserHash string
 	Version  int
@@ -99,7 +96,6 @@ func entityTooLarge(msg string) *apiError {
 // raw map first (strict reject, never decoded into a storable field).
 type rawEvent struct {
 	Kind     string          `json:"kind"`
-	Flag     string          `json:"flag"`
 	Variant  string          `json:"variant"`
 	UserHash string          `json:"userHash"`
 	Version  int             `json:"version"`
@@ -169,17 +165,14 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	if r.Kind != "fetch" && r.Kind != "exposure" {
 		return ev, badRequest("invalid kind: must be \"fetch\" or \"exposure\".")
 	}
-	if len([]rune(r.Flag)) > MaxFlagLen {
-		return ev, badRequest("flag too long: max 128 chars.")
-	}
 	if len([]rune(r.Variant)) > MaxVariantLen {
 		return ev, badRequest("variant too long: max 64 chars.")
 	}
 	if len([]rune(r.UserHash)) > MaxUserHashLen {
 		return ev, badRequest("userHash too long: max 128 chars.")
 	}
-	if strings.IndexByte(r.Flag, 0) >= 0 || strings.IndexByte(r.Variant, 0) >= 0 || strings.IndexByte(r.UserHash, 0) >= 0 {
-		return ev, badRequest("NUL byte in flag/variant/userHash is forbidden.")
+	if strings.IndexByte(r.Variant, 0) >= 0 || strings.IndexByte(r.UserHash, 0) >= 0 {
+		return ev, badRequest("NUL byte in variant/userHash is forbidden.")
 	}
 	if r.Version < 0 {
 		return ev, badRequest("invalid version: must be >= 0.")
@@ -188,7 +181,7 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	if aerr != nil {
 		return ev, aerr
 	}
-	ev = EventIn{Kind: r.Kind, Flag: r.Flag, Variant: r.Variant, UserHash: r.UserHash, Version: r.Version, Ts: ts}
+	ev = EventIn{Kind: r.Kind, Variant: r.Variant, UserHash: r.UserHash, Version: r.Version, Ts: ts}
 	return ev, nil
 }
 

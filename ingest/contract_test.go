@@ -9,7 +9,7 @@
 //     compared in constant time; the full key is never stored.
 //   - Key-never-logged invariant: only prefix/hash (digests) may leave
 //     the process; raw keys and user IDs never do.
-//   - Body matrix: 1..100 events, kind/flag/variant/userHash/ts rules,
+//   - Body matrix: 1..100 events, kind/variant/userHash/ts rules,
 //     raw userId/ip strict 400, per-event 64KB / whole-body 128KB -> 413.
 //   - Rate default: missing/non-positive rateLimit -> 60 req/min.
 package ingest
@@ -72,7 +72,7 @@ func TestAuthOrder_BodyMatrix(t *testing.T) {
 		{"bad-kind", body(t, []any{map[string]any{"kind": "click"}}), 400},
 		{"raw-userId", body(t, []any{map[string]any{"kind": "fetch", "userId": "u1"}}), 400},
 		{"raw-ip", body(t, []any{map[string]any{"kind": "fetch", "ip": "1.2.3.4"}}), 400},
-		{"oversize-event", body(t, []any{map[string]any{"kind": "fetch", "flag": strings.Repeat("f", MaxEventBytes)}}), 413},
+		{"oversize-event", body(t, []any{map[string]any{"kind": "fetch", "variant": strings.Repeat("v", MaxEventBytes)}}), 413},
 	}
 	for _, c := range cases {
 		_, aerr := ValidateBody(c.body)
