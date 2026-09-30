@@ -3,6 +3,14 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.2 — 2026-09-30
+
+### Changed
+
+- Admin stats series chart polish: distinct per-version colors with a
+  visible totals note, rich series tooltips scaled to the day total,
+  and multi-line tooltip support with thin chart lines.
+
 ## v0.1.1 — 2026-09-30
 
 ### Added
