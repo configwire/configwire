@@ -50,7 +50,7 @@
 ## Run Locally
 
 > [!IMPORTANT]
-> Always start the server from the `configwire/` directory (or use `make serve`) so that `./pb_public` resolves correctly. Starting from a different directory causes `/` to return 404 while `/hello` still returns 200.
+> Always start the server from the `configwire/` directory (or use `make serve`) so that `./pb_public` resolves correctly. Starting from a different directory causes `/` to return 404 while `/healthz` still returns 200.
 
 ```bash
 # Default: http://127.0.0.1:8090, data in ./pb_data
@@ -82,7 +82,7 @@ docker compose pull
 docker compose up -d
 
 # 3. Verify
-curl -s http://localhost:8090/hello
+curl -s http://localhost:8090/healthz
 ```
 
 4. Open **http://localhost:8090** in your browser to create the first superuser account.
@@ -129,7 +129,7 @@ mkdir -p /tmp/cw-qs
 go run . superuser upsert admin@example.com password123 --dir /tmp/cw-qs/pbdata
 (go run . serve --http 127.0.0.1:8109 --dir /tmp/cw-qs/pbdata > /tmp/cw-qs/serve.log 2>&1 &)
 sleep 12
-curl -s http://127.0.0.1:8109/hello
+curl -s http://127.0.0.1:8109/healthz
 ```
 
 **2. Authenticate**

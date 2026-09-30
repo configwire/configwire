@@ -33,10 +33,10 @@ go build -o /tmp/cw-rotate-bin .
 /tmp/cw-rotate-bin superuser upsert rotate-op@example.com rotate-proof-pass-01 --dir=$DATA_DIR
 (nohup /tmp/cw-rotate-bin serve --http=127.0.0.1:$PORT --dir=$DATA_DIR >/tmp/cw-rotate-serve.log 2>&1 &)
 sleep 12
-curl -s -o /dev/null -w "hello:%{http_code}\n" $BASE/hello
+curl -s -o /dev/null -w "healthz:%{http_code}\n" $BASE/healthz
 ```
 
-Expected: `hello:200`.
+Expected: `healthz:200`.
 
 ```bash
 TOKEN=$(curl -s -X POST $BASE/api/collections/_superusers/auth-with-password -H 'Content-Type: application/json' -d '{"identity":"rotate-op@example.com","password":"rotate-proof-pass-01"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
@@ -128,7 +128,7 @@ kill $(lsof -ti:8120)
 rm -rf /tmp/cw-rotate-pbdata /tmp/cw-rotate-bin /tmp/cw-rotate-serve.log
 ```
 
-Receipt: `curl $BASE/hello` refuses and `lsof -ti:8120` is empty.
+Receipt: `curl $BASE/healthz` refuses and `lsof -ti:8120` is empty.
 
 ## Client notes
 
