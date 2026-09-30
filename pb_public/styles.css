@@ -370,7 +370,6 @@ code {
 
 .status-pill .gh-link svg {
   display: block;
-  vertical-align: middle;
 }
 
 .status-pill .gh-link:hover {
