@@ -3,6 +3,24 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Canonical health check `GET /healthz` returning `200
+  {"status":"ok"}` with no auth. E2E (`scripts/e2e.sh`),
+  READMEs, `docs/`, and `website/guide.html` now probe this
+  endpoint.
+- Container health gates on `/healthz`: `compose.yml` `healthcheck`
+  plus `Dockerfile` `HEALTHCHECK` (wget spider, 30s interval / 5s
+  timeout / 3 retries / 10s start period).
+
+### Changed
+
+- `GET /hello` (`200 Hello world!`) is kept as a minimal legacy
+  alias to avoid breaking existing probes; `/healthz` is canonical
+  for new health checks.
+
 ## v0.1.0 — 2026-09-29
 
 ### Removed
