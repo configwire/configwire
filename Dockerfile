@@ -18,6 +18,7 @@ COPY --from=builder /out/configwire ./
 COPY pb_public ./pb_public
 VOLUME ["/app/pb_data"]
 EXPOSE 8090
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget --no-verbose --tries=1 --spider http://localhost:8090/healthz || exit 1
 # NOTE: 0.0.0.0 (not 127.0.0.1) so the port is reachable outside the container.
 # Data dir defaults to ./pb_data locally; in-container it is /app/pb_data.
 ENTRYPOINT ["./configwire", "serve", "--http=0.0.0.0:8090", "--dir=/app/pb_data"]

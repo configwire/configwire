@@ -1,7 +1,8 @@
 # Pull-only usage (no source needed, just this file):
 #   curl -O https://raw.githubusercontent.com/configwire/configwire/main/compose.yml
 #   docker compose pull && docker compose up -d
-#   curl -s http://localhost:8090/hello
+#   curl -s http://localhost:8090/healthz
+#   curl -s http://localhost:8090/healthz | grep -q '"status":"ok"'
 # Local build (run from this dir, needs Dockerfile + source):
 #   docker build -t ghcr.io/configwire/configwire:latest .
 #   docker compose up -d
@@ -20,6 +21,12 @@ services:
     volumes:
       - cw-data:/app/pb_data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   cw-data:
