@@ -47,7 +47,7 @@ cleanup() {
     kill "$p" 2>/dev/null || true
   done
   sleep 1
-  if curl -s -o /dev/null --max-time 3 "$BASE_URL/hello" 2>/dev/null; then
+  if curl -s -o /dev/null --max-time 3 "$BASE_URL/healthz" 2>/dev/null; then
     echo "cleanup: server still up (unexpected)"
   else
     echo "DOWN_CONFIRMED (curl 000, port $PORT free)"
@@ -72,7 +72,7 @@ disown || true
 sleep 1
 UP=0
 for _ in $(seq 1 30); do
-  if curl -s -o /dev/null --max-time 2 "$BASE_URL/hello" 2>/dev/null; then UP=1; break; fi
+  if curl -s -o /dev/null --max-time 2 "$BASE_URL/healthz" 2>/dev/null; then UP=1; break; fi
   sleep 1
 done
 [ "$UP" = "1" ] && pass "server up on $PORT" || { fail "server up on $PORT"; exit 1; }
