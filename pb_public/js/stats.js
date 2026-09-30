@@ -156,6 +156,35 @@
     return p.day + " — " + fetchPart + " · " + p.exposures + " exposures · total " + tot;
   }
 
+  function tipRow(color, label, val, extra) {
+    return '<div class="stats-tip-row' + (extra ? " " + extra : "") + '">' +
+      '<span class="stats-legend-dot" style="background: ' + color + ';"></span>' +
+      '<span class="stats-tip-label">' + CW.esc(label) + "</span>" +
+      '<strong class="stats-tip-val">' + CW.esc(String(val)) + "</strong></div>";
+  }
+
+  function seriesTipHTML(p) {
+    var f = Number(p && p.fetches) || 0;
+    var e = Number(p && p.exposures) || 0;
+    if (f < 0) f = 0;
+    if (e < 0) e = 0;
+    var ks = [];
+    if (p && p.versions && typeof p.versions === "object") {
+      ks = Object.keys(p.versions).sort(function (a, b) { return Number(a) - Number(b); });
+    }
+    var out = '<div class="stats-tip-day">' + CW.esc(String((p && p.day) || "")) + "</div>";
+    out += tipRow("#3b82f6", "Fetches", f);
+    ks.forEach(function (k, i) {
+      var c = Number(p.versions[k]) || 0;
+      if (c < 0) c = 0;
+      out += tipRow(verColor(i), "v" + k, c, "stats-tip-ver");
+    });
+    out += tipRow("#5eead4", "Exposures", e);
+    out += '<div class="stats-tip-row stats-tip-total"><span class="stats-tip-label">Total</span>' +
+      '<strong class="stats-tip-val">' + CW.esc(String(f + e)) + "</strong></div>";
+    return out;
+  }
+
   function renderSeries(series) {
     lastGeom = null;
     if (!series || !series.length) {
@@ -288,8 +317,8 @@
       CW.esc("fetches " + sumF + " total over " + n + dayWord) + "</title></path>" +
       '<path class="stats-area-exposure" d="' + expoD + '" fill="url(#cw-stat-expo-grad)" stroke="none"><title>' +
       CW.esc("exposures " + sumE + " total over " + n + dayWord) + "</title></path>" +
-      '<path class="stats-line-fetch" d="' + fetchLine + '" fill="none" stroke="#3b82f6" stroke-width="3.5" opacity=".9"></path>' +
-      '<path class="stats-line-exposure" d="' + topLine + '" fill="none" stroke="#5eead4" stroke-width="3.5" opacity="' + (sumE > 0 ? '.9' : '0') + '"></path>' +
+      '<path class="stats-line-fetch" d="' + fetchLine + '" fill="none" stroke="#3b82f6" stroke-width="1" opacity=".9"></path>' +
+      '<path class="stats-line-exposure" d="' + topLine + '" fill="none" stroke="#5eead4" stroke-width="1" opacity="' + (sumE > 0 ? '.9' : '0') + '"></path>' +
       verPaths +
       '<line class="stats-hover" x1="' + hoverX + '" y1="' + SERIES_PAD_T + '" x2="' + hoverX + '" y2="' + baseY + '" visibility="hidden"></line>' +
       '<circle class="stats-dot-fetch" r="4" cx="' + hoverX + '" cy="' + r1(sy(pts[0].fetches)) + '" visibility="hidden"></circle>' +
@@ -374,7 +403,7 @@
         dotE.setAttribute("cy", String(r1(hy(p.fetches + p.exposures))));
         dotE.setAttribute("visibility", "visible");
       }
-      tip.textContent = seriesTipText(p);
+      tip.innerHTML = seriesTipHTML(p);
       tip.hidden = false;
       if (tip.style) {
         var pct = x / SERIES_W * 100;
@@ -422,19 +451,23 @@
   function renderVerBars(perVersion, vKeys) {
     if (!vKeys || !vKeys.length) return "";
     var counts = vKeys.map(function (v) { return Number(perVersion[v]) || 0; });
-    var maxV = 0;
-    counts.forEach(function (c) { if (c > maxV) maxV = c; });
-    if (maxV <= 0) return "";
+    var total = 0;
+    counts.forEach(function (c) { if (c > 0) total += c; });
+    if (total <= 0) return "";
+    var totalRow = '<div class="stats-ver-row stats-bar-row stats-ver-row-total"><span class="stats-ver-label stats-bar-label">total</span>' +
+      '<span class="stats-ver-track stats-bar-track" role="img" aria-label="total 100.0%">' +
+      '<span class="stats-ver-fill stats-bar-fill" style="width: 100.0%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></span></span>' +
+      '<span class="stats-ver-pct stats-bar-pct">' + CW.esc(total) + " (100.0%)</span></div>";
     var rows = vKeys.map(function (v, i) {
       var count = counts[i] < 0 ? 0 : counts[i];
-      var pctText = (count / maxV * 100).toFixed(1);
+      var pctText = (count / total * 100).toFixed(1);
       var color = verGradient(i);
       return '<div class="stats-ver-row stats-bar-row"><span class="stats-ver-label stats-bar-label">' + CW.esc("v" + v) +
         '</span><span class="stats-ver-track stats-bar-track" role="img" aria-label="' + CW.esc("v" + v) + " " + CW.esc(pctText) + '%">' +
         '<span class="stats-ver-fill stats-bar-fill" style="width: ' + pctText + '%; background: ' + color + ';"></span></span>' +
         '<span class="stats-ver-pct stats-bar-pct">' + CW.esc(count) + " (" + CW.esc(pctText) + '%)</span></div>';
     }).join("");
-    return '<div class="stats-ver"><h4 class="stats-ver-title">versions</h4>' + rows + "</div>";
+    return '<div class="stats-ver"><h4 class="stats-ver-title">versions</h4>' + totalRow + rows + "</div>";
   }
 
   function renderStats(data) {
@@ -575,6 +608,7 @@
   CW.renderStats = renderStats;
   CW.bindSeriesTip = bindSeriesTip;
   CW.seriesTipText = seriesTipText;
+  CW.seriesTipHTML = seriesTipHTML;
   CW.copyStatsJson = copyStatsJson;
   CW.loadStats = loadStats;
 })();

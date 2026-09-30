@@ -381,19 +381,22 @@ test("bindSeriesTip is a safe no-op without parsed nodes and clamps bad values",
   assert.doesNotThrow(function () { ctx.CW.bindSeriesTip(); });
 });
 
-test("renderStats per-version bars scale to max and sort numerically", function () {
+test("renderStats per-version bars scale to total and sort numerically", function () {
   var ctx = freshStats();
   var data = fullData();
   data.perVersion = { 1: 10, 2: 100, 10: 50 };
   ctx.CW.renderStats(data);
   var html = statsHTML(ctx);
-  // maxV=100 -> 10.0% / 100.0% / 50.0% (stats.js:53).
-  assert.ok(html.indexOf("width: 10.0%") !== -1, "missing v1 width: " + html);
-  assert.ok(html.indexOf("width: 100.0%") !== -1, "missing v2 width: " + html);
-  assert.ok(html.indexOf("width: 50.0%") !== -1, "missing v10 width: " + html);
-  assert.ok(html.indexOf('aria-label="v2 100.0%"') !== -1, "missing v2 aria-label: " + html);
+  // total=160 -> v1 6.3% / v2 62.5% / v10 31.3% plus total row at 100.0%.
+  assert.ok(html.indexOf("width: 6.3%") !== -1, "missing v1 width: " + html);
+  assert.ok(html.indexOf("width: 62.5%") !== -1, "missing v2 width: " + html);
+  assert.ok(html.indexOf("width: 31.3%") !== -1, "missing v10 width: " + html);
+  assert.ok(html.indexOf('aria-label="v2 62.5%"') !== -1, "missing v2 aria-label: " + html);
   assert.ok(html.indexOf('class="stats-ver-row stats-bar-row"') !== -1, "missing dual row class: " + html);
   assert.ok(html.indexOf('class="stats-ver-fill stats-bar-fill"') !== -1, "missing dual fill class: " + html);
+  assert.ok(html.indexOf(">total<") !== -1, "missing total row: " + html);
+  assert.ok(html.indexOf("160 (100.0%)") !== -1, "missing total count: " + html);
+  assert.ok(html.indexOf('aria-label="total 100.0%"') !== -1, "missing total aria-label: " + html);
   var i1 = html.indexOf(">v1<");
   var i2 = html.indexOf(">v2<");
   var i10 = html.indexOf(">v10<");
@@ -496,6 +499,27 @@ test("seriesTipText shows per-version counts for the hovered day", function () {
   assert.equal(plain, "d1 — 10 fetches · 5 exposures · total 15", "plain tooltip wrong: " + plain);
   var empty = ctx.CW.seriesTipText({ day: "d2", fetches: 4, exposures: 1, versions: {} });
   assert.equal(empty, "d2 — 4 fetches · 1 exposures · total 5", "empty-versions tooltip wrong: " + empty);
+});
+
+test("seriesTipHTML renders multi-line rows with version dots and escapes probes", function () {
+  var ctx = freshStats();
+  var tip = ctx.CW.seriesTipHTML({ day: "2026-09-28", fetches: 132, exposures: 0, versions: { 0: 115, 1: 17 } });
+  assert.ok(tip.indexOf('class="stats-tip-day">2026-09-28<') !== -1, "missing day header: " + tip);
+  assert.ok(tip.indexOf("Fetches") !== -1 && tip.indexOf(">132<") !== -1, "missing fetches row: " + tip);
+  assert.ok(tip.indexOf("stats-tip-ver") !== -1, "missing version rows: " + tip);
+  assert.ok(tip.indexOf(">v0<") !== -1 && tip.indexOf(">115<") !== -1, "missing v0 row: " + tip);
+  assert.ok(tip.indexOf(">v1<") !== -1 && tip.indexOf(">17<") !== -1, "missing v1 row: " + tip);
+  assert.ok(tip.indexOf("Exposures") !== -1, "missing exposures row: " + tip);
+  assert.ok(tip.indexOf("stats-tip-total") !== -1, "missing total row: " + tip);
+  assert.ok(tip.split("stats-tip-row").length - 1 >= 5, "must stack day+fetch+2ver+expo+total rows: " + tip);
+  var plain = ctx.CW.seriesTipHTML({ day: "d1", fetches: 10, exposures: 5, versions: null });
+  assert.ok(plain.indexOf("stats-tip-ver") === -1, "no version rows expected: " + plain);
+  assert.ok(plain.indexOf(">15<") !== -1, "missing total 15: " + plain);
+  var xss = ctx.CW.seriesTipHTML({ day: "<b>", fetches: 5, exposures: 0, versions: { "<img>": 5 } });
+  assert.ok(xss.indexOf("&lt;b&gt;") !== -1, "day not escaped: " + xss);
+  assert.ok(xss.indexOf("&lt;img&gt;") !== -1, "version key not escaped: " + xss);
+  assert.ok(xss.indexOf("<img>") === -1, "raw version key leaked: " + xss);
+  assert.ok(xss.indexOf("<b>") === -1, "raw day leaked: " + xss);
 });
 
 test("renderStats series tolerates missing/empty versions with areas intact", function () {
