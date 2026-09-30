@@ -129,10 +129,19 @@
     return d;
   }
 
-  var VER_COLORS = ["#3b82f6", "#8b5cf6", "#06b6d4", "#f59e0b", "#10b981", "#ec4899"];
+  function verHue(i) {
+    var h = (275 + (i < 0 ? 0 : i) * 137.508) % 360;
+    if (h > 160 && h < 230) h = (h + 70) % 360;
+    return Math.round(h);
+  }
 
   function verColor(i) {
-    return VER_COLORS[i % VER_COLORS.length];
+    return "hsl(" + verHue(i) + ", 75%, 62%)";
+  }
+
+  function verGradient(i) {
+    var h = verHue(i);
+    return "linear-gradient(90deg, hsl(" + h + ", 75%, 58%), hsl(" + h + ", 85%, 72%))";
   }
 
   function seriesTipText(p) {
@@ -279,8 +288,8 @@
       CW.esc("fetches " + sumF + " total over " + n + dayWord) + "</title></path>" +
       '<path class="stats-area-exposure" d="' + expoD + '" fill="url(#cw-stat-expo-grad)" stroke="none"><title>' +
       CW.esc("exposures " + sumE + " total over " + n + dayWord) + "</title></path>" +
-      '<path class="stats-line-fetch" d="' + fetchLine + '" fill="none" stroke="#3b82f6" stroke-width="2" opacity=".9"></path>' +
-      '<path class="stats-line-exposure" d="' + topLine + '" fill="none" stroke="#5eead4" stroke-width="2" opacity="' + (sumE > 0 ? '.9' : '0') + '"></path>' +
+      '<path class="stats-line-fetch" d="' + fetchLine + '" fill="none" stroke="#3b82f6" stroke-width="3.5" opacity=".9"></path>' +
+      '<path class="stats-line-exposure" d="' + topLine + '" fill="none" stroke="#5eead4" stroke-width="3.5" opacity="' + (sumE > 0 ? '.9' : '0') + '"></path>' +
       verPaths +
       '<line class="stats-hover" x1="' + hoverX + '" y1="' + SERIES_PAD_T + '" x2="' + hoverX + '" y2="' + baseY + '" visibility="hidden"></line>' +
       '<circle class="stats-dot-fetch" r="4" cx="' + hoverX + '" cy="' + r1(sy(pts[0].fetches)) + '" visibility="hidden"></circle>' +
@@ -292,14 +301,28 @@
       return '<span class="stats-legend-item stats-legend-ver"><span class="stats-legend-dot" style="background: ' +
         verColor(vi) + ';"></span>' + CW.esc("v" + vk) + "</span>";
     }).join("");
+    var verTotals = vKeys.map(function (vk) {
+      var tot = 0;
+      pts.forEach(function (p) { if (p.versions) tot += Number(p.versions[vk]) || 0; });
+      return tot;
+    });
     var legend =
       '<div class="stats-series-legend">' +
       '<span class="stats-legend-item"><span class="stats-legend-dot stats-dot-fetch-bg"></span>fetches: <strong>' + sumF + '</strong></span>' +
       '<span class="stats-legend-item"><span class="stats-legend-dot stats-dot-exposure-bg"></span>exposures: <strong>' + sumE + '</strong></span>' +
       verLegend +
       '</div>';
+    var noteText = "Thick blue = total fetches per day (" + sumF + " total)";
+    if (sumE > 0) noteText += " · Teal = exposures stacked on fetches (" + sumE + " total)";
+    else noteText += " · No exposures in this window";
+    if (vKeys.length) {
+      noteText += " · Thin lines = fetches per version (" +
+        vKeys.map(function (vk, vi) { return "v" + vk + ": " + verTotals[vi]; }).join(", ") +
+        "); total fetches = sum of versions";
+    }
+    var noteHtml = '<p class="muted stats-series-note">' + CW.esc(noteText) + "</p>";
     return '<div class="stats-series-wrap" tabindex="0" data-count="' + n + '" data-peak="' + max + '">' +
-      legend + svg + '<div class="stats-tip" hidden></div></div>';
+      legend + svg + '<div class="stats-tip" hidden></div>' + noteHtml + "</div>";
   }
 
   function bindSeriesTip() {
@@ -402,18 +425,10 @@
     var maxV = 0;
     counts.forEach(function (c) { if (c > maxV) maxV = c; });
     if (maxV <= 0) return "";
-    var palette = [
-      "linear-gradient(90deg, #3b82f6, #60a5fa)",
-      "linear-gradient(90deg, #8b5cf6, #c084fc)",
-      "linear-gradient(90deg, #06b6d4, #22d3ee)",
-      "linear-gradient(90deg, #f59e0b, #fbbf24)",
-      "linear-gradient(90deg, #10b981, #34d399)",
-      "linear-gradient(90deg, #ec4899, #f472b6)",
-    ];
     var rows = vKeys.map(function (v, i) {
       var count = counts[i] < 0 ? 0 : counts[i];
       var pctText = (count / maxV * 100).toFixed(1);
-      var color = palette[i % palette.length];
+      var color = verGradient(i);
       return '<div class="stats-ver-row stats-bar-row"><span class="stats-ver-label stats-bar-label">' + CW.esc("v" + v) +
         '</span><span class="stats-ver-track stats-bar-track" role="img" aria-label="' + CW.esc("v" + v) + " " + CW.esc(pctText) + '%">' +
         '<span class="stats-ver-fill stats-bar-fill" style="width: ' + pctText + '%; background: ' + color + ';"></span></span>' +

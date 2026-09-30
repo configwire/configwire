@@ -2245,7 +2245,7 @@ section[aria-labelledby="stats"] form.inline-form button {
 
 #stats-view .stats-line-fetch {
   stroke: #3b82f6;
-  stroke-width: 2;
+  stroke-width: 3.5;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -2253,7 +2253,7 @@ section[aria-labelledby="stats"] form.inline-form button {
 
 #stats-view .stats-line-exposure {
   stroke: #5eead4;
-  stroke-width: 2;
+  stroke-width: 3.5;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -2318,6 +2318,13 @@ section[aria-labelledby="stats"] form.inline-form button {
 
 #stats-view p.stats-series-empty {
   font-size: 12px;
+  color: var(--muted);
+}
+
+#stats-view p.stats-series-note {
+  margin: var(--space-2) 0 0;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--muted);
 }
 
