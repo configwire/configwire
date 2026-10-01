@@ -60,7 +60,7 @@ Expected: `599678969c40b5d24e1bb066d6a8227b2fffc242c8fee6a5ec8514d70abb9d63`.
 NEW_PREFIX=${NEW_KEY:0:8}
 echo "prefix:$NEW_PREFIX"
 NEW_HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'$NEW_KEY').hexdigest())")
-KEYROW=$(curl -s -X POST $BASE/api/collections/sdk_keys/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"prefix\":\"$NEW_PREFIX\",\"hash\":\"$NEW_HASH\",\"env\":\"$ENVID\",\"revoked\":false,\"rateLimit\":100000}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+KEYROW=$(curl -s -X POST $BASE/api/collections/sdk_keys/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"prefix\":\"$NEW_PREFIX\",\"hash\":\"$NEW_HASH\",\"env\":\"$ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 echo "keyrow:$KEYROW"
 curl -s -o /dev/null -w "publish:%{http_code}\n" -X POST $BASE/api/v1/admin/env/rotate/publish -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"note":"rotation proof","baseVersion":0}'
 ```
@@ -110,7 +110,7 @@ prefix `cw-rotat`), distribute it out-of-band, then flip the old row:
 OLD_ROW=$KEYROW
 NEW_KEY2='cw-rotation-demo-key-02'
 NEW_HASH2=$(python3 -c "import hashlib; print(hashlib.sha256(b'$NEW_KEY2').hexdigest())")
-curl -s -o /dev/null -w "key2:%{http_code}\n" -X POST $BASE/api/collections/sdk_keys/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"prefix\":\"${NEW_KEY2:0:8}\",\"hash\":\"$NEW_HASH2\",\"env\":\"$ENVID\",\"revoked\":false,\"rateLimit\":100000}"
+curl -s -o /dev/null -w "key2:%{http_code}\n" -X POST $BASE/api/collections/sdk_keys/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"prefix\":\"${NEW_KEY2:0:8}\",\"hash\":\"$NEW_HASH2\",\"env\":\"$ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}"
 curl -s -o /dev/null -w "revoke:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
 curl -s -o /dev/null -w "old-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY"
 curl -s -o /dev/null -w "new-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY2"

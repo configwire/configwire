@@ -23,7 +23,7 @@ binary plus operator procedure.
 ### SDK keys (revoke flag + reissue)
 
 1. Create the replacement key row (`prefix`, `hash`, `env`,
-   `rateLimit`), distribute the full key out-of-band.
+   `fetchRps`/`ingestRps` in req/sec), distribute the full key out-of-band.
 2. Flip the old row: `sdk_keys.revoked = true`.
 3. Effect is immediate: revoked keys → `401` on fetch/ingest/stream
    (verified live: revoke → `401`, un-revoke restores `200`).
@@ -62,18 +62,53 @@ binary plus operator procedure.
   - **daily `event_daily` rollups `(day, env, variant, version)`: 90 days**;
   - rollups carry counts only — no PII survives past the raw window.
 
-## 4. Rate limits — 60/min default per key
+## 4. Rate limits (per-second global/per-key)
 
-- Fixed-window limiter, per key-hash: `sdk_keys.rateLimit` requests
-  per 60s window; missing/non-positive → **default 60**.
-- Every authenticated ingest hit consumes one token (even later-`400`s:
-  no free probing). Over-limit → `429` (never `500`).
-- Proven live (200rps × 15s burst on a default-limit key):
-  **3000 requests → 60×`202` + 2940×`429` + 0×`500`**.
+- Per-second budgets (`configwire/limits`, 1s window):
+  global per-IP (effective `min(globalRps 200, burst 400)` = 200 —
+  `burst` is a hard ceiling, not a spike allowance above the sustained
+  rate) plus per-key per-second (`fetchRps 100`, `ingestRps 50`,
+  fetch/ingest buckets independent) plus admin per-IP per-second
+  (`adminRps 20`, separate limiter so admin traffic never eats the
+  global budget).
+- `X-Forwarded-For`/`X-Real-IP` are trusted only when the direct TCP
+  peer is a local proxy (loopback/private); a public peer's headers
+  are ignored and the peer IP is gated. The Limits admin endpoints
+  are themselves IP-gated: an admin flood that exhausts `adminRps`
+  will `429` the request needed to raise the limit — wait out the 1s
+  window or raise `CONFIGWIRE_ADMIN_RPS` with a restart.
+- Every authenticated ingest hit consumes one token (even
+  later-`400`s: no free probing). Over-limit then `429` with
+  `Retry-After: 1` (never `500`).
 - Limiter state is process-local (resets on restart; one map entry per
-  active key-hash, idle entries swept). Fetch/stream paths are not
-  token-metered; size the key `rateLimit` for ingest load
-  (load-gate keys use a high quota).
+  active key-hash, idle entries swept).
+- The global IP check runs before auth on `/api/*` (static non-`/api/`
+  paths are not gated). It closes the key-enumeration flood where
+  unauthenticated `/api/*` floods bypassed the post-auth checks.
+  Over-limit then `429` with `Retry-After: 1` and shape
+  `{"message": "Rate limit exceeded.", "status": 429}`.
+- Defaults allow the k6 load gate (100 rps fetch + 50 rps exposure)
+  through a single IP: 200 rps global gives headroom above 150 rps.
+- Tune via env or Admin UI Limits card:
+  - Env at boot: `CONFIGWIRE_GLOBAL_RPS`, `CONFIGWIRE_BURST`,
+    `CONFIGWIRE_FETCH_RPS`, `CONFIGWIRE_INGEST_RPS`,
+    `CONFIGWIRE_ADMIN_RPS`. Non-numeric falls back to the default;
+    out-of-range is clamped to `1..10000`.
+  - Admin UI Limits card (5 inputs: global/burst/fetch/ingest/admin)
+    calls superuser-only `GET/PUT /api/v1/admin/limits` (see
+    `docs/CONTRACT.md` section 8). `PUT` validates `1..10000`, applies
+    immediately, and persists to the `rate_settings` singleton row
+    (`key=global`), which overrides env on restart.
+- Per-key overrides: `sdk_keys.fetchRps`/`sdk_keys.ingestRps` are
+  optional (empty/0 means the global `fetchRps` 100/s / `ingestRps`
+  50/s defaults). Set via the Admin UI Keys card Edit limits (req/sec
+   only) or `PATCH /api/collections/sdk_keys/records/:id`. Effective
+   budget is the per-key value when `1..10000`, else the global.
+- Production guidance: behind a reverse proxy set and trust
+  `X-Forwarded-For` (first entry wins, then `X-Real-IP`, then
+  `RemoteAddr`). The header is spoofable, so only trust proxies you
+  control or per-IP buckets skew. Size per-key `fetchRps`/`ingestRps`
+  for ingest load (load-gate keys use a high per-sec quota).
 
 ## 5. CORS
 

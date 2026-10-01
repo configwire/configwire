@@ -3,6 +3,36 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Tunable single per-second limiter (`configwire/limits`, 1s window):
+  global 200 rps per IP + burst 400 (checked before auth on `/api/*`,
+  `429` with `Retry-After: 1`), fetch 100 rps per key, ingest 50 rps
+  per key, admin 20 rps per IP on a separate limiter.
+- Superuser-only `GET/PUT /api/v1/admin/limits`
+  (`{globalRps, burst, fetchRps, ingestRps, adminRps, windowSec: 1}`,
+  each `1..10000`, applies immediately, persisted in the
+  `rate_settings` singleton row) plus the Admin UI Limits card (5
+  inputs). Boot env overrides: `CONFIGWIRE_GLOBAL_RPS`,
+  `CONFIGWIRE_BURST`, `CONFIGWIRE_FETCH_RPS`, `CONFIGWIRE_INGEST_RPS`,
+  `CONFIGWIRE_ADMIN_RPS`.
+- Per-key per-second overrides: optional `sdk_keys.fetchRps` /
+  `sdk_keys.ingestRps` (empty/0 means the global `fetchRps` 100/s /
+  `ingestRps` 50/s defaults). Set via the Admin UI Keys card Edit
+  limits (req/sec only) or `PATCH /api/collections/sdk_keys/records/:id`;
+  effective budget is the per-key value when `1..10000`, else the
+   global.
+
+### Removed
+
+- Removed legacy per-min limiter: the `sdk_keys.rateLimit` (req/60s)
+  column is now ignored. Migration 1790000011 auto-converted existing
+  values once as `fetchRps = ingestRps = max(1, ceil(rateLimit / 60))`
+  (so `rateLimit: 60` becomes `fetchRps: 1` / `ingestRps: 1`). The
+  Keys UI edits req/sec only, and every `429` carries `Retry-After: 1`.
+
 ## v0.1.2 — 2026-09-30
 
 ### Changed

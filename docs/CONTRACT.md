@@ -190,9 +190,17 @@ Request:
   even null-valued) then `400`. Clients send `userHash` only.
 - 1..100 events per request (0 or over 100 then `400`).
 - Single event over 64KB or body over 128KB then `413`.
-- Rate: per-key fixed window, `sdk_keys.rateLimit` req/60s, default 60
-  when missing/non-positive; every authed hit consumes a token (even
-  later-400s); over-limit then `429`. Full buffer then `503`.
+- Rate (per-second):
+  - `configwire/limits` (1s window): global per-IP
+    (`globalRps: 200`, `burst: 400`, min wins) checked before auth on
+    `/api/*`, plus per-key per-second (`fetchRps: 100`,
+    `ingestRps: 50`, overridable per key via
+    `sdk_keys.fetchRps`/`sdk_keys.ingestRps`) and admin
+    per-IP per-second (`adminRps: 20`, separate limiter, never eats the
+    global budget). Every authed hit consumes a token (even
+    later-400s); over-limit then `429` with `Retry-After: 1`.
+    Ref: `configwire/limits/limits.go`, `configwire/limits/api.go`.
+  - Full buffer then `503`.
   Ref: `configwire/ingest/ingest.go:44-58`, `configwire/ingest/handler.go:124-126,164-168`.
 
 Success `202`:
@@ -201,11 +209,14 @@ Success `202`:
 {"accepted": 2, "status": 202}
 ```
 
-Rate-limit hit `429`:
+Rate-limit hit `429` (single limiter only, always per-second):
 
 ```json
 {"message": "Rate limit exceeded.", "status": 429}
 ```
+
+Every `429` carries `Retry-After: 1` (1s window). Same JSON shape on
+all paths.
 
 Body errors `400`/`413` share the shape:
 
@@ -322,7 +333,37 @@ Dry-run `200`:
 Empty table then `200` with `deleted: 0`. A daily 24h process-local
 ticker purges with `cutoff = now - 30d`. Ref: `:284-296`.
 
-## 8. Status-code index (exact bodies)
+## 8. Limits admin — `GET/PUT /api/v1/admin/limits`
+
+Ref: `configwire/limits/api.go` (route + superuser-only), `configwire/limits/limits.go` (defaults + validation).
+
+Superuser-only; SDK-key-only or unauth then `401`.
+
+Success `200` (both verbs, same shape):
+
+```json
+{"globalRps": 200, "burst": 400, "fetchRps": 100, "ingestRps": 50, "adminRps": 20, "windowSec": 1}
+```
+
+- Defaults: `globalRps 200`, `burst 400`, `fetchRps 100`,
+  `ingestRps 50`, `adminRps 20`, `windowSec 1` (fixed 1s window).
+- Env overrides at boot: `CONFIGWIRE_GLOBAL_RPS`,
+  `CONFIGWIRE_BURST`, `CONFIGWIRE_FETCH_RPS`,
+  `CONFIGWIRE_INGEST_RPS`, `CONFIGWIRE_ADMIN_RPS`.
+- `PUT` validates every field `1..10000` (outside then `400`),
+  applies immediately in memory, and persists to the
+  `rate_settings` singleton row (`key=global`). Empty or malformed
+  JSON then `400`. Persist failure then `500`.
+- Admin UI Limits card calls this endpoint (5 inputs:
+  global/burst/fetch/ingest/admin).
+- Per-key overrides: `sdk_keys.fetchRps`/`sdk_keys.ingestRps`
+  (optional, empty/0 means the global `fetchRps` 100/s /
+   `ingestRps` 50/s defaults). Set via the Admin UI Keys card Edit
+   limits or `PATCH /api/collections/sdk_keys/records/:id`.
+   Effective budget is the per-key value when `1..10000`, else the
+   global.
+
+## 9. Status-code index (exact bodies)
 
 | Code | Meaning                                                                               | Body                                                                                                                   | Ref                                                                                               |
 | ---- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -336,10 +377,10 @@ ticker purges with `cutoff = now - 30d`. Ref: `:284-296`.
 | 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:102-108`                                                                               |
 | 413  | ingest body/event too large; fetch attrs too large is 414                             | `{"message": "body exceeds 128KB.", "status": 413}`                                                                    | ingest `:252-262`                                                                                 |
 | 414  | fetch attrs over 8192 bytes                                                           | `{"message": "attrs too large: max 8192 bytes", "status": 414}`                                                        | fetch `:302-306`                                                                                  |
-| 429  | ingest rate limit hit                                                                 | `{"message": "Rate limit exceeded.", "status": 429}`                                                                   | ingest handler `:124-126`                                                                         |
+| 429  | rate limit hit (single limiter, per-second global/per-key)                                       | `{"message": "Rate limit exceeded.", "status": 429}` with `Retry-After: 1`                        | ingest handler `:124-126`, limits `limits.go:BlockIP`                                                        |
 | 503  | ingest buffer full (cap 2048, retry)                                                  | `{"message": "Ingest buffer full, retry.", "status": 503}`                                                             | ingest handler `:164-168`                                                                         |
 
-## 9. Staleness bound
+## 10. Staleness bound
 
 Push is best-effort (near-instant while connected; no sub-second
 guarantee). Otherwise freshness is at most `pollInterval` (Dart
@@ -347,7 +388,7 @@ default 15min) plus one fetch: the client poller runs in every state
 (stream healthy, down, or 401), so the bound holds on all paths.
 Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.dart` (RealtimeUpdater), `docs/SECURITY.md` section 7.
 
-## 10. Retention
+## 11. Retention
 
 Raw `events` rows live 30 days, daily `event_daily` rollups keyed
 `(day, env, variant, version)` live 90 days. Cutoff is strictly-older-than
