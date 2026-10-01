@@ -55,7 +55,7 @@ func postEvents(re *core.RequestEvent) error {
 	if err != nil {
 		return envresolve.ToRequestError(re, err)
 	}
-	if !limits.AllowIngestKey(key.GetString("hash"), limits.EffectiveIngestRps(key)) {
+	if !limits.AllowIngestKey(key.Id, limits.EffectiveIngestRps(key)) {
 		re.Response.Header().Set("Retry-After", "1")
 		return re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Rate limit exceeded.", "status": 429})
 	}

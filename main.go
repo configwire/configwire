@@ -249,6 +249,8 @@ func main() {
 
 	registerConfigwireHooks(app)
 
+	ingest.RegisterKeyCacheHooks(app)
+
 	ingest.EnableWAL(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
@@ -291,6 +293,8 @@ func main() {
 		limits.Register(se)
 
 		ingest.Register(se)
+
+		ingest.RegisterKeys(se)
 
 		releases.Register(se)
 

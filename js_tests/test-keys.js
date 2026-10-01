@@ -250,25 +250,27 @@ test("createKey success writes prefix result and one-time key value", async func
   ctx.CW.$("key-fetch-rps").value = "2";
   ctx.CW.$("key-ingest-rps").value = "2";
   var mutCalls = [];
+  var minted = "cw-" + "K".repeat(24);
   ctx.CW.apiMut = function (m, u, b) {
     mutCalls.push({ method: m, url: u, body: b });
-    return Promise.resolve({ status: 200, data: {} });
+    return Promise.resolve({ status: 201, data: { id: "k1", prefix: minted.slice(0, 8), key: minted } });
   };
   ctx.CW.apiAll = function () { return Promise.resolve([]); }; // trailing loadKeys()
   await ctx.CW.createKey();
   assert.equal(mutCalls.length, 1);
   assert.equal(mutCalls[0].method, "POST");
-  assert.equal(mutCalls[0].url, "/api/collections/sdk_keys/records");
+  assert.equal(mutCalls[0].url, "/api/v1/admin/keys");
   assert.equal(mutCalls[0].body.env, "env-1");
   assert.equal(mutCalls[0].body.fetchRps, 2);
   assert.equal(mutCalls[0].body.ingestRps, 2);
-  assert.equal(mutCalls[0].body.prefix, ctx.CW.randomKey().slice(0, 8));
+  assert.ok(!("hash" in mutCalls[0].body), "create flow must not send client-side key material");
+  assert.ok(!("prefix" in mutCalls[0].body), "create flow must not send client-side key material");
   var full = ctx.elementsById["key-once-value"].textContent;
+  assert.equal(full, minted);
   assert.match(full, KEY_RE);
-  assert.equal(full, ctx.CW.randomKey()); // seeded fill: created key equals regenerated key
   assert.equal(
     ctx.elementsById["key-result"].textContent,
-    "key created (prefix " + mutCalls[0].body.prefix + ")"
+    "key created (prefix " + minted.slice(0, 8) + ")"
   );
   assert.equal(ctx.elementsById["key-once"].hidden, false);
 });

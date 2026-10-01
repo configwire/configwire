@@ -30,6 +30,8 @@ func lookupTestApp(t *testing.T) *tests.TestApp {
 	for _, f := range []string{
 		`{"type":"text","name":"prefix"}`,
 		`{"type":"text","name":"hash"}`,
+		`{"type":"text","name":"verifier"}`,
+		`{"type":"number","name":"keyVer","onlyInt":true}`,
 		`{"type":"bool","name":"revoked"}`,
 		`{"type":"text","name":"env"}`,
 	} {
@@ -74,12 +76,13 @@ func requestWithKey(app core.App, full string) *core.RequestEvent {
 // a matching prefix but wrong hash must not match).
 func TestFindSDKKeyIndexed(t *testing.T) {
 	app := lookupTestApp(t)
+	ResetKeyCache()
 	const good, other, revoked = "cw-good-key-0001", "cw-other-key-0002", "cw-revoked-key-03"
 	seedKey(t, app, good, "envA", false)
 	seedKey(t, app, other, "envB", false)
 	seedKey(t, app, revoked, "envA", true)
 
-	rec, err := findSDKKey(app, KeyPrefix(good), KeyHash(good))
+	rec, err := findSDKKey(app, good)
 	if err != nil {
 		t.Fatalf("findSDKKey(good): %v", err)
 	}
@@ -87,16 +90,19 @@ func TestFindSDKKeyIndexed(t *testing.T) {
 		t.Fatalf("good key must hit envA row, got %+v", rec)
 	}
 
-	if rec, err := findSDKKey(app, KeyPrefix("cw-unknown-xxxx"), KeyHash("cw-unknown-xxxx")); err != nil || rec != nil {
+	ResetKeyCache()
+	if rec, err := findSDKKey(app, "cw-unknown-xxxx"); err != nil || rec != nil {
 		t.Fatalf("unknown key must miss, got %+v err=%v", rec, err)
 	}
 
-	// Same prefix as good, wrong hash: constant-time hash decides, not prefix.
-	if rec, err := findSDKKey(app, KeyPrefix(good), KeyHash("cw-good-key-9999")); err != nil || rec != nil {
+	// Same prefix as good, wrong key: hash/verifier decides, not prefix.
+	ResetKeyCache()
+	if rec, err := findSDKKey(app, "cw-good-k9999"); err != nil || rec != nil {
 		t.Fatalf("prefix-only match must miss, got %+v err=%v", rec, err)
 	}
 
-	if rec, err := findSDKKey(app, KeyPrefix(revoked), KeyHash(revoked)); err != nil || rec == nil {
+	ResetKeyCache()
+	if rec, err := findSDKKey(app, revoked); err != nil || rec == nil {
 		t.Fatalf("revoked row must still be found (revocation is a 401 at the caller), got %+v err=%v", rec, err)
 	}
 }
@@ -106,6 +112,7 @@ func TestFindSDKKeyIndexed(t *testing.T) {
 // matched record carries the bound env for the scope check downstream.
 func TestRequireSDKKeyAuthOrder(t *testing.T) {
 	app := lookupTestApp(t)
+	ResetKeyCache()
 	const good, revoked = "cw-good-key-0001", "cw-revoked-key-03"
 	seedKey(t, app, good, "envA", false)
 	seedKey(t, app, revoked, "envA", true)

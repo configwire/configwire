@@ -305,7 +305,7 @@ func getConfig(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	if !limits.AllowFetchKey(key.GetString("hash"), limits.EffectiveFetchRps(key)) {
+	if !limits.AllowFetchKey(key.Id, limits.EffectiveFetchRps(key)) {
 		re.Response.Header().Set("Retry-After", "1")
 		return re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Rate limit exceeded.", "status": 429})
 	}

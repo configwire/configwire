@@ -72,6 +72,9 @@ var h = harness.load(FILES, {
       var be = JSON.parse(opts.body || "{}");
       return jsonRes(201, { id: "e-new", slug: be.slug || "e-new", project: be.project });
     }
+    if (method === "POST" && url.indexOf("/api/v1/admin/keys") === 0) {
+      return jsonRes(201, { id: "k-new", prefix: "cw-AbCdEf", key: "cw-AbCdEfGhIjKlMnOpQrStUvWx" });
+    }
     if (method === "POST" && (url.indexOf("/api/collections/sdk_keys/records") === 0 ||
         url.indexOf("/api/collections/groups/records") === 0 ||
         url.indexOf("/api/collections/flags/records") === 0)) {
@@ -647,7 +650,7 @@ test("createKey: success shows prefix + one-time value", async function () {
   assert.ok(el("key-result").textContent.indexOf("key created") >= 0);
   assert.ok(el("key-once-value").textContent.indexOf("cw-") === 0);
   assert.ok(h.fetchCalls.some(function (c) {
-    return c.url.indexOf("/api/collections/sdk_keys/records") === 0 && c.opts.method === "POST";
+    return c.url.indexOf("/api/v1/admin/keys") === 0 && c.opts.method === "POST";
   }));
 });
 

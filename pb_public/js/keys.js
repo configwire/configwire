@@ -90,31 +90,22 @@
       CW.toast(ingestMsg);
       return Promise.resolve();
     }
-    var full = randomKey();
-    var prefix = full.slice(0, 8);
-    return sha256Hex(full).then(function (hash) {
-      var body = {
-        prefix: prefix,
-        hash: hash,
-        env: CW.state.envId,
-      };
-      var fetchRps = fetchParsed.value;
-      var ingestRps = ingestParsed.value;
-      if (fetchRps !== undefined) body.fetchRps = fetchRps;
-      if (ingestRps !== undefined) body.ingestRps = ingestRps;
-      return CW.apiMut("POST", "/api/collections/sdk_keys/records", body).then(function (out) {
-        if (out.status === 200 || out.status === 201) {
-          CW.$("key-result").textContent = "key created (prefix " + prefix + ")";
-          CW.$("key-once-value").textContent = full;
-          CW.$("key-once").hidden = false;
-        } else {
-          CW.$("key-result").textContent = "key create failed (" + out.status + "): " + CW.serverMessage(out.data);
-        }
-        loadKeys().catch(function () {});
-        return out;
-      });
-    }, function (err) {
-      CW.$("key-result").textContent = err.message;
+    var body = { env: CW.state.envId };
+    var fetchRps = fetchParsed.value;
+    var ingestRps = ingestParsed.value;
+    if (fetchRps !== undefined) body.fetchRps = fetchRps;
+    if (ingestRps !== undefined) body.ingestRps = ingestRps;
+    return CW.apiMut("POST", "/api/v1/admin/keys", body).then(function (out) {
+      var data = out.data || {};
+      if ((out.status === 200 || out.status === 201) && data.key) {
+        CW.$("key-result").textContent = "key created (prefix " + data.prefix + ")";
+        CW.$("key-once-value").textContent = data.key;
+        CW.$("key-once").hidden = false;
+      } else {
+        CW.$("key-result").textContent = "key create failed (" + out.status + "): " + CW.serverMessage(out.data);
+      }
+      loadKeys().catch(function () {});
+      return out;
     });
   }
 

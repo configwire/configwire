@@ -37,6 +37,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -233,30 +234,133 @@ func ResolveUserHash(userHash, userID string) string {
 	return ""
 }
 
-// findSDKKey returns the sdk_keys row matching (prefix, hash), or (nil,
-// nil) when no row matches. The prefix prefilter runs in the DB (served by
-// the column index when present) instead of a full-table scan; the hash is
-// then compared in constant time in Go, so a prefix collision never leaks
-// timing about the stored hash. Revocation is NOT checked here — the
-// caller maps revoked rows to 401, preserving auth order.
-func findSDKKey(app core.App, prefix, want string) (*core.Record, error) {
+var (
+	fastCacheMu sync.RWMutex
+	fastCache   = make(map[string]string)
+	slowSem     = make(chan struct{}, 4)
+	// slowVerifyCalls counts bcrypt verifications (test hook only).
+	slowVerifyCalls int
+)
+
+const fastCacheCap = 10000
+
+// ResetKeyCache clears the process-local fast cache (tests only).
+func ResetKeyCache() {
+	fastCacheMu.Lock()
+	fastCache = make(map[string]string)
+	slowVerifyCalls = 0
+	fastCacheMu.Unlock()
+}
+
+// SlowVerifyCalls reports bcrypt verification count (tests only).
+func SlowVerifyCalls() int {
+	fastCacheMu.RLock()
+	defer fastCacheMu.RUnlock()
+	return slowVerifyCalls
+}
+
+func cacheGet(fast string) (string, bool) {
+	fastCacheMu.RLock()
+	id, ok := fastCache[fast]
+	fastCacheMu.RUnlock()
+	return id, ok
+}
+
+func cachePut(fast, id string) {
+	fastCacheMu.Lock()
+	if len(fastCache) >= fastCacheCap {
+		for k := range fastCache {
+			delete(fastCache, k)
+			if len(fastCache) < fastCacheCap/2 {
+				break
+			}
+		}
+	}
+	fastCache[fast] = id
+	fastCacheMu.Unlock()
+}
+
+func cacheDel(fast string) {
+	fastCacheMu.Lock()
+	delete(fastCache, fast)
+	fastCacheMu.Unlock()
+}
+
+// EvictKeyByID removes every fast-cache entry bound to the given sdk_keys
+// record id. The map is small (cap 10000) and this runs only on admin
+// edits/deletes, so a linear scan is fine. Nil/empty-safe: no-op on "".
+func EvictKeyByID(id string) {
+	if id == "" {
+		return
+	}
+	fastCacheMu.Lock()
+	for k, v := range fastCache {
+		if v == id {
+			delete(fastCache, k)
+		}
+	}
+	fastCacheMu.Unlock()
+}
+
+// findSDKKey returns the sdk_keys row matching the full SDK key, or
+// (nil, nil) when no row matches. The prefix prefilter runs in the DB
+// instead of a full-table scan; rows with a verifier slow-verify under
+// the CPU-DoS semaphore. Successes populate the fast cache keyed by the
+// fast hash. Revocation is NOT checked here — the caller maps revoked
+// rows to 401, preserving auth order.
+//
+// Deprecated (remove in v0.2.0): rows without a verifier fall back to
+// the legacy constant-time fast-hash compare, kept only so pre-existing
+// v1 keys keep authenticating. New rows always store a verifier.
+func findSDKKey(app core.App, full string) (*core.Record, error) {
+	prefix := KeyPrefix(full)
+	want := KeyHash(full)
+	if id, ok := cacheGet(want); ok {
+		rec, err := app.FindRecordById("sdk_keys", id)
+		if err != nil || rec == nil {
+			cacheDel(want)
+			return nil, nil
+		}
+		return rec, nil
+	}
 	recs, err := app.FindAllRecords("sdk_keys", dbx.HashExp{"prefix": prefix})
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range recs {
+		if v := r.GetString("verifier"); v != "" {
+			select {
+			case slowSem <- struct{}{}:
+			default:
+				return nil, nil
+			}
+			fastCacheMu.Lock()
+			slowVerifyCalls++
+			fastCacheMu.Unlock()
+			ok := VerifySlow(v, full)
+			<-slowSem
+			if ok {
+				cachePut(want, r.Id)
+				return r, nil
+			}
+			continue
+		}
+		// Deprecated (remove in v0.2.0): legacy v1 row — fast-hash compare
+		// kept only so pre-existing keys keep authenticating.
 		if subtle.ConstantTimeCompare([]byte(r.GetString("hash")), []byte(want)) != 1 {
 			continue
 		}
+		cachePut(want, r.Id)
 		return r, nil
 	}
 	return nil, nil
 }
 
 // RequireSDKKey authenticates X-ConfigWire-Key against sdk_keys (exported for
-// T10 reuse). Lookup prefilters on prefix (first 8 chars, DB-side) then
-// compares hex(sha256(fullKey)) in constant time. Unknown/missing/revoked
-// → 401 error suitable for returning directly from a handler.
+// T10 reuse). Lookup prefilters on prefix (first 8 chars, DB-side), then
+// slow-verifies the bcrypt verifier (or the deprecated legacy fast hash).
+// Unknown/missing/revoked → 401 error suitable for returning directly from
+// a handler.
 func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	denied := func() (*core.Record, error) {
 		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
@@ -265,7 +369,7 @@ func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	if full == "" {
 		return denied()
 	}
-	key, err := findSDKKey(re.App, KeyPrefix(full), KeyHash(full))
+	key, err := findSDKKey(re.App, full)
 	if err != nil {
 		return denied()
 	}
