@@ -5,12 +5,16 @@ Why this exists: the SDK header is `X-ConfigWire-Key`
 Unknown, revoked, or env-mismatched keys answer `401` by design.
 Rotate with the steps below.
 
-Key facts (landed code, todos 5-7):
+Key facts (landed code):
 
-- `sdk_keys` rows store `prefix` = first 8 chars of the full key plus
-  `hash` = lowercase `hex(sha256(fullKey))`; the full key is never
-  stored. Lookup per request: prefix prefilter, constant-time hash
-  compare, `revoked` check, env-scope check.
+- New keys are minted server-side via `POST /api/v1/admin/keys`
+  (superuser-only): the server generates `cw-` + 24 base62 chars,
+  stores only the bcrypt verifier (`hash: ""`, `keyVer: 2`), and
+  returns the full key once. Client-supplied key material is ignored.
+- `sdk_keys` rows store `prefix` = first 8 chars of the full key and the
+  bcrypt verifier; the full key is never stored. Lookup per request:
+  prefix prefilter, verifier slow-check, `revoked` check, env-scope
+  check.
 - Missing, unknown, revoked, or env-mismatched keys answer `401`
   `Missing or invalid SDK key.` on fetch, ingest, and stream.
 - Admin session keys are `cw_admin_*` localStorage (memory-first copy;
@@ -50,24 +54,17 @@ Expected: `flag:200`.
 ### 1. Issue the new `cw-` key
 
 ```bash
-NEW_KEY='cw-rotation-demo-key-01'
-python3 -c 'import hashlib; print(hashlib.sha256(b"cw-rotation-demo-key-01").hexdigest())'
-```
-
-Expected: `599678969c40b5d24e1bb066d6a8227b2fffc242c8fee6a5ec8514d70abb9d63`.
-
-```bash
-NEW_PREFIX=${NEW_KEY:0:8}
-echo "prefix:$NEW_PREFIX"
-NEW_HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'$NEW_KEY').hexdigest())")
-KEYROW=$(curl -s -X POST $BASE/api/collections/sdk_keys/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"prefix\":\"$NEW_PREFIX\",\"hash\":\"$NEW_HASH\",\"env\":\"$ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+MINT=$(curl -s -X POST $BASE/api/v1/admin/keys -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"env\":\"$ENVID\",\"fetchRps\":1667,\"ingestRps\":1667}")
+echo "$MINT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("prefix:" + d["prefix"])'
+NEW_KEY=$(echo "$MINT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')
+KEYROW=$(echo "$MINT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 echo "keyrow:$KEYROW"
 curl -s -o /dev/null -w "publish:%{http_code}\n" -X POST $BASE/api/v1/admin/env/rotate/publish -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"note":"rotation proof","baseVersion":0}'
 ```
 
-Expected: `prefix:cw-rotat`, then `publish:200`.
-(`prefix` is the first 8 chars of the full key; `hash` is the lowercase
-hex sha256 printed above.)
+Expected: `prefix:cw-...` (first 8 chars of the minted key), then `publish:200`.
+(The full key is returned once by the mint endpoint and never stored;
+only its bcrypt verifier reaches the DB.)
 
 ### 2. Prove the new key works (200)
 
@@ -102,21 +99,21 @@ keys on fetch, ingest (`POST .../events`), and the SSE stream.
 
 ### 4. Roll to a second key, revoke the first
 
-Issue the replacement the same way (`cw-rotation-demo-key-02`,
-sha256 `038028ca9e6e6cef58beae2cfb066385debb98ed79d60f9e4cde7ceeba484e5b`,
-prefix `cw-rotat`), distribute it out-of-band, then flip the old row:
+Issue the replacement the same way (`POST /api/v1/admin/keys`),
+distribute it out-of-band, then flip the old row:
 
 ```bash
 OLD_ROW=$KEYROW
-NEW_KEY2='cw-rotation-demo-key-02'
-NEW_HASH2=$(python3 -c "import hashlib; print(hashlib.sha256(b'$NEW_KEY2').hexdigest())")
-curl -s -o /dev/null -w "key2:%{http_code}\n" -X POST $BASE/api/collections/sdk_keys/records -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"prefix\":\"${NEW_KEY2:0:8}\",\"hash\":\"$NEW_HASH2\",\"env\":\"$ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}"
+MINT2=$(curl -s -X POST $BASE/api/v1/admin/keys -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "{\"env\":\"$ENVID\",\"fetchRps\":1667,\"ingestRps\":1667}")
+NEW_KEY2=$(echo "$MINT2" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')
+echo "key2:minted ok"
+curl -s -o /dev/null -w "revoke:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
 curl -s -o /dev/null -w "revoke:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
 curl -s -o /dev/null -w "old-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY"
 curl -s -o /dev/null -w "new-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY2"
 ```
 
-Expected: `key2:200`, `revoke:200`, `old-fetch:401` (same
+Expected: `revoke:200`, `old-fetch:401` (same
 `Missing or invalid SDK key.` body as step 3), `new-fetch:200`.
 Revocation is immediate; un-revoking (`revoked:false`) restores `200`.
 Delete the old row once all clients have rolled to the new key.

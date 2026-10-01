@@ -133,6 +133,33 @@ flag type, bad rule condition shape (unknown field/op, missing value
 key, bare `custom`), bad experiment weights (must sum to exactly 10000
 bps). Ref: `configwire/releases/snapshot.go:396-436`.
 
+## 2a. Key minting — `POST /api/v1/admin/keys`
+
+Ref: `configwire/ingest/keys_admin.go` (route + superuser-only).
+
+Superuser-only; SDK-key-only or unauth then `401`.
+
+Request (`env` is the environments record id; `fetchRps`/`ingestRps`
+optional per-second budgets, empty/0 = global, else `1..10000`):
+
+```json
+{"env": "<envId>", "fetchRps": 1667, "ingestRps": 1667}
+```
+
+Any client-supplied key material (`hash`/`verifier`/`prefix`/`key`)
+is ignored — the server generates `cw-` + 24 base62 chars from
+`crypto/rand` and stores only the bcrypt verifier (`hash: ""`,
+`keyVer: 2`).
+
+Success `201` (the full key is shown ONCE, never logged):
+
+```json
+{"id": "<keyId>", "prefix": "cw-Ab12Cd", "key": "cw-Ab12CdEfGhIjKlMnOpQrStUv"}
+```
+
+- Missing/unknown `env` then `404` (`{"message": "Unknown env.", "status": 404}`).
+- Out-of-range `fetchRps`/`ingestRps` then `400`.
+
 ## 3. Rollback — `POST /api/v1/admin/env/{env}/releases/{version}/rollback`
 
 > BREAKING (removed in this release): the global route
@@ -292,24 +319,35 @@ Success `200`:
 
 ## 6. Stream — `GET /api/v1/env/{env}/stream`
 
-Ref: `configwire/spike_probe.go:48-89`.
+Ref: `configwire/stream/stream.go` (handler + hook), `configwire/stream/hub.go` (hub).
 
-Real-key auth via `ingest.RequireSDKKey` plus env-scope check, same
-order as fetch/ingest: 401 (key) then 404 (unknown env slug) / 400
-(ambiguous slug, key-less callers only) then 401
-(key env mismatch). Ref: `:49-60`.
+Production endpoint, always on (no feature gate). Real-key auth via
+`ingest.RequireSDKKey` plus env-scope check, same order as
+fetch/ingest: 401 (key) then 404 (unknown env slug) then 401
+(key env mismatch). Ref: `configwire/stream/stream.go:getStream`.
 
 After auth the handler holds SSE long-lived:
 
 - Headers: `Content-Type: text/event-stream`, `Cache-Control: no-store`,
-  `X-Accel-Buffering: no`.
-- Keepalive: `: ping` comment frame (8 bytes, `: ping` plus blank line)
-  every 20s until client disconnect or a 10min cap. No canned
-  `config_update` event. Ref: `:67-88`.
-- Loop runs inline on the request goroutine (no per-conn goroutine;
-  ticker/timer stopped via defer; write/flush errors end the handler).
-- > BREAKING (removed in this release): `POST /api/v1/spike/publish/{clientId}`
-  was removed; no publish-triggered fan-out.
+  `Vary: X-ConfigWire-Key`, `X-Accel-Buffering: no`. The headers flush
+  only after auth + connection-cap + subscribe succeed.
+- Publish fan-out: every successful `releases` create (publish AND
+  rollback internal saves, via `OnRecordAfterCreateSuccess`) emits one
+  frame to that env's subscribers:
+  `event: config_update` + `data: {"version":N,"etag":"...","env":"<envId>"}`
+  + blank line. Push is best-effort (near-instant while connected; a
+  slow/dead subscriber's queue overflows into a drop, never a block),
+  so the poll fallback still bounds staleness. Ref: `:RegisterHook`,
+  `configwire/stream/hub.go:Notify`.
+- Keepalive: `: ping` comment frame every 20s until client disconnect
+  or a 10min cap, then the server closes and the client reconnects
+  with backoff. No canned `config_update` on connect (avoids
+  stale-event churn; freshness is covered by the poll fallback).
+- Cap: 5 concurrent streams per SDK key (keyed by key id); over cap
+  then `429 {"message":"Too many concurrent streams.","status":429}`.
+- Loop runs inline on the request goroutine (no per-connection
+  goroutine; ticker/timer stopped via defer; write/flush errors end
+  the handler), so nothing leaks after close.
 
 ## 7. Purge — `POST /api/v1/admin/maintenance/purge`
 
@@ -372,7 +410,7 @@ Success `200` (both verbs, same shape):
 | 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:93-101`                                                                                   |
 | 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:326-328`                                                                                  |
 | 400  | bad publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:70-76,193-195`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go` |
-| 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:213-241`, fetch `:289-300`, spike `:49-60`                                               |
+| 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:338-358`, fetch `:301-318`, stream `stream.go:getStream`                                                     |
 | 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:294-297`, releases `:220-221`                                                             |
 | 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:102-108`                                                                               |
 | 413  | ingest body/event too large; fetch attrs too large is 414                             | `{"message": "body exceeds 128KB.", "status": 413}`                                                                    | ingest `:252-262`                                                                                 |

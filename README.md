@@ -159,20 +159,18 @@ curl -s -X POST http://127.0.0.1:8109/api/collections/flags/records \
   -d "{\"project\":\"$PROJ\",\"key\":\"launch_flag\",\"type\":\"bool\",\"defaultValue\":false}"
 ```
 
-**4. Create an SDK key**
+**4. Create an SDK key** (server-minted; the full key is returned once)
 
 ```bash
-KEY=cw-qs-demo-key-001
-
-# Print the SHA-256 hash, then paste it below
-python3 -c 'import hashlib; print(hashlib.sha256(b"cw-qs-demo-key-001").hexdigest())'
-
-curl -s -X POST http://127.0.0.1:8109/api/collections/sdk_keys/records \
+MINT=$(curl -s -X POST http://127.0.0.1:8109/api/v1/admin/keys \
   -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"prefix\":\"cw-qs-de\",\"hash\":\"<sha256-of-key>\",\"env\":\"$ENV\",\"fetchRps\":1667,\"ingestRps\":1667}"
+  -d "{\"env\":\"$ENV\",\"fetchRps\":1667,\"ingestRps\":1667}")
+
+KEY=$(echo "$MINT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')
 ```
 
-> Replace `<sha256-of-key>` with the hash printed by the `python3` command above.
+> The server generates the key and stores only its bcrypt verifier.
+> Client-supplied key material is ignored by design.
 
 **5. Publish, fetch, ingest events, and query stats**
 
@@ -185,12 +183,12 @@ curl -s -X POST http://127.0.0.1:8109/api/v1/admin/env/dev/publish \
 
 # Fetch config as SDK
 curl -s http://127.0.0.1:8109/api/v1/env/dev/config \
-  -H 'X-ConfigWire-Key: cw-qs-demo-key-001'
+  -H "X-ConfigWire-Key: $KEY"
 # Expected: {"version":1,...,"values":{"launch_flag":false},...}
 
 # Send fetch + exposure events
 curl -s -X POST http://127.0.0.1:8109/api/v1/env/dev/events \
-  -H 'X-ConfigWire-Key: cw-qs-demo-key-001' -H 'Content-Type: application/json' \
+  -H "X-ConfigWire-Key: $KEY" -H 'Content-Type: application/json' \
   -d '{"events":[{"kind":"fetch"},{"kind":"exposure","variant":"control","userHash":"abc123"}]}'
 # Expected: {"accepted":2,...}
 
@@ -271,9 +269,22 @@ Rate limits (per-second): global 200 rps per IP + burst 400, fetch 100 rps per k
 ```
 GET /api/v1/env/{env}/stream
 X-ConfigWire-Key: <sdk-key>
+Accept: text/event-stream
 ```
 
-The server pushes a new event whenever a release is published for the environment.
+`200` held open as `text/event-stream` (same `401 → 404 → 401` auth
+order as fetch). Each release publish for the env pushes one frame:
+
+```
+event: config_update
+data: {"version":2,"etag":"5dadac695eb4c603","env":"<envId>"}
+
+```
+
+Keepalive `: ping` comment every 20s; server closes at 10min (client
+reconnects with backoff). Max 5 concurrent streams per SDK key (over
+cap → `429 {"message":"Too many concurrent streams.","status":429}`).
+Push is best-effort; the client poll fallback still bounds staleness.
 
 ---
 

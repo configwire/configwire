@@ -7,23 +7,28 @@ binary plus operator procedure.
 ## 1. SDK keys — storage
 
 - The full key is an opaque string presented in `X-ConfigWire-Key`.
-- `sdk_keys` rows store **only**:
-  - `prefix` = first 8 chars of the full key (fast prefilter),
-  - `hash` = lowercase `hex(sha256(fullKey))` (constant-time compare).
-- **The full key is never stored.** A database dump cannot be replayed
-  as credentials (sha256 is non-reversible); the prefix alone matches
-  nothing without the hash preimage.
-- Lookup order per request: prefix prefilter → constant-time hash
-  compare → `revoked` check → env-scope check. Unknown, missing,
-  revoked, or env-mismatched keys → `401`. Never log full keys
-  (hashes only).
+- Keys are minted server-side via `POST /api/v1/admin/keys`
+  (superuser-only): the server generates `cw-` + 24 base62 chars from
+  `crypto/rand`, stores **only** a bcrypt verifier (`sdk_keys.verifier`,
+  `$2a$...`, salted and slow), and returns the full key once.
+  Client-supplied key material is ignored, so entropy is guaranteed.
+- **The full key is never stored.** A database dump yields only the
+  salted slow verifier, which cannot be replayed as credentials.
+- Lookup order per request: prefix prefilter → verifier slow-check
+  (under a 4-wide concurrency semaphore against CPU-DoS) → `revoked`
+  check → env-scope check. A process-local fast-token cache
+  (fastHash → record id) keeps the hot path at one sha256 + one PK
+  lookup; revocation and deletion take effect on the next request (no
+  stale cache auth). Unknown, missing, revoked, or env-mismatched keys
+  → `401`. Never log full keys (prefix/id only).
 
 ## 2. Rotation
 
 ### SDK keys (revoke flag + reissue)
 
-1. Create the replacement key row (`prefix`, `hash`, `env`,
-   `fetchRps`/`ingestRps` in req/sec), distribute the full key out-of-band.
+1. Create the replacement key via `POST /api/v1/admin/keys`
+   (`{"env": "<envId>", "fetchRps": 1667, "ingestRps": 1667}`),
+   distribute the returned full key out-of-band (shown once).
 2. Flip the old row: `sdk_keys.revoked = true`.
 3. Effect is immediate: revoked keys → `401` on fetch/ingest/stream
    (verified live: revoke → `401`, un-revoke restores `200`).
@@ -133,11 +138,18 @@ binary plus operator procedure.
 - `GET /api/v1/env/:env/stream` requires a real SDK key + env scope
   (same `401 → 404 → 401` order as fetch/ingest), holds SSE with
   `: ping` keepalives every 20s, and **caps at 10 minutes** (server
-  closes; client reconnects with backoff).
+  closes; client reconnects with backoff). Max 5 concurrent streams
+  per SDK key (over cap → `429`).
+- Publish now fans out `config_update` (`{"version","etag","env"}`)
+  to connected subscribers of that env (publish AND rollback saves).
+  Push is best-effort: a slow/dead subscriber's queue overflows into
+  a drop, never a block on the publisher; the poll fallback is
+  unchanged.
 - Freshness bound: push is best-effort (~instant while connected);
   otherwise ≤ `pollInterval` (default 15min) + one fetch — the client
   poller runs in every state, so the bound holds stream-up, -down,
   and -`401` alike.
+- Ref: `configwire/stream` (`stream.go` handler + hook, `hub.go` hub).
 
 ## 8. Response headers
 

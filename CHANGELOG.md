@@ -25,6 +25,13 @@ All notable changes to the ConfigWire server (`configwire/`, image
   effective budget is the per-key value when `1..10000`, else the
    global.
 
+### Deprecated
+
+- SDK-key legacy v1 storage (unsalted `hex(sha256(fullKey))` in
+  `sdk_keys.hash`, i.e. rows without a `verifier`) is retained only for
+  backward compatibility and is scheduled for removal in v0.2.0. New
+  keys always use `POST /api/v1/admin/keys` and store a bcrypt verifier.
+
 ### Removed
 
 - Removed legacy per-min limiter: the `sdk_keys.rateLimit` (req/60s)
