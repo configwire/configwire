@@ -257,6 +257,9 @@ func main() {
 	ingest.EnableWAL(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		if os.Getenv("CONFIGWIRE_CORS_ORIGIN") == "" {
+			log.Printf("configwire: CONFIGWIRE_CORS_ORIGIN is unset, fetch CORS defaults to \"*\"; set CONFIGWIRE_CORS_ORIGIN=https://app.example.com in production")
+		}
 		// Global security headers for every response.
 		se.Router.BindFunc(func(re *core.RequestEvent) error {
 			security.SetHeaders(re)

@@ -605,6 +605,28 @@
     });
   }
 
+  function bindStatsFilterForm() {
+    var form = null;
+    try {
+      form = document.getElementById("stats-filter-form");
+    } catch (e) { return; }
+    if (!form || !form.addEventListener) return;
+    if (form.dataset && form.dataset.cwBound === "1") return;
+    if (form.dataset) form.dataset.cwBound = "1";
+    form.addEventListener("submit", function (ev) {
+      if (ev && ev.preventDefault) ev.preventDefault();
+    });
+  }
+
+  if (typeof document !== "undefined" && document) {
+    if (document.readyState === "loading" && document.addEventListener) {
+      document.addEventListener("DOMContentLoaded", bindStatsFilterForm);
+    } else {
+      bindStatsFilterForm();
+    }
+  }
+
+  CW.bindStatsFilterForm = bindStatsFilterForm;
   CW.renderStats = renderStats;
   CW.bindSeriesTip = bindSeriesTip;
   CW.seriesTipText = seriesTipText;
