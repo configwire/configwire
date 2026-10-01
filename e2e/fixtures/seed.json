@@ -56,7 +56,7 @@
       }
     ]
   },
-  "sdkKey": { "rateLimit": 100000 },
+  "sdkKey": { "fetchRps": 1667, "ingestRps": 1667 },
   "fetchCtx": {
     "uid": "e2e-user-7",
     "platform": "ios",

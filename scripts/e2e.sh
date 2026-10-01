@@ -143,7 +143,7 @@ EXP_BODY="{\"name\":\"e2e-exp\",\"flag\":\"$F3\",\"seed\":\"e2e-seed-1\",\"statu
 
 PREFIX="${SDK_KEY:0:8}"
 HASH="$(python3 -c "import hashlib; print(hashlib.sha256('$SDK_KEY'.encode()).hexdigest())")"
-SDK_KEY_BODY="{\"prefix\":\"$PREFIX\",\"hash\":\"$HASH\",\"env\":\"$ENVID\",\"revoked\":false,\"rateLimit\":100000}"
+SDK_KEY_BODY="{\"prefix\":\"$PREFIX\",\"hash\":\"$HASH\",\"env\":\"$ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}"
 [ "$(su_post "$C/sdk_keys/records" "$SDK_KEY_BODY" /tmp/cw-t17-key.json)" = "200" ] \
   && pass "sdk key (prefix=first8+sha256)" || { fail "sdk key"; exit 1; }
 
