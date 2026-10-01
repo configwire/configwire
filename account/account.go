@@ -16,6 +16,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -24,6 +25,14 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
+
+// accountMu serializes the check-then-write sequences in postSetup
+// (count -> createSuperuser) and deleteAccount (count -> Delete).
+// Without it two concurrent requests can both observe count 0 (or n==2)
+// and both write, creating a second superuser (or deleting the last
+// admin). The lock is acquired only around the locked re-check plus the
+// write itself — never across decodeBody/validation.
+var accountMu sync.Mutex
 
 // superusersCollection is the PocketBase auth collection holding admins.
 // The installer placeholder row (core.DefaultInstallerEmail,
@@ -161,21 +170,23 @@ func countRealSuperusers(app core.App) (int64, error) {
 	return n, nil
 }
 
-// mapSaveError maps a superuser save failure to a request error without
-// leaking internals: duplicate-email violations -> 409, anything else ->
-// 400 carrying only the underlying message.
+// mapSaveError maps a superuser save failure to a request error with a
+// generic body (never the raw DB/driver message): duplicate-email
+// violations -> 409, anything else -> 400. The underlying message goes to
+// the server log only.
 func mapSaveError(re *core.RequestEvent, err error) error {
 	msg := err.Error()
+	log.Printf("account: failed to create superuser: %s", msg)
 	lowered := strings.ToLower(msg)
 	if strings.Contains(lowered, "unique") ||
 		strings.Contains(lowered, "duplicate") ||
 		strings.Contains(lowered, "already exists") {
 		return re.JSON(http.StatusConflict, map[string]any{
-			"message": msg,
+			"message": "email already in use",
 			"status":  http.StatusConflict,
 		})
 	}
-	return re.BadRequestError(msg, nil)
+	return re.BadRequestError("could not create account", nil)
 }
 
 // createSuperuser persists one _superusers row via the caller's
@@ -208,8 +219,9 @@ func getSetupStatus(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	n, err := countRealSuperusers(re.App)
 	if err != nil {
+		log.Printf("account: failed to check setup status: %v", err)
 		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "failed to check setup status: " + err.Error(),
+			"message": "internal error",
 			"status":  http.StatusInternalServerError,
 		})
 	}
@@ -228,8 +240,9 @@ func postSetup(re *core.RequestEvent) error {
 	}
 	n, err := countRealSuperusers(re.App)
 	if err != nil {
+		log.Printf("account: failed to check setup status: %v", err)
 		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "failed to check setup status: " + err.Error(),
+			"message": "internal error",
 			"status":  http.StatusInternalServerError,
 		})
 	}
@@ -241,6 +254,25 @@ func postSetup(re *core.RequestEvent) error {
 	}
 	if err := ValidateCredentials(req.Email, req.Password); err != nil {
 		return re.BadRequestError(err.Error(), nil)
+	}
+	// Locked re-check plus write: the pre-lock count/validation above is
+	// only a fast path preserving the 409 -> 400 -> 201 order. The count
+	// is repeated under accountMu so concurrent setups serialize: the
+	// loser observes the winner's row and answers 409 (or maps the
+	// save-time duplicate via mapSaveError).
+	accountMu.Lock()
+	defer accountMu.Unlock()
+	if n, err := countRealSuperusers(re.App); err != nil {
+		log.Printf("account: failed to check setup status: %v", err)
+		return re.JSON(http.StatusInternalServerError, map[string]any{
+			"message": "internal error",
+			"status":  http.StatusInternalServerError,
+		})
+	} else if !NeedsSetup(n) {
+		return re.JSON(http.StatusConflict, map[string]any{
+			"message": "setup already completed: a superuser already exists.",
+			"status":  http.StatusConflict,
+		})
 	}
 	rec, err := createSuperuser(re.App, req.Email, req.Password)
 	if err != nil {
@@ -337,6 +369,11 @@ func deleteAccount(re *core.RequestEvent) error {
 	if strings.EqualFold(rec.GetString("email"), core.DefaultInstallerEmail) {
 		return re.BadRequestError("cannot delete the system installer account.", nil)
 	}
+	// Locked count plus delete: concurrent deletes of the last two admins
+	// serialize, so the loser observes n==1 and answers 400 instead of
+	// deleting the last remaining superuser.
+	accountMu.Lock()
+	defer accountMu.Unlock()
 	n, err := countRealSuperusers(re.App)
 	if err != nil {
 		return err
