@@ -424,12 +424,13 @@ func CheckIP(re *core.RequestEvent) bool {
 		return true
 	}
 	ip := ClientIP(re)
-	// Fail-open on empty IP: RemoteAddr is always set by the Go net
-	// stack, so "" only happens in tests; allowing it avoids collapsing
-	// all headerless test clients into one shared "" bucket. Fetch/ingest
-	// per-key limits still apply after auth, so this does not bypass auth.
+	// Empty IP shares one "unknown" bucket instead of fail-opening:
+	// RemoteAddr is always set by the Go net stack, so "" only happens
+	// in tests; bucketing keeps a headerless client rate-limited like
+	// any other instead of bypassing the limiter entirely.
+	// Fetch/ingest per-key limits still apply after auth.
 	if ip == "" {
-		return true
+		ip = "unknown"
 	}
 	if strings.HasPrefix(re.Request.URL.Path, "/api/v1/admin/") {
 		return AllowAdmin(ip)

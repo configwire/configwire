@@ -2,6 +2,7 @@ package limits
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -114,6 +115,34 @@ func TestClientIPFromHeaders(t *testing.T) {
 		if got := clientIPFromHeaders(hdr, tc.remote); got != tc.want {
 			t.Fatalf("%s: got %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// TestCheckIPEmptyIPSharesBucket pins that an empty client IP is
+// rate-limited in one shared "unknown" bucket instead of fail-opening:
+// the first two /api/* requests pass (budget 2) and the third in the
+// same window is blocked, while non-API paths still always pass.
+func TestCheckIPEmptyIPSharesBucket(t *testing.T) {
+	resetForTest(Config{GlobalRps: 2, Burst: 2, FetchRps: 100, IngestRps: 50, AdminRps: 20})
+	newAPIEvent := func() *core.RequestEvent {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/env/dev/config", nil)
+		req.RemoteAddr = ""
+		re := &core.RequestEvent{}
+		re.Request = req
+		return re
+	}
+	if !CheckIP(newAPIEvent()) || !CheckIP(newAPIEvent()) {
+		t.Fatal("first two empty-IP requests should pass")
+	}
+	if CheckIP(newAPIEvent()) {
+		t.Fatal("third empty-IP request in the same window should be blocked")
+	}
+	staticReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	staticReq.RemoteAddr = ""
+	staticRe := &core.RequestEvent{}
+	staticRe.Request = staticReq
+	if !CheckIP(staticRe) {
+		t.Fatal("non-API path should always pass")
 	}
 }
 
