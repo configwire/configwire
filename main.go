@@ -21,6 +21,7 @@ import (
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/fetch"
 	"github.com/configwire/configwire/ingest"
+	"github.com/configwire/configwire/limits"
 	_ "github.com/configwire/configwire/migrations"
 	"github.com/configwire/configwire/purge"
 	"github.com/configwire/configwire/releases"
@@ -255,6 +256,9 @@ func main() {
 		se.Router.BindFunc(func(re *core.RequestEvent) error {
 			security.SetHeaders(re)
 			setStaticCacheHeaders(re)
+			if !limits.CheckIP(re) {
+				return limits.BlockIP(re)
+			}
 			return re.Next()
 		})
 
@@ -283,6 +287,8 @@ func main() {
 		se.Router.GET("/api/v1/meta", func(re *core.RequestEvent) error {
 			return re.JSON(200, map[string]string{"version": appVersion(), "assets": assets})
 		})
+
+		limits.Register(se)
 
 		ingest.Register(se)
 

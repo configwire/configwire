@@ -32,7 +32,6 @@ func lookupTestApp(t *testing.T) *tests.TestApp {
 		`{"type":"text","name":"hash"}`,
 		`{"type":"bool","name":"revoked"}`,
 		`{"type":"text","name":"env"}`,
-		`{"type":"number","name":"rateLimit"}`,
 	} {
 		if err := col.Fields.AddMarshaledJSON([]byte(f)); err != nil {
 			t.Fatalf("add field %s: %v", f, err)
@@ -55,7 +54,6 @@ func seedKey(t *testing.T, app *tests.TestApp, full, envID string, revoked bool)
 	rec.Set("hash", KeyHash(full))
 	rec.Set("revoked", revoked)
 	rec.Set("env", envID)
-	rec.Set("rateLimit", 60)
 	if err := app.Save(rec); err != nil {
 		t.Fatalf("save sdk key: %v", err)
 	}

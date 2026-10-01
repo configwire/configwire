@@ -11,7 +11,7 @@
 //     the process; raw keys and user IDs never do.
 //   - Body matrix: 1..100 events, kind/variant/userHash/ts rules,
 //     raw userId/ip strict 400, per-event 64KB / whole-body 128KB -> 413.
-//   - Rate default: missing/non-positive rateLimit -> 60 req/min.
+//   - Rate default: per-second gate (`fetchRps`/`ingestRps` budgets).
 package ingest
 
 import (
@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/configwire/configwire/limits"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -94,12 +95,29 @@ func TestAuthOrder_BodyMatrix(t *testing.T) {
 	}
 }
 
-// TestAuthOrder_RateLimitDefault pins the 429 accounting default: a key
-// record without rateLimit is limited at 60 req/min.
+// TestAuthOrder_RateLimitDefault pins the per-sec 429 gate: a key
+// with fetchRps=1/ingestRps=1 allows one hit then blocks.
 func TestAuthOrder_RateLimitDefault(t *testing.T) {
-	rec := core.NewRecord(core.NewBaseCollection("sdk_keys"))
-	if got := RateLimitFor(rec); got != 60 {
-		t.Fatalf("RateLimitFor(missing) = %d, want DefaultRateLimit 60", got)
+	col := core.NewBaseCollection("sdk_keys")
+	col.Fields.Add(
+		&core.NumberField{Name: "fetchRps", OnlyInt: true},
+		&core.NumberField{Name: "ingestRps", OnlyInt: true},
+	)
+	rec := core.NewRecord(col)
+	rec.Set("fetchRps", 1)
+	rec.Set("ingestRps", 1)
+	if got := limits.EffectiveFetchRps(rec); got != 1 {
+		t.Fatalf("EffectiveFetchRps = %d, want per-key 1", got)
+	}
+	if got := limits.EffectiveIngestRps(rec); got != 1 {
+		t.Fatalf("EffectiveIngestRps = %d, want per-key 1", got)
+	}
+	hash := "cw-contract-test-single-limiter-hash"
+	if !limits.AllowFetchKey(hash, limits.EffectiveFetchRps(rec)) {
+		t.Fatal("first hit within 1/s budget must pass")
+	}
+	if limits.AllowFetchKey(hash, limits.EffectiveFetchRps(rec)) {
+		t.Fatal("second hit in the same 1s window must be 429")
 	}
 }
 

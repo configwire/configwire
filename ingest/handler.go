@@ -3,82 +3,21 @@ package ingest
 import (
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/limits"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// Limiter is a per-key fixed-window rate limiter. Memory-growth risk (reported
-// per contract): one entry per distinct key-hash ever seen; opportunistic
-// sweeps (≤1/s) delete entries idle for >2 windows, so steady-state size ≈
-// active keys, but a key-scan attack could still grow the map — acceptable
-// for the SDK-key space (keys are server-issued, not attacker-chosen).
-type Limiter struct {
-	mu        sync.Mutex
-	windows   map[string]*rateWindow
-	window    time.Duration
-	lastSweep time.Time
-}
-
-type rateWindow struct {
-	start time.Time
-	count int
-}
-
-// NewLimiter builds a Limiter over the default rate window.
-func NewLimiter() *Limiter {
-	return &Limiter{windows: make(map[string]*rateWindow), window: RateWindow}
-}
-
-// newLimiterWithWindow is the test seam for window behavior.
-func newLimiterWithWindow(d time.Duration) *Limiter {
-	return &Limiter{windows: make(map[string]*rateWindow), window: d}
-}
-
-// Allow consumes one token for id, reporting false when the window is exhausted.
-func (l *Limiter) Allow(id string, limit int) bool {
-	if limit <= 0 {
-		limit = DefaultRateLimit
-	}
-	now := time.Now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	w, ok := l.windows[id]
-	if !ok || now.Sub(w.start) >= l.window {
-		w = &rateWindow{start: now}
-		l.windows[id] = w
-	}
-	w.count++
-	if now.Sub(l.lastSweep) >= l.window {
-		l.lastSweep = now
-		for k, v := range l.windows {
-			if now.Sub(v.start) >= 2*l.window {
-				delete(l.windows, k)
-			}
-		}
-	}
-	return w.count <= limit
-}
-
-// Size reports tracked key count for tests/QA only.
-func (l *Limiter) Size() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return len(l.windows)
-}
-
 var module struct {
 	batcher *Batcher
-	limiter *Limiter
 }
 
 // Register mounts the events ingest route and starts the flush pipeline.
 func Register(se *core.ServeEvent) {
 	module.batcher = NewBatcher(se.App)
-	module.limiter = NewLimiter()
 	module.batcher.Start()
 	se.Router.POST("/api/v1/env/{env}/events", postEvents)
 	se.App.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
@@ -116,7 +55,8 @@ func postEvents(re *core.RequestEvent) error {
 	if err != nil {
 		return envresolve.ToRequestError(re, err)
 	}
-	if !module.limiter.Allow(key.GetString("hash"), RateLimitFor(key)) {
+	if !limits.AllowIngestKey(key.GetString("hash"), limits.EffectiveIngestRps(key)) {
+		re.Response.Header().Set("Retry-After", "1")
 		return re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Rate limit exceeded.", "status": 429})
 	}
 	body, aerr := readBody(re)

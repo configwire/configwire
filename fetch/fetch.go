@@ -59,6 +59,7 @@ import (
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/ingest"
+	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
 	"github.com/pocketbase/dbx"
@@ -74,10 +75,6 @@ const MaxAttrsBytes = 8192
 const emptyReleaseEtag = "none"
 
 const allowHeaders = "X-ConfigWire-Key, If-None-Match"
-
-// fetchLimiter is a process-local per-key fixed-window limiter reused from
-// ingest (single binary, so process-local is acceptable).
-var fetchLimiter = ingest.NewLimiter()
 
 // setFetchCacheHeaders stamps private cache headers on fetch 200/304
 // responses. Private because responses vary per SDK key + encoding.
@@ -308,7 +305,8 @@ func getConfig(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	if !fetchLimiter.Allow(key.GetString("hash"), ingest.RateLimitFor(key)) {
+	if !limits.AllowFetchKey(key.GetString("hash"), limits.EffectiveFetchRps(key)) {
+		re.Response.Header().Set("Retry-After", "1")
 		return re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Rate limit exceeded.", "status": 429})
 	}
 	slug := re.Request.PathValue("env")

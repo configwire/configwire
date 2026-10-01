@@ -294,38 +294,6 @@ func lens[T any](chunks [][]T) []int {
 	return out
 }
 
-func TestLimiterWindow(t *testing.T) {
-	l := newLimiterWithWindow(50 * time.Millisecond)
-	for i := 0; i < 3; i++ {
-		if !l.Allow("k", 3) {
-			t.Fatalf("token %d should be allowed", i)
-		}
-	}
-	if l.Allow("k", 3) {
-		t.Fatal("4th token over limit 3 must be denied")
-	}
-	time.Sleep(60 * time.Millisecond)
-	if !l.Allow("k", 3) {
-		t.Fatal("new window must reset the count")
-	}
-	if !l.Allow("other", 3) {
-		t.Fatal("distinct keys must have independent windows")
-	}
-	// Non-positive limit falls back to the default.
-	l2 := newLimiterWithWindow(time.Minute)
-	for i := 0; i < DefaultRateLimit; i++ {
-		if !l2.Allow("k", 0) {
-			t.Fatalf("default-limit token %d denied", i)
-		}
-	}
-	if l2.Allow("k", 0) {
-		t.Fatal("token 61 over default 60 must be denied")
-	}
-	if got := l2.Size(); got != 1 {
-		t.Fatalf("limiter size = %d, want 1", got)
-	}
-}
-
 func TestValidateBodyExactly100(t *testing.T) {
 	many := make([]any, 100)
 	for i := range many {

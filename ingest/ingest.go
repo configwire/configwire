@@ -17,11 +17,12 @@
 //     prefilter) and hash = lowercase hex(sha256(fullKey)) (constant-time
 //     comparison). The full key is never stored.
 //   - Unknown, mismatched, revoked, or env-mismatched keys → 401.
-//   - Rate limiting is per-key fixed-window: sdk_keys.rateLimit requests per
-//     60s window, default 60 when missing/non-positive. Exhausted → 429.
-//     Every authenticated hit to this endpoint consumes one token, including
-//     requests later rejected as 400 (documented choice: simplest accounting,
-//     no free probing).
+//   - Rate limiting is per-second per-key: sdk_keys.fetchRps/ingestRps
+//     requests per 1s window via configwire/limits (EffectiveIngestRps,
+//     missing/zero falls back to the global ingest budget). Exhausted → 429.
+//     Every authenticated hit to this endpoint consumes one token,
+//     including requests later rejected as 400 (documented choice:
+//     simplest accounting, no free probing).
 //   - Batching: valid events enqueue to a buffered channel and the handler
 //     returns 202 immediately. A background goroutine flushes every 1s or
 //     every 500 rows (whichever first) via app.Save, so worst-case ingest
@@ -51,10 +52,6 @@ const (
 	MaxBodyBytes = 128 << 10
 	// MaxEventBytes bounds a single event object; larger → 413.
 	MaxEventBytes = 64 << 10
-	// DefaultRateLimit applies when sdk_keys.rateLimit is missing/non-positive.
-	DefaultRateLimit = 60
-	// RateWindow is the fixed per-key rate-limit window.
-	RateWindow = time.Minute
 	// MaxVariantLen bounds variant names in runes (chars); over-limit → 400.
 	MaxVariantLen = 64
 	// MaxUserHashLen bounds opaque user hashes in runes (chars); over-limit → 400.
@@ -276,15 +273,6 @@ func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 		return denied()
 	}
 	return key, nil
-}
-
-// RateLimitFor returns the per-minute quota for a key record, defaulting to
-// DefaultRateLimit when the field is missing or non-positive.
-func RateLimitFor(key *core.Record) int {
-	if n := key.GetInt("rateLimit"); n > 0 {
-		return n
-	}
-	return DefaultRateLimit
 }
 
 // readBody caps the request body purely at the HTTP layer: over-limit → 413.
