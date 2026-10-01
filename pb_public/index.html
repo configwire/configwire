@@ -203,8 +203,10 @@
                 <li>Not loaded.</li>
               </ul>
               <h3>New key</h3>
+              <p class="muted">Per-key req/sec. Empty = global.</p>
               <form id="key-form" aria-label="SDK key create">
-                <label>rateLimit (req/60s) <input id="key-ratelimit" type="number" min="1" value="60"></label>
+                <label>fetchRps (req/s, empty=global) <input id="key-fetch-rps" type="number" min="1" max="10000" placeholder="Global 100/s"></label>
+                <label>ingestRps (req/s, empty=global) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
                 <button type="submit" class="btn primary">Create key</button>
               </form>
               <p id="key-result" role="status"></p>
@@ -213,6 +215,24 @@
                 <code id="key-once-value"></code>
                 <button id="key-copy" type="button" class="btn secondary">Copy</button>
               </div>
+            </section>
+
+            <section class="card" aria-labelledby="limits">
+              <div class="card-head">
+                <h2 id="limits">Rate limits (req/sec)</h2><button id="refresh-limits" type="button"
+                  class="btn ghost">Refresh limits</button>
+              </div>
+              <p class="muted">Per-IP global + per-key fetch/ingest + admin. 429 when exceeded. Changes apply
+                immediately.</p>
+              <form id="limits-form" class="inline-form" aria-label="Rate limits">
+                <label>Global <input id="limit-global" type="number" min="1" max="10000"></label>
+                <label>Burst <input id="limit-burst" type="number" min="1" max="10000"></label>
+                <label>Fetch <input id="limit-fetch" type="number" min="1" max="10000"></label>
+                <label>Ingest <input id="limit-ingest" type="number" min="1" max="10000"></label>
+                <label>Admin <input id="limit-admin" type="number" min="1" max="10000"></label>
+                <button type="submit" class="btn primary">Save limits</button>
+              </form>
+              <p id="limits-result" role="status"></p>
             </section>
 
             <section class="card" aria-labelledby="stats">
@@ -575,6 +595,7 @@
   <script src="/js/transfer.js"></script>
   <script src="/js/stats.js"></script>
   <script src="/js/json-editor.js"></script>
+  <script src="/js/limits.js"></script>
   <script src="/js/boot.js"></script>
   <script src="/js/update.js"></script>
 </body>

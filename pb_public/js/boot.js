@@ -86,6 +86,7 @@
     CW.on("refresh-flags", "click", function () { CW.loadFlags().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-releases", "click", function () { CW.loadReleases().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-keys", "click", function () { CW.loadKeys().catch(function (e) { CW.toast(e.message); }); });
+    CW.on("refresh-limits", "click", function () { CW.loadLimits().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-stats", "click", function () {
       CW.loadStats().catch(function () { /* loadStats renders inline */ });
     });
@@ -462,6 +463,7 @@
       closeExpMenus();
     });
     CW.on("key-form", "submit", CW.createKey);
+    CW.on("limits-form", "submit", CW.saveLimits);
     CW.on("key-copy", "click", function () {
       var v = CW.$("key-once-value").textContent;
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -740,7 +742,23 @@
     });
 
     CW.on("key-list", "click", function (ev) {
-      var id = ev.target && ev.target.getAttribute && ev.target.getAttribute("data-revoke-key");
+      var t = ev && ev.target ? ev.target : null;
+      var editEl = null;
+      if (t) {
+        if (t.closest) editEl = t.closest("[data-edit-key]");
+        else if (t.getAttribute && t.getAttribute("data-edit-key")) editEl = t;
+      }
+      var editId = editEl && editEl.getAttribute ? editEl.getAttribute("data-edit-key") : null;
+      if (editId) {
+        if (CW.editKeyLimits) CW.editKeyLimits(editId);
+        return;
+      }
+      var revokeEl = null;
+      if (t) {
+        if (t.closest) revokeEl = t.closest("[data-revoke-key]");
+        else if (t.getAttribute && t.getAttribute("data-revoke-key")) revokeEl = t;
+      }
+      var id = revokeEl && revokeEl.getAttribute ? revokeEl.getAttribute("data-revoke-key") : null;
       if (id) CW.revokeKey(id);
     });
 

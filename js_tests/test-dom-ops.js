@@ -641,7 +641,8 @@ test("createKey: no envId guards with zero fetch", async function () {
 test("createKey: success shows prefix + one-time value", async function () {
   reset();
   h.CW.state.envId = "e1";
-  setVal("key-ratelimit", "60");
+  setVal("key-fetch-rps", "1");
+  setVal("key-ingest-rps", "1");
   await h.CW.createKey();
   assert.ok(el("key-result").textContent.indexOf("key created") >= 0);
   assert.ok(el("key-once-value").textContent.indexOf("cw-") === 0);

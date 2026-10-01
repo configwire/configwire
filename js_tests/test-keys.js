@@ -161,13 +161,13 @@ test("renderKeys active vs revoked vs disabled branches pinned exactly", functio
   ctx.CW.renderKeys();
   assert.equal(
     ctx.elementsById["key-list"].innerHTML,
-    '<li><code>cw-abc…</code> active <button type="button" data-revoke-key="k1">revoke</button></li>'
+    '<li><code>cw-abc…</code> active fetch global/s ingest global/s <button type="button" data-edit-key="k1">Edit limits</button> <button type="button" data-revoke-key="k1">revoke</button></li>'
   );
   ctx.CW.state.keys = [{ id: "k2", prefix: "cw-xyz", revoked: true }];
   ctx.CW.renderKeys();
   assert.equal(
     ctx.elementsById["key-list"].innerHTML,
-    '<li><code>cw-xyz…</code> revoked <button type="button" data-revoke-key="k2" disabled>revoke</button></li>'
+    '<li><code>cw-xyz…</code> revoked fetch global/s ingest global/s <button type="button" data-edit-key="k2">Edit limits</button> <button type="button" data-revoke-key="k2" disabled>revoke</button></li>'
   );
 });
 
@@ -247,7 +247,8 @@ test("createKey without envId sets guard text and performs no fetch", async func
 test("createKey success writes prefix result and one-time key value", async function () {
   var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
   ctx.CW.state.envId = "env-1";
-  ctx.CW.$("key-ratelimit").value = "100";
+  ctx.CW.$("key-fetch-rps").value = "2";
+  ctx.CW.$("key-ingest-rps").value = "2";
   var mutCalls = [];
   ctx.CW.apiMut = function (m, u, b) {
     mutCalls.push({ method: m, url: u, body: b });
@@ -259,7 +260,8 @@ test("createKey success writes prefix result and one-time key value", async func
   assert.equal(mutCalls[0].method, "POST");
   assert.equal(mutCalls[0].url, "/api/collections/sdk_keys/records");
   assert.equal(mutCalls[0].body.env, "env-1");
-  assert.equal(mutCalls[0].body.rateLimit, 100);
+  assert.equal(mutCalls[0].body.fetchRps, 2);
+  assert.equal(mutCalls[0].body.ingestRps, 2);
   assert.equal(mutCalls[0].body.prefix, ctx.CW.randomKey().slice(0, 8));
   var full = ctx.elementsById["key-once-value"].textContent;
   assert.match(full, KEY_RE);
