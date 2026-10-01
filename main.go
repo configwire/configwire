@@ -27,6 +27,7 @@ import (
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
 	"github.com/configwire/configwire/stats"
+	"github.com/configwire/configwire/stream"
 )
 
 // ConfigWire data-integrity hooks.
@@ -251,6 +252,8 @@ func main() {
 
 	ingest.RegisterKeyCacheHooks(app)
 
+	stream.RegisterHook(app)
+
 	ingest.EnableWAL(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
@@ -299,6 +302,8 @@ func main() {
 		releases.Register(se)
 
 		fetch.Register(se)
+
+		stream.Register(se)
 
 		stats.Register(se)
 
