@@ -29,7 +29,7 @@ fail() { FAIL=$((FAIL + 1)); echo "FAIL: $1"; }
 
 SU_EMAIL="e2e-t17@example.com"
 SU_PASS="e2e-t17-super-secret-01"
-SDK_KEY="cw-e2e17-key-0123456789abcdef"
+SDK_KEY=""
 E2E_UID="e2e-user-7"
 DEAD_PORT="8199"
 
@@ -141,11 +141,10 @@ EXP_BODY="{\"name\":\"e2e-exp\",\"flag\":\"$F3\",\"seed\":\"e2e-seed-1\",\"statu
 [ "$(su_post "$C/experiments/records" "$EXP_BODY" /tmp/cw-t17-exp.json)" = "200" ] \
   && pass "experiment running 50/50" || { fail "experiment"; exit 1; }
 
-PREFIX="${SDK_KEY:0:8}"
-HASH="$(python3 -c "import hashlib; print(hashlib.sha256('$SDK_KEY'.encode()).hexdigest())")"
-SDK_KEY_BODY="{\"prefix\":\"$PREFIX\",\"hash\":\"$HASH\",\"env\":\"$ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}"
-[ "$(su_post "$C/sdk_keys/records" "$SDK_KEY_BODY" /tmp/cw-t17-key.json)" = "200" ] \
-  && pass "sdk key (prefix=first8+sha256)" || { fail "sdk key"; exit 1; }
+MINT_BODY="{\"env\":\"$ENVID\",\"fetchRps\":1667,\"ingestRps\":1667}"
+[ "$(su_post "$BASE_URL/api/v1/admin/keys" "$MINT_BODY" /tmp/cw-t17-key.json)" = "201" ] \
+  && pass "sdk key minted (server-side bcrypt verifier)" || { fail "sdk key"; exit 1; }
+SDK_KEY="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-key.json'))['key'])")"
 
 CODE="$(su_post "$BASE_URL/api/v1/admin/env/e2e/publish" '{"note":"t17 v1","baseVersion":0}' /tmp/cw-t17-pub1.json)"
 [ "$CODE" = "200" ] && pass "publish v1 200" || { fail "publish v1 (code $CODE)"; exit 1; }
@@ -153,6 +152,13 @@ python3 -c "import json,sys; d=json.load(open('/tmp/cw-t17-pub1.json')); sys.exi
   && pass "publish v1 version==1" || fail "publish v1 version==1"
 ETAG_V1="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-pub1.json'))['etag'])")"
 echo "v1 etag=$ETAG_V1"
+
+# ---- STAGE 1S: stream auth (bad key answers 401, fast close) -----------
+echo "--- STAGE 1S: stream bad key 401 ---"
+CODE=$(curl -s -o /tmp/cw-t17-stream401.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/stream" -H "X-ConfigWire-Key: bad-key" \
+  -H "Accept: text/event-stream" 2>/dev/null || echo "000")
+[ "$CODE" = "401" ] && pass "stream bad key 401" || fail "stream bad key (code $CODE)"
 
 # ---- STAGE 2: fetch typed values + variant ----------------------------------
 echo "--- STAGE 2: fetch platform=ios appVersion=2.1.0 ---"
@@ -314,8 +320,12 @@ ok = (d.get('fetches') == exp['fetches']
 sys.exit(0 if ok else 1)
 EOF
 
-# ---- STAGE 4: publish v2 breaking change ------------------------------------
+# ---- STAGE 4: flip home_config default -> publish v2 --------------------
 echo "--- STAGE 4: flip home_config default -> publish v2 ---"
+# Background SSE reader (bounded by --max-time 8): the v2 publish below
+# must push a config_update frame into it while it is open.
+(curl -s -N --max-time 8 "$BASE_URL/api/v1/env/e2e/stream" -H "X-ConfigWire-Key: $SDK_KEY" -H "Accept: text/event-stream" > /tmp/cw-t17-stream.txt 2>/dev/null &)
+sleep 1
 CODE="$(su_patch "$C/flags/records/$F4" '{"defaultValue":{"a":2}}' /tmp/cw-t17-patch.json)"
 [ "$CODE" = "200" ] && pass "flag PATCH default" || { fail "flag PATCH (code $CODE)"; exit 1; }
 CODE="$(su_post "$BASE_URL/api/v1/admin/env/e2e/publish" '{"note":"t17 v2 breaking","baseVersion":1}' /tmp/cw-t17-pub2.json)"
@@ -335,6 +345,13 @@ ok = (d.get('version') == exp['version']
       and v.get('max_items') == exp['max_items'])
 sys.exit(0 if ok else 1)
 EOF
+sleep 2  # let the background stream reader collect the v2 frame
+if grep -q "event: config_update" /tmp/cw-t17-stream.txt 2>/dev/null \
+  && grep -q '"version":2' /tmp/cw-t17-stream.txt 2>/dev/null; then
+  pass "stream push config_update version 2"
+else
+  fail "stream push config_update version 2 ($(head -c 200 /tmp/cw-t17-stream.txt 2>/dev/null))"
+fi
 
 # ---- STAGE 5: rollback v1 ----------------------------------------------------
 echo "--- STAGE 5: rollback v1 -> version 3, fresh etag, values restored ---"
@@ -378,6 +395,6 @@ fi
 
 # ---- summary -----------------------------------------------------------------
 echo "=== T17 e2e summary: PASS=$PASS FAIL=$FAIL ==="
-rm -f /tmp/cw-t17-*.json /tmp/cw-t17-*.log
+rm -f /tmp/cw-t17-*.json /tmp/cw-t17-*.log /tmp/cw-t17-stream.txt
 if [ "$FAIL" -gt 0 ]; then echo "E2E RESULT: FAIL"; exit 1; fi
 echo "E2E RESULT: PASS"
