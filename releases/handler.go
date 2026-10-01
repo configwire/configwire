@@ -6,6 +6,7 @@ package releases
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -29,44 +30,36 @@ import (
 // scope: ConfigWire runs as one binary.
 var writeMu sync.Mutex
 
-// internalMu guards internalDepth: the count of in-flight publish/rollback
-// saves that the main.go releases hooks must allow through. Direct data-API
-// creates/deletes have depth 0 and are rejected as publish-only; handler
-// saves wrap app.Save via internalSave (depth 1) and pass.
-var (
-	internalMu    sync.Mutex
-	internalDepth int
-)
+// internalSaveKey is the context key marking a save as handler-internal.
+// The marker travels with the save's own context.Context (placed into the
+// RecordEvent by app.SaveWithContext), so the main.go releases hooks can
+// tell publish/rollback writes apart from direct data-API writes
+// per-operation. A package-global counter cannot do this: any save issued
+// while the counter is nonzero (e.g. a concurrent direct data-API write
+// racing a publish) would slip through the publish-only guard.
+type internalSaveKey struct{}
 
-// AllowInternalSave marks the enclosed save as handler-internal; the
-// returned func clears the mark. Callers must defer the result around
-// exactly one app.Save.
-func AllowInternalSave() func() {
-	internalMu.Lock()
-	internalDepth++
-	internalMu.Unlock()
-	return func() {
-		internalMu.Lock()
-		internalDepth--
-		internalMu.Unlock()
-	}
+// markInternal returns ctx carrying the handler-internal save marker.
+func markInternal(ctx context.Context) context.Context {
+	return context.WithValue(ctx, internalSaveKey{}, true)
 }
 
-// IsInternalSave reports whether the current goroutine's save was marked
-// handler-internal. The main.go releases hooks consult it to tell
-// publish/rollback writes apart from direct data-API writes.
-func IsInternalSave() bool {
-	internalMu.Lock()
-	defer internalMu.Unlock()
-	return internalDepth > 0
+// IsInternalSaveCtx reports whether ctx carries the handler-internal save
+// marker. The main.go releases hooks consult it to tell publish/rollback
+// writes apart from direct data-API writes. The data-API path goes through
+// forms.RecordUpsert with context.Background() and nothing in apis/ sets
+// a context, so an HTTP caller cannot forge the marker.
+func IsInternalSaveCtx(ctx context.Context) bool {
+	v, ok := ctx.Value(internalSaveKey{}).(bool)
+	return ok && v
 }
 
 // internalSave persists one releases row bypassing the publish-only hook
-// deny (which rejects depth-0 direct writes).
+// deny (which rejects unmarked direct writes). Background+marker preserves
+// the existing no-cancellation save semantics (same as app.Save, which
+// uses context.Background() internally).
 func internalSave(app core.App, rec *core.Record) error {
-	done := AllowInternalSave()
-	defer done()
-	return app.Save(rec)
+	return app.SaveWithContext(markInternal(context.Background()), rec)
 }
 
 // Register mounts the admin releases routes. All routes bind
