@@ -59,7 +59,7 @@
     var flagId = CW.state.activeFlagExperimentsId || "";
     if (!flagId) { list.innerHTML = "<li>Pick a flag first.</li>"; return; }
     var items = flagExperimentsForActive();
-    if (!items.length) { list.innerHTML = "<li>No experiments for this flag.</li>"; return; }
+    if (!items.length) { list.innerHTML = "<li>No experiments.</li>"; return; }
     list.innerHTML = items.map(function (x) {
       var variants = Array.isArray(x.variants) ? x.variants : [];
       var summary = variants.map(function (v) {
@@ -200,7 +200,7 @@
     if (!applyVariantsBuilderToVariants()) {
       var hintEl = CW.$("exp-variants-hint");
       var resEl = CW.$("experiment-result");
-      if (resEl) resEl.textContent = (hintEl && hintEl.textContent) || "invalid variants";
+      if (resEl) resEl.textContent = (hintEl && hintEl.textContent) || "Invalid variants.";
       return Promise.resolve();
     }
     var transport = CW.$("exp-variants");
@@ -219,7 +219,7 @@
     var flagId = flagSel ? String(flagSel.value || "").trim() : "";
     if (!flagId) {
       var flagRes = CW.$("experiment-result");
-      if (flagRes) flagRes.textContent = "Target flag is required";
+      if (flagRes) flagRes.textContent = "Target flag required.";
       return Promise.resolve();
     }
     body.flag = flagId;
@@ -230,7 +230,7 @@
     } else {
       stagedExp = CW.drafts.draftStage("experiment", { op: "create", body: body, label: body.name });
     }
-    CW.toast(stagedExp == null ? "no changes to stage: " + body.name : "draft staged: " + body.name, true);
+    CW.toast(stagedExp == null ? "No changes." : "Draft saved: " + body.name, true);
     var resEl = CW.$("experiment-result");
     if (resEl) resEl.textContent = "";
     if (CW.markFormClean) CW.markFormClean("experiment-form");
@@ -246,7 +246,7 @@
   function deleteExperiment(id) {
     var delName = expNameById(id);
     CW.drafts.draftStage("experiment", { op: "delete", body: {}, baseId: id, label: delName });
-    CW.toast("draft staged: " + delName + " deleted", true);
+    CW.toast("Draft saved: " + delName + " deleted", true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
@@ -258,7 +258,7 @@
       baseId: id,
       label: expNameById(id),
     });
-    CW.toast(stagedStatus == null ? "no changes to stage" : "draft staged: experiment status: " + status, true);
+    CW.toast(stagedStatus == null ? "No changes." : "Draft saved: experiment status: " + status, true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
@@ -323,34 +323,34 @@
   // Mirrors eval/experiment.go ValidateExperiment (non-empty, weightBps
   // >= 0, sum == 10000) plus duplicate-name and empty-name checks.
   function validateVariants(v) {
-    if (!Array.isArray(v)) return { ok: false, sum: 0, error: "variants must be an array" };
-    if (!v.length) return { ok: false, sum: 0, error: "experiment has no variants" };
+    if (!Array.isArray(v)) return { ok: false, sum: 0, error: "Variants must be an array." };
+    if (!v.length) return { ok: false, sum: 0, error: "Experiment has no variants." };
     var seen = {};
     var sum = 0;
     var i, item, name, key, w;
     for (i = 0; i < v.length; i++) {
       item = v[i];
       if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return { ok: false, sum: sum, error: "variant " + (i + 1) + " must be an object" };
+        return { ok: false, sum: sum, error: "Variant " + (i + 1) + " must be an object." };
       }
       name = item.name;
       if (typeof name !== "string" || !name.trim()) {
-        return { ok: false, sum: sum, error: "variant " + (i + 1) + " has an empty name" };
+        return { ok: false, sum: sum, error: "Variant " + (i + 1) + " has an empty name." };
       }
       key = name.trim();
-      if (seen[key]) return { ok: false, sum: sum, error: "duplicate variant name: " + key };
+      if (seen[key]) return { ok: false, sum: sum, error: "Duplicate variant name: " + key };
       seen[key] = true;
       w = item.weightBps;
       if (typeof w !== "number" || !isFinite(w) || Math.floor(w) !== w) {
-        return { ok: false, sum: sum, error: 'variant "' + key + '" weightBps must be an integer' };
+        return { ok: false, sum: sum, error: 'Variant "' + key + '" weightBps must be an integer.' };
       }
       if (w < 0) {
-        return { ok: false, sum: sum, error: 'variant "' + key + '" has negative weightBps' };
+        return { ok: false, sum: sum, error: 'Variant "' + key + '" has negative weightBps.' };
       }
       sum += w;
     }
     if (sum !== VARIANTS_TOTAL) {
-      return { ok: false, sum: sum, error: "weights sum " + sum + "/10000 — must total 10000" };
+      return { ok: false, sum: sum, error: "Weights sum " + sum + "/10000 — must total 10000." };
     }
     return { ok: true, sum: sum, error: "" };
   }
@@ -474,7 +474,7 @@
       if (mark !== false) markVariantInvalid(el);
       return { ok: false, error: msg };
     }
-    if (!rows.length) return { ok: false, error: "add at least one variant" };
+    if (!rows.length) return { ok: false, error: "Add at least one variant." };
     var seen = {};
     var names = [];
     var pcts = [];
@@ -485,8 +485,8 @@
       weightEl = rowField(rows[i], "exp-variant-weight");
       valuesEl = rowField(rows[i], "exp-variant-values");
       name = nameEl && nameEl.value ? nameEl.value.trim() : "";
-      if (!name) return fail(nameEl, "Variant " + (i + 1) + ": name is required");
-      if (seen[name]) return fail(nameEl, "Variant " + (i + 1) + ": duplicate variant name: " + name);
+      if (!name) return fail(nameEl, "Variant " + (i + 1) + ": Name required.");
+      if (seen[name]) return fail(nameEl, "Variant " + (i + 1) + ": Duplicate variant name: " + name);
       seen[name] = true;
       p = weightEl ? parseFloat(String(weightEl.value)) : NaN;
       if (!isFinite(p) || p < 0 || p > 100) {
@@ -514,7 +514,7 @@
     var j;
     for (j = 0; j < pcts.length - 1; j++) sumOthers = round2(sumOthers + pcts[j]);
     if (sumOthers > 100) {
-      return { ok: false, error: "weights exceed 100% — lower the other rows so the last row stays >= 0" };
+      return { ok: false, error: "Weights exceed 100% — lower the other rows so the last row stays >= 0." };
     }
     return { ok: true, error: "", names: names, pcts: pcts, valuesList: valuesList };
   }
@@ -642,7 +642,7 @@
     var hint = CW.$("exp-variants-hint");
     if (!hint) return false;
     if (!variantRows().length) {
-      CW.setJsonHint(hint, null, false, "add at least one variant");
+      CW.setJsonHint(hint, null, false, "Add at least one variant.");
       return false;
     }
     clearVariantFieldMarks();
@@ -689,7 +689,7 @@
     if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
     if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
     var res = CW.$("experiment-result");
-    if (res) res.textContent = "editing " + (found.name || found.id || "");
+    if (res) res.textContent = "Editing " + (found.name || found.id || "");
     return true;
   }
 

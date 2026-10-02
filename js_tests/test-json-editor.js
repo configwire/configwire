@@ -47,9 +47,9 @@ test("parseJSONInput: valid JSON parses", function () {
 test("parseJSONInput: invalid JSON reports label error", function () {
   var ctx = fresh();
   assert.deepEqual(dj(ctx.CW.parseJSONInput("{bad", "defaultValue")),
-    { ok: false, error: "defaultValue is not valid JSON" });
+    { ok: false, error: "Invalid JSON: defaultValue" });
   assert.deepEqual(dj(ctx.CW.parseJSONInput("[1,", "condition")),
-    { ok: false, error: "condition is not valid JSON" });
+    { ok: false, error: "Invalid JSON: condition" });
 });
 
 test("parseJSONInput: whitespace-only is NOT null (only raw==='' short-circuits, json-editor.js:9)", function () {
@@ -57,7 +57,7 @@ test("parseJSONInput: whitespace-only is NOT null (only raw==='' short-circuits,
   // JSON.parse('  ') throws, so this takes the error branch per source.
   var out = ctx.CW.parseJSONInput("  ", "defaultValue");
   assert.equal(out.ok, false);
-  assert.equal(out.error, "defaultValue is not valid JSON");
+  assert.equal(out.error, "Invalid JSON: defaultValue");
 });
 
 test("jsonDetail: blank/whitespace trims to null (json-editor.js:16)", function () {
@@ -143,9 +143,9 @@ test("updateJsonHint: valid value shows Valid JSON and returns true", function (
   var calls = trackClassList(input);
   input.value = '{"a":1}';
   assert.equal(ctx.CW.updateJsonHint("flag-default"), true);
-  assert.equal(hint.textContent, "Valid JSON");
-  assert.equal(hint.className, "json-hint ok");
-  assert.deepEqual(calls, [["remove", "valid", "invalid"], ["add", "valid"]]);
+  assert.equal(hint.textContent, "");
+  assert.equal(hint.className, "json-hint");
+  assert.deepEqual(calls, [["remove", "valid", "invalid"]]);
 });
 
 test("updateJsonHint: invalid value shows Invalid JSON + message and returns false", function () {
@@ -175,7 +175,7 @@ test("updateAllJsonHints: wires the three known inputs (json-editor.js:47-51)", 
   ctx.CW.$("flag-rules-condition").value = "{bad";
   ctx.CW.$("flag-rules-value").value = "";
   assert.equal(ctx.CW.updateAllJsonHints(), undefined);
-  assert.equal(ctx.CW.$("flag-default-hint").textContent, "Valid JSON");
+  assert.equal(ctx.CW.$("flag-default-hint").textContent, "");
   assert.ok(ctx.CW.$("flag-rules-condition-hint").textContent.indexOf("Invalid JSON: ") === 0);
   assert.equal(ctx.CW.$("flag-rules-value-hint").textContent, "");
 });
@@ -187,7 +187,7 @@ test("openJsonEditorFor: pretty-prints valid JSON + sets title (json-editor.js:7
   assert.equal(ctx.CW.getJsonEditorTarget(), "flag-default");
   assert.equal(ctx.CW.$("json-editor-title").textContent, "Edit defaultValue (JSON)");
   assert.equal(ctx.CW.$("json-editor-text").value, '{\n  "a": 1\n}');
-  assert.equal(ctx.CW.$("json-editor-status").textContent, "Valid JSON");
+  assert.equal(ctx.CW.$("json-editor-status").textContent, "");
 });
 
 test("openJsonEditorFor: invalid JSON passes through raw + unknown id uses raw label", function () {
@@ -242,7 +242,7 @@ test("closeJsonEditor save: valid JSON copies textarea into target + closes", fu
   var d = armDialog(ctx);
   ctx.CW.closeJsonEditor(true);
   assert.equal(ctx.CW.$("flag-default").value, '{"b":2}');
-  assert.equal(ctx.CW.$("flag-default-hint").textContent, "Valid JSON");
+  assert.equal(ctx.CW.$("flag-default-hint").textContent, "");
   assert.equal(d.closed.n, 1);
   assert.equal(d.dlg.open, false);
 });

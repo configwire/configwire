@@ -8,7 +8,7 @@
     try {
       return { ok: true, value: raw === "" ? null : JSON.parse(raw) };
     } catch (e) {
-      return { ok: false, error: label + " is not valid JSON" };
+      return { ok: false, error: "Invalid JSON: " + label };
     }
   }
 
@@ -17,7 +17,7 @@
     try {
       return { ok: true, value: JSON.parse(raw) };
     } catch (e) {
-      return { ok: false, error: (e && e.message) ? e.message : "invalid JSON" };
+      return { ok: false, error: (e && e.message) ? e.message : "Invalid JSON." };
     }
   }
 
@@ -39,7 +39,7 @@
       CW.$(inputId + "-hint"),
       input,
       parsed.ok,
-      parsed.ok ? (input.value.trim() === "" ? "" : "Valid JSON") : "Invalid JSON: " + parsed.error
+      parsed.ok ? "" : "Invalid JSON: " + parsed.error
     );
     return parsed.ok;
   }
@@ -67,7 +67,7 @@
       CW.$("json-editor-status"),
       ta,
       parsed.ok,
-      parsed.ok ? "Valid JSON" : "Invalid JSON: " + parsed.error
+      parsed.ok ? "" : "Invalid JSON: " + parsed.error
     );
     var save = CW.$("json-editor-save");
     if (save) save.disabled = !parsed.ok;

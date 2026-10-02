@@ -124,43 +124,43 @@ test("validateVariants: full matrix incl. exact messages (experiments.js:324-355
     ],
     '{"ok":true,"sum":10000,"error":""}'
   );
-  check([], '{"ok":false,"sum":0,"error":"experiment has no variants"}');
-  check("x", '{"ok":false,"sum":0,"error":"variants must be an array"}');
+  check([], '{"ok":false,"sum":0,"error":"Experiment has no variants."}');
+  check("x", '{"ok":false,"sum":0,"error":"Variants must be an array."}');
   check(
     [{ name: "  ", weightBps: 10000 }],
-    '{"ok":false,"sum":0,"error":"variant 1 has an empty name"}'
+    '{"ok":false,"sum":0,"error":"Variant 1 has an empty name."}'
   );
   check(
     [
       { name: "a", weightBps: 5000 },
       { name: "a", weightBps: 5000 },
     ],
-    '{"ok":false,"sum":5000,"error":"duplicate variant name: a"}'
+    '{"ok":false,"sum":5000,"error":"Duplicate variant name: a"}'
   );
   check(
     [
       { name: "a", weightBps: -1 },
       { name: "b", weightBps: 10001 },
     ],
-    '{"ok":false,"sum":0,"error":"variant \\"a\\" has negative weightBps"}'
+    '{"ok":false,"sum":0,"error":"Variant \\"a\\" has negative weightBps."}'
   );
   check(
     [
       { name: "a", weightBps: 1.5 },
       { name: "b", weightBps: 9998 },
     ],
-    '{"ok":false,"sum":0,"error":"variant \\"a\\" weightBps must be an integer"}'
+    '{"ok":false,"sum":0,"error":"Variant \\"a\\" weightBps must be an integer."}'
   );
   check(
     [
       { name: "a", weightBps: 6000 },
       { name: "b", weightBps: 3999 },
     ],
-    '{"ok":false,"sum":9999,"error":"weights sum 9999/10000 — must total 10000"}'
+    '{"ok":false,"sum":9999,"error":"Weights sum 9999/10000 — must total 10000."}'
   );
   check(
     [{ name: "a" }],
-    '{"ok":false,"sum":0,"error":"variant \\"a\\" weightBps must be an integer"}'
+    '{"ok":false,"sum":0,"error":"Variant \\"a\\" weightBps must be an integer."}'
   );
 });
 
