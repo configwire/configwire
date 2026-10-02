@@ -54,7 +54,7 @@
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
-    var mods = ["flags", "releases", "publish", "keys", "stats"];
+    var mods = ["flags", "releases", "publish", "keys", "stats", "project-settings"];
     var settingsLink = CW.$("settings-nav-link");
     if (settingsLink) {
       var active = CW.state.view === "settings" || CW.state.view === "account";
