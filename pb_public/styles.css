@@ -300,6 +300,50 @@ code {
 .sidebar-foot {
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sidebar-foot a.sidebar-settings {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13.5px;
+  padding: 9px var(--space-3);
+  border-radius: var(--radius-sm);
+  transition: background 160ms ease, color 160ms ease;
+  position: relative;
+}
+
+.sidebar-foot a.sidebar-settings:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.sidebar-foot a.sidebar-settings:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.sidebar-foot a.sidebar-settings[aria-current="page"] {
+  background: var(--gradient-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sidebar-foot a.sidebar-settings[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--gradient);
 }
 
 .shell {
@@ -542,8 +586,109 @@ main {
 
 #view-home[hidden],
 #view-detail[hidden],
-#view-account[hidden] {
+#view-account[hidden],
+#view-settings[hidden] {
   display: none;
+}
+
+/* ---- Global settings + rate limits redesign (reuses :root tokens only) ---- */
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  max-width: 720px;
+}
+
+.settings-grid .card {
+  margin-bottom: 0;
+}
+
+.limit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.limit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+}
+
+.limit-field label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.limit-field input {
+  width: 100%;
+}
+
+.limit-field small {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-dim);
+}
+
+.limit-field-wide {
+  grid-column: 1 / -1;
+}
+
+.limits-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+  flex-wrap: wrap;
+}
+
+.limits-footer [role="status"] {
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 1em;
+}
+
+#settings-admin-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+#settings-admin-form .limits-footer {
+  border-top: none;
+  padding-top: 0;
+}
+
+@media (max-width: 900px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .limit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .limit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .limits-footer button[type="submit"] {
+    width: 100%;
+  }
 }
 
 /* ---- Cards ---- */

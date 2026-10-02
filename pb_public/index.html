@@ -50,6 +50,12 @@
           <path d="M12 8v2.5" />
           <path d="M14 8v1.8" />
         </svg><span>SDK keys</span></a>
+      <a href="#/p/limits"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
+          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2.5 13a6 6 0 1 1 11 0" />
+          <path d="M8 13l3-4.5" />
+          <path d="M2.5 13h11" />
+        </svg><span>Limits</span></a>
       <a href="#/p/stats"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
           stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M2.5 13.5h11" />
@@ -57,13 +63,13 @@
           <path d="M8 11V4.5" />
           <path d="M12 11V6.5" />
         </svg><span>Stats</span></a>
-      <a href="#/p/account"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="8" cy="5" r="2.5" />
-          <path d="M2.5 13.5c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5" />
-        </svg><span>Account</span></a>
     </nav>
     <div class="sidebar-foot">
+      <a id="settings-nav-link" href="#/p/settings" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
+          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="8" cy="8" r="2" />
+          <path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M12.4 3.6l-1.2 1.2M4.8 11.2l-1.2 1.2" />
+        </svg><span>Settings</span></a>
       <button id="logout-btn" type="button" class="btn ghost" hidden>Log out</button>
     </div>
   </aside>
@@ -222,18 +228,36 @@
                 <h2 id="limits">Rate limits (req/sec)</h2><button id="refresh-limits" type="button"
                   class="btn ghost">Refresh limits</button>
               </div>
-              <p class="muted">Per-IP global + per-key fetch/ingest + admin. 429 when exceeded. Changes apply
-                immediately.</p>
-              <form id="limits-form" class="inline-form" aria-label="Rate limits">
-                <label>Global <input id="limit-global" type="number" min="1" max="10000"></label>
-                <label>Burst <input id="limit-burst" type="number" min="1" max="10000"></label>
-                <label>Fetch <input id="limit-fetch" type="number" min="1" max="10000"></label>
-                <label>Ingest <input id="limit-ingest" type="number" min="1" max="10000"></label>
-                <label>Admin <input id="limit-admin" type="number" min="1" max="10000"></label>
-                <label style="flex:1">IP headers (order matters) <input id="limit-ip-headers" type="text" style="min-width:320px" placeholder="CF-Connecting-IP, Fly-Client-IP, X-Forwarded-For, X-Real-IP" title="Comma-separated trusted proxy headers, first match wins. Empty resets to defaults."></label>
-                <button type="submit" class="btn primary">Save limits</button>
+              <p class="muted">Per-IP global and per-key fetch/ingest budgets over a 1s window. Requests over budget
+                answer 429 with Retry-After: 1. Changes apply immediately. Admin limit and IP headers live in Settings.</p>
+              <form id="limits-form" aria-label="Rate limits">
+                <div class="limit-grid">
+                  <div class="limit-field">
+                    <label for="limit-global">Global</label>
+                    <input id="limit-global" type="number" min="1" max="10000">
+                    <small>Total req/s per IP across all endpoints.</small>
+                  </div>
+                  <div class="limit-field">
+                    <label for="limit-burst">Ceiling</label>
+                    <input id="limit-burst" type="number" min="1" max="10000">
+                    <small>Hard cap per IP; effective budget is min(Global, Ceiling).</small>
+                  </div>
+                  <div class="limit-field">
+                    <label for="limit-fetch">Fetch</label>
+                    <input id="limit-fetch" type="number" min="1" max="10000">
+                    <small>Config reads per SDK key.</small>
+                  </div>
+                  <div class="limit-field">
+                    <label for="limit-ingest">Ingest</label>
+                    <input id="limit-ingest" type="number" min="1" max="10000">
+                    <small>Event writes per SDK key.</small>
+                  </div>
+                </div>
+                <div class="limits-footer">
+                  <button type="submit" class="btn primary">Save limits</button>
+                  <span id="limits-result" role="status"></span>
+                </div>
               </form>
-              <p id="limits-result" role="status"></p>
             </section>
 
             <section class="card" aria-labelledby="stats">
@@ -252,25 +276,55 @@
             </section>
           </div>
         </section>
-        <section id="view-account" aria-label="Account management" hidden>
-          <div class="card" aria-labelledby="account">
-            <div class="card-head">
-              <h2 id="account">Account</h2>
-              <div class="card-actions"><button id="refresh-accounts" type="button" class="btn ghost">Refresh
-                  admins</button></div>
+        <section id="view-settings" aria-label="Settings" hidden>
+          <div class="settings-grid">
+            <div class="card" aria-labelledby="account">
+              <div class="card-head">
+                <h2 id="account">Account management</h2>
+                <div class="card-actions"><button id="refresh-accounts" type="button" class="btn ghost">Refresh
+                    admins</button></div>
+              </div>
+              <ul id="account-list" aria-label="Admin accounts">
+                <li>Not loaded.</li>
+              </ul>
+              <h3>New admin</h3>
+              <form id="account-create-form" aria-label="Admin create">
+                <label>Email <input id="account-email" type="email" autocomplete="off" required></label>
+                <label>Password <input id="account-password" type="password" autocomplete="new-password" required
+                    minlength="8"></label>
+                <button type="submit" class="btn primary">Create admin</button>
+              </form>
+              <p id="account-result" role="status"></p>
             </div>
-            <ul id="account-list" aria-label="Admin accounts">
-              <li>Not loaded.</li>
-            </ul>
-            <h3>New admin</h3>
-            <form id="account-create-form" aria-label="Admin create">
-              <label>Email <input id="account-email" type="email" autocomplete="off" required></label>
-              <label>Password <input id="account-password" type="password" autocomplete="new-password" required
-                  minlength="8"></label>
-              <button type="submit" class="btn primary">Create admin</button>
-            </form>
-            <p id="account-result" role="status"></p>
+            <div class="card" aria-labelledby="settings-global">
+              <div class="card-head">
+                <h2 id="settings-global">Settings</h2>
+                <div class="card-actions"><button id="refresh-settings-limits" type="button" class="btn ghost">Refresh
+                    limits</button></div>
+              </div>
+              <h3>Admin protection</h3>
+              <p class="muted">Dedicated per-IP budget for admin endpoints over a 1s window. Requests over budget
+                answer 429 with Retry-After: 1.</p>
+              <form id="settings-admin-form" aria-label="Admin rate limit">
+                <div class="limit-field">
+                  <label for="limit-admin">Admin limit (req/s)</label>
+                  <input id="limit-admin" type="number" min="1" max="10000">
+                  <small>Per-IP admin budget.</small>
+                </div>
+                <div class="limit-field">
+                  <label for="limit-ip-headers">IP headers</label>
+                  <input id="limit-ip-headers" type="text" placeholder="CF-Connecting-IP, Fly-Client-IP, X-Forwarded-For, X-Real-IP" title="Comma-separated trusted proxy headers, first match wins. Empty resets to defaults.">
+                  <small>Order matters: first match wins. Empty resets to defaults.</small>
+                </div>
+                <div class="limits-footer">
+                  <button type="submit" class="btn primary">Save settings</button>
+                  <span id="settings-limits-result" role="status"></span>
+                </div>
+              </form>
+            </div>
           </div>
+        </section>
+        <section id="view-account" aria-label="Account management (legacy alias)" hidden>
         </section>
         <dialog id="cw-dialog" role="alertdialog" aria-labelledby="cw-dialog-title"
           aria-describedby="cw-dialog-message">
