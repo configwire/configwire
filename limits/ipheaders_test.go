@@ -45,7 +45,7 @@ func TestValidateIPHeaders(t *testing.T) {
 		if err := ValidateIPHeaders(tc.in); err != nil {
 			t.Errorf("%s: ValidateIPHeaders(%q) = %v, want nil", tc.name, tc.in, err)
 		}
-		if err := ValidateConfig(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminRps: 20, IPHeaders: tc.in}); err != nil {
+		if err := ValidateConfig(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: nil, IPHeaders: tc.in}); err != nil {
 			t.Errorf("%s: ValidateConfig = %v, want nil", tc.name, err)
 		}
 	}
@@ -67,7 +67,7 @@ func TestValidateIPHeaders(t *testing.T) {
 		if err := ValidateIPHeaders(tc.in); err == nil {
 			t.Errorf("%s: ValidateIPHeaders(%q) = nil, want error", tc.name, tc.in)
 		}
-		bad := Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminRps: 20, IPHeaders: tc.in}
+		bad := Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: nil, IPHeaders: tc.in}
 		if err := ValidateConfig(bad); err == nil {
 			t.Errorf("%s: ValidateConfig = nil, want error", tc.name)
 		}

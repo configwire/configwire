@@ -14,11 +14,14 @@ import (
 // Register loads persisted tunables (seeding the singleton row when
 // absent) and mounts the superuser-only admin endpoints:
 //
-//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminRps,ipHeaders,windowSec:1}
-//	PUT /api/v1/admin/limits -> validates 1..10000 + header order, updates
-//	    memory + upserts the rate_settings row, returns the same shape.
+//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminAllowedIPs,ipHeaders,clientIp,remoteAddr,windowSec:1}
+//	PUT /api/v1/admin/limits -> validates numerics 1..10000 + allowlist +
+//	    header order, updates memory + upserts the rate_settings row,
+//	    returns the same shape.
 //	    ipHeaders is optional: absent (or null) keeps the stored order for
 //	    back-compat; an explicit empty list resets to the code defaults.
+//	    adminAllowedIPs is optional: absent (or null) keeps stored;
+//	    explicit empty stays empty (allow all).
 func Register(se *core.ServeEvent) {
 	ensureLoaded(se.App)
 	se.Router.GET("/api/v1/admin/limits", getLimits).Bind(apis.RequireSuperuserAuth())
@@ -28,13 +31,15 @@ func Register(se *core.ServeEvent) {
 // limitsBody is the wire shape for GET responses and PUT requests.
 // IPHeaders is a pointer so absent/null (keep stored order) stays
 // distinct from an explicit empty list (reset to the code defaults).
+// AdminAllowedIPs is a pointer so absent/null (keep stored) stays
+// distinct from an explicit empty list (allow all).
 type limitsBody struct {
-	GlobalRps int       `json:"globalRps"`
-	Burst     int       `json:"burst"`
-	FetchRps  int       `json:"fetchRps"`
-	IngestRps int       `json:"ingestRps"`
-	AdminRps  int       `json:"adminRps"`
-	IPHeaders *[]string `json:"ipHeaders"`
+	GlobalRps       int       `json:"globalRps"`
+	Burst           int       `json:"burst"`
+	FetchRps        int       `json:"fetchRps"`
+	IngestRps       int       `json:"ingestRps"`
+	AdminAllowedIPs *[]string `json:"adminAllowedIPs"`
+	IPHeaders       *[]string `json:"ipHeaders"`
 }
 
 func toBody(c Config) map[string]any {
@@ -42,15 +47,29 @@ func toBody(c Config) map[string]any {
 	if len(headers) == 0 {
 		headers = DefaultIPHeaders()
 	}
-	return map[string]any{
-		"globalRps": c.GlobalRps,
-		"burst":     c.Burst,
-		"fetchRps":  c.FetchRps,
-		"ingestRps": c.IngestRps,
-		"adminRps":  c.AdminRps,
-		"ipHeaders": headers,
-		"windowSec": WindowSec,
+	allowed := append([]string(nil), c.AdminAllowedIPs...)
+	if allowed == nil {
+		allowed = []string{}
 	}
+	return map[string]any{
+		"globalRps":       c.GlobalRps,
+		"burst":           c.Burst,
+		"fetchRps":        c.FetchRps,
+		"ingestRps":       c.IngestRps,
+		"adminAllowedIPs": allowed,
+		"ipHeaders":       headers,
+		"windowSec":       WindowSec,
+	}
+}
+
+// toBodyForRequest is toBody plus the resolved client IP for the current
+// request (so the UI can display which IP the allowlist sees) and the
+// raw remote address host.
+func toBodyForRequest(re *core.RequestEvent, c Config) map[string]any {
+	body := toBody(c)
+	body["clientIp"] = ClientIP(re)
+	body["remoteAddr"] = remoteHostFromAddr(re.Request.RemoteAddr)
+	return body
 }
 
 // decodeBody mirrors account.decodeBody: empty bodies -> 400 (BindBody
@@ -80,26 +99,28 @@ func decodeBody(re *core.RequestEvent, dst any) error {
 // getLimits handles GET /api/v1/admin/limits (superuser-only).
 func getLimits(re *core.RequestEvent) error {
 	security.SetHeaders(re)
-	return re.JSON(http.StatusOK, toBody(GetConfig()))
+	return re.JSON(http.StatusOK, toBodyForRequest(re, GetConfig()))
 }
 
 // putLimits handles PUT /api/v1/admin/limits (superuser-only). Order:
 // 400 (body/validation) -> 500 (persist failure) -> 200 (same shape).
 // ipHeaders absent/null keeps the stored order; explicit empty resets to
-// the code defaults.
+// the code defaults. adminAllowedIPs absent/null keeps stored; explicit
+// empty stays empty (allow all, never reset to defaults).
 func putLimits(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	var req limitsBody
 	if err := decodeBody(re, &req); err != nil {
 		return err
 	}
+	stored := GetConfig()
 	next := Config{
-		GlobalRps: req.GlobalRps,
-		Burst:     req.Burst,
-		FetchRps:  req.FetchRps,
-		IngestRps: req.IngestRps,
-		AdminRps:  req.AdminRps,
-		IPHeaders: resolvePUTHeaders(GetConfig().IPHeaders, req.IPHeaders),
+		GlobalRps:       req.GlobalRps,
+		Burst:           req.Burst,
+		FetchRps:        req.FetchRps,
+		IngestRps:       req.IngestRps,
+		AdminAllowedIPs: resolvePUTAdminIPs(stored.AdminAllowedIPs, req.AdminAllowedIPs),
+		IPHeaders:       resolvePUTHeaders(stored.IPHeaders, req.IPHeaders),
 	}
 	if err := ValidateConfig(next); err != nil {
 		return re.BadRequestError(err.Error(), nil)
@@ -116,7 +137,21 @@ func putLimits(re *core.RequestEvent) error {
 			"status":  http.StatusInternalServerError,
 		})
 	}
-	return re.JSON(http.StatusOK, toBody(next))
+	return re.JSON(http.StatusOK, toBodyForRequest(re, next))
+}
+
+// resolvePUTAdminIPs maps the PUT adminAllowedIPs field onto the stored
+// allowlist: nil (absent/null) keeps stored, otherwise the normalized
+// list is returned (explicit empty stays empty = allow all) for
+// ValidateConfig to accept or reject.
+func resolvePUTAdminIPs(stored []string, req *[]string) []string {
+	if req == nil {
+		return append([]string(nil), stored...)
+	}
+	if len(*req) == 0 {
+		return []string{}
+	}
+	return normalizeAdminAllowedIPs(*req)
 }
 
 // resolvePUTHeaders maps the PUT ipHeaders field onto the stored order:
@@ -152,7 +187,7 @@ func upsertGlobalRow(app core.App, c Config) error {
 	rec.Set("burst", c.Burst)
 	rec.Set("fetchRps", c.FetchRps)
 	rec.Set("ingestRps", c.IngestRps)
-	rec.Set("adminRps", c.AdminRps)
+	setAdminAllowedIPsField(collection, rec, c.AdminAllowedIPs)
 	setIPHeadersField(collection, rec, c.IPHeaders)
 	return app.Save(rec)
 }

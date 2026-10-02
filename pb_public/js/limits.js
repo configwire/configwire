@@ -20,14 +20,118 @@
     return out;
   }
 
+  function ipsToString(list) {
+    if (!Array.isArray(list)) return "";
+    return list.join(", ");
+  }
+
+  function stringToIPs(raw) {
+    var out = [];
+    String(raw == null ? "" : raw).split(",").forEach(function (part) {
+      var ip = String(part).replace(/^\s+|\s+$/g, "");
+      if (ip !== "") out.push(ip);
+    });
+    return out;
+  }
+
+  function isValidIP(s) {
+    var v = String(s == null ? "" : s).replace(/^\s+|\s+$/g, "");
+    if (v === "") return false;
+    var v4 = /^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])){3}$/;
+    if (v4.test(v)) return true;
+    if (v.indexOf(":") === -1) return false;
+    return /^[0-9A-Fa-f:.%]+$/.test(v);
+  }
+
+  function ipv4ToInt(v) {
+    var parts = String(v).split(".");
+    if (parts.length !== 4) return null;
+    var n = 0;
+    for (var i = 0; i < 4; i++) {
+      var b = parseInt(parts[i], 10);
+      if (!isFinite(b) || b < 0 || b > 255 || !/^\d+$/.test(parts[i])) return null;
+      n = n * 256 + b;
+    }
+    return n >>> 0;
+  }
+
+  function ipv4CidrContains(cidr, ip) {
+    var slash = cidr.indexOf("/");
+    var base = cidr.slice(0, slash);
+    var bits = parseInt(cidr.slice(slash + 1), 10);
+    if (!isFinite(bits) || bits < 0 || bits > 32) return false;
+    var net = ipv4ToInt(base);
+    var addr = ipv4ToInt(ip);
+    if (net === null || addr === null) return false;
+    if (bits === 0) return true;
+    var mask = bits === 32 ? 0xFFFFFFFF : (0xFFFFFFFF << (32 - bits)) >>> 0;
+    return (net & mask) === (addr & mask);
+  }
+
+  function isAllowedByList(ip, list) {
+    if (!Array.isArray(list) || list.length === 0) return true;
+    var v = String(ip == null ? "" : ip).replace(/^\s+|\s+$/g, "");
+    if (v === "") return false;
+    for (var i = 0; i < list.length; i++) {
+      var entry = String(list[i] == null ? "" : list[i]).replace(/^\s+|\s+$/g, "");
+      if (entry === "") continue;
+      if (entry.indexOf("/") !== -1) {
+        if (ipv4CidrContains(entry, v)) return true;
+        continue;
+      }
+      if (entry.toLowerCase() === v.toLowerCase()) return true;
+    }
+    return false;
+  }
+
+  function renderCurrentIP(el, clientIp, remoteAddr, allowlist) {
+    var textEl = CW.$("admin-current-ip-text") || el;
+    var ip = String(clientIp == null ? "" : clientIp).replace(/^\s+|\s+$/g, "");
+    var ok = isValidIP(ip) && isAllowedByList(ip, allowlist);
+    var msg;
+    if (ip === "") {
+      msg = "Your current IP (via IP headers): …";
+    } else {
+      msg = "Your current IP (via IP headers): " + ip +
+        (remoteAddr ? " (remote " + remoteAddr + ")" : "");
+      if (!ok) msg += " — blocked by allowlist";
+    }
+    // textContent only (IP is operator-influenced via headers).
+    textEl.textContent = msg;
+    if (el.classList) {
+      el.classList.remove("is-valid");
+      el.classList.remove("is-invalid");
+      if (ip !== "") el.classList.add(ok ? "is-valid" : "is-invalid");
+    }
+  }
+
+  function copyCurrentIP() {
+    var d = CW.state.limits || {};
+    var ip = String(d.clientIp == null ? "" : d.clientIp).replace(/^\s+|\s+$/g, "");
+    if (!ip) {
+      CW.toast("nothing to copy");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ip).then(function () { CW.toast("copied", true); }, function () { CW.toast("copy failed"); });
+    } else {
+      var tmp = document.createElement("textarea");
+      tmp.value = ip;
+      document.body.appendChild(tmp);
+      tmp.select();
+      try { document.execCommand("copy"); CW.toast("copied", true); }
+      catch (e) { CW.toast("copy failed"); }
+      document.body.removeChild(tmp);
+    }
+  }
+
   function setInputs(d) {
     if (!d) return;
     var map = {
       "limit-global": d.globalRps,
       "limit-burst": d.burst,
       "limit-fetch": d.fetchRps,
-      "limit-ingest": d.ingestRps,
-      "limit-admin": d.adminRps
+      "limit-ingest": d.ingestRps
     };
     Object.keys(map).forEach(function (id) {
       var el = CW.$(id);
@@ -35,6 +139,12 @@
     });
     var hips = CW.$("limit-ip-headers");
     if (hips && d.ipHeaders !== undefined) hips.value = headersToString(d.ipHeaders);
+    var allowEl = CW.$("admin-allowed-ips");
+    if (allowEl && d.adminAllowedIPs !== undefined) allowEl.value = ipsToString(d.adminAllowedIPs);
+    var curIp = CW.$("admin-current-ip");
+    if (curIp) {
+      renderCurrentIP(curIp, d.clientIp, d.remoteAddr, d.adminAllowedIPs);
+    }
   }
 
   function renderLimits(data) {
@@ -52,8 +162,10 @@
       if (el) {
         el.textContent = "current: global " + data.globalRps + "/s ceiling " +
           data.burst + " fetch " + data.fetchRps + "/s ingest " +
-          data.ingestRps + "/s admin " + data.adminRps + "/s headers " +
-          headersToString(data.ipHeaders);
+          data.ingestRps + "/s allowlist " +
+          ipsToString(data.adminAllowedIPs) + " headers " +
+          headersToString(data.ipHeaders) +
+          ((data.clientIp != null && data.clientIp !== "") ? " your IP " + data.clientIp : "");
       }
       return data;
     }, function (err) {
@@ -96,15 +208,18 @@
     var hipsEl = CW.$("limit-ip-headers");
     var hipsInForm = hipsEl && hipsEl.closest ? hipsEl.closest("#limits-form") : null;
     var stateHeaders = currentVal("ipHeaders", null);
+    var stateAllowed = currentVal("adminAllowedIPs", null);
+    var allowEl = CW.$("admin-allowed-ips");
+    var allowInForm = allowEl && allowEl.closest ? allowEl.closest("#limits-form") : null;
     var body = {
       globalRps: numOr("limit-global", currentVal("globalRps", NaN)),
       burst: numOr("limit-burst", currentVal("burst", NaN)),
       fetchRps: numOr("limit-fetch", currentVal("fetchRps", NaN)),
       ingestRps: numOr("limit-ingest", currentVal("ingestRps", NaN)),
-      adminRps: numOr("limit-admin", currentVal("adminRps", NaN)),
+      adminAllowedIPs: allowInForm ? stringToIPs(allowEl.value) : (Array.isArray(stateAllowed) ? stateAllowed : stringToIPs(allowEl && allowEl.value)),
       ipHeaders: hipsInForm ? stringToHeaders(hipsEl.value) : (Array.isArray(stateHeaders) ? stateHeaders : stringToHeaders(hipsEl && hipsEl.value))
     };
-    var fields = ["globalRps", "burst", "fetchRps", "ingestRps", "adminRps"];
+    var fields = ["globalRps", "burst", "fetchRps", "ingestRps"];
     for (var i = 0; i < fields.length; i++) {
       var v = body[fields[i]];
       if (!isFinite(v) || v < 1 || v > 10000) {
@@ -134,16 +249,21 @@
 
   function saveAdminLimit(ev) {
     if (ev) ev.preventDefault();
-    var adminEl = CW.$("limit-admin");
-    var adminV = adminEl ? parseInt(adminEl.value, 10) : NaN;
+    var allowEl = CW.$("admin-allowed-ips");
+    var allowed = stringToIPs(allowEl && allowEl.value);
     var resEl = CW.$("settings-limits-result");
     function fail(msg) {
       if (resEl) resEl.textContent = msg;
       CW.toast(msg);
       return Promise.resolve();
     }
-    if (!isFinite(adminV) || adminV < 1 || adminV > 10000) {
-      return fail("adminRps must be 1..10000");
+    if (allowed.length > 32) {
+      return fail("adminAllowedIPs must hold ≤32 entries");
+    }
+    for (var a = 0; a < allowed.length; a++) {
+      if (!/^[ -~]+$/.test(allowed[a])) {
+        return fail("adminAllowedIPs entry must be non-empty printable");
+      }
     }
     var headers = stringToHeaders(CW.$("limit-ip-headers") && CW.$("limit-ip-headers").value);
     if (headers.length > 10) {
@@ -161,7 +281,7 @@
         burst: cur.burst,
         fetchRps: cur.fetchRps,
         ingestRps: cur.ingestRps,
-        adminRps: adminV,
+        adminAllowedIPs: allowed,
         ipHeaders: headers
       };
       var fields = ["globalRps", "burst", "fetchRps", "ingestRps"];
@@ -174,7 +294,7 @@
               burst: fresh.burst,
               fetchRps: fresh.fetchRps,
               ingestRps: fresh.ingestRps,
-              adminRps: adminV,
+              adminAllowedIPs: allowed,
               ipHeaders: headers
             }, "settings-limits-result");
           });
@@ -192,4 +312,5 @@
   CW.loadLimits = loadLimits;
   CW.saveLimits = saveLimits;
   CW.saveAdminLimit = saveAdminLimit;
+  CW.copyCurrentIP = copyCurrentIP;
 })();

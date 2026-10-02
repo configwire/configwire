@@ -466,6 +466,17 @@
     CW.on("key-form", "submit", CW.createKey);
     CW.on("limits-form", "submit", CW.saveLimits);
     CW.on("settings-admin-form", "submit", CW.saveAdminLimit);
+    CW.on("admin-current-ip-copy", "click", function () {
+      try {
+        if (typeof CW.copyCurrentIP === "function") { CW.copyCurrentIP(); return; }
+        var d = (CW.state && CW.state.limits) || {};
+        var ip = d.clientIp != null ? String(d.clientIp) : "";
+        if (!ip) { CW.toast("nothing to copy"); return; }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(ip).then(function () { CW.toast("copied", true); }, function () { CW.toast("copy failed"); });
+        } else { CW.toast("copy failed"); }
+      } catch (e) { CW.toast((e && e.message) || "copy failed"); }
+    });
     CW.on("key-copy", "click", function () {
       var v = CW.$("key-once-value").textContent;
       if (navigator.clipboard && navigator.clipboard.writeText) {

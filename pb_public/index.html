@@ -303,18 +303,18 @@
                     limits</button></div>
               </div>
               <h3>Admin protection</h3>
-              <p class="muted">Dedicated per-IP budget for admin endpoints over a 1s window. Requests over budget
-                answer 429 with Retry-After: 1.</p>
-              <form id="settings-admin-form" aria-label="Admin rate limit">
+              <p class="muted">Only these IPs/CIDRs may call admin endpoints. Empty = allow all. Denied answers 403.</p>
+              <form id="settings-admin-form" aria-label="Admin allowlist">
                 <div class="limit-field">
-                  <label for="limit-admin">Admin limit (req/s)</label>
-                  <input id="limit-admin" type="number" min="1" max="10000">
-                  <small>Per-IP admin budget.</small>
+                  <label for="admin-allowed-ips">Allowed IPs</label>
+                  <input id="admin-allowed-ips" type="text" placeholder="e.g. 203.0.113.7, 198.51.100.0/24 (empty = allow all)">
+                  <small>Comma-separated IPs or CIDRs. Empty allows all.</small>
                 </div>
                 <div class="limit-field">
                   <label for="limit-ip-headers">IP headers</label>
                   <input id="limit-ip-headers" type="text" placeholder="CF-Connecting-IP, Fly-Client-IP, X-Forwarded-For, X-Real-IP" title="Comma-separated trusted proxy headers, first match wins. Empty resets to defaults.">
                   <small>Order matters: first match wins. Empty resets to defaults.</small>
+                  <p id="admin-current-ip" class="ip-status-pill" role="status"><span id="admin-current-ip-text">Your current IP (via IP headers): …</span><button id="admin-current-ip-copy" type="button" class="btn ghost ip-copy-btn" aria-label="Copy current IP">Copy</button></p>
                 </div>
                 <div class="limits-footer">
                   <button type="submit" class="btn primary">Save settings</button>

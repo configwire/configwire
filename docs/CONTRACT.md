@@ -222,9 +222,9 @@ Request:
     (`globalRps: 200`, `burst: 400`, min wins) checked before auth on
     `/api/*`, plus per-key per-second (`fetchRps: 100`,
     `ingestRps: 50`, overridable per key via
-    `sdk_keys.fetchRps`/`sdk_keys.ingestRps`) and admin
-    per-IP per-second (`adminRps: 20`, separate limiter, never eats the
-    global budget). Every authed hit consumes a token (even
+    `sdk_keys.fetchRps`/`sdk_keys.ingestRps`) and the admin IP
+    allowlist (`adminAllowedIPs`, empty = allow all, denied admin
+    then `403`). Every authed hit consumes a token (even
     later-400s); over-limit then `429` with `Retry-After: 1`.
     Ref: `configwire/limits/limits.go`, `configwire/limits/api.go`.
   - Full buffer then `503`.
@@ -380,20 +380,34 @@ Superuser-only; SDK-key-only or unauth then `401`.
 Success `200` (both verbs, same shape):
 
 ```json
-{"globalRps": 200, "burst": 400, "fetchRps": 100, "ingestRps": 50, "adminRps": 20, "windowSec": 1}
+{"globalRps": 200, "burst": 400, "fetchRps": 100, "ingestRps": 50, "adminAllowedIPs": [], "ipHeaders": ["CF-Connecting-IP", "Fly-Client-IP", "X-Forwarded-For", "X-Real-IP"], "clientIp": "1.2.3.4", "remoteAddr": "127.0.0.1:52314", "windowSec": 1}
 ```
 
 - Defaults: `globalRps 200`, `burst 400`, `fetchRps 100`,
-  `ingestRps 50`, `adminRps 20`, `windowSec 1` (fixed 1s window).
+  `ingestRps 50`, `adminAllowedIPs []` (empty = allow all),
+  `windowSec 1` (fixed 1s window).
+- `clientIp` is the caller's IP resolved via the `IPHeaders` order;
+  `remoteAddr` is the direct TCP peer. The Admin UI Settings card
+  shows them as "Your current IP (via IP headers)" so operators can
+  copy the right entry into the allowlist.
+- Admin IP allowlist: entries are exact IPs or CIDRs (IPv4+IPv6,
+  max 32). Empty allows all (safe upgrade). There is no admin
+  req/s rate limiting. A denied admin IP then `403`
+  `{"message": "...", "status": 403}` on every `/api/v1/admin/*`
+  path (checked before auth, alongside the global per-IP budget).
 - Env overrides at boot: `CONFIGWIRE_GLOBAL_RPS`,
   `CONFIGWIRE_BURST`, `CONFIGWIRE_FETCH_RPS`,
-  `CONFIGWIRE_INGEST_RPS`, `CONFIGWIRE_ADMIN_RPS`.
-- `PUT` validates every field `1..10000` (outside then `400`),
-  applies immediately in memory, and persists to the
-  `rate_settings` singleton row (`key=global`). Empty or malformed
-  JSON then `400`. Persist failure then `500`.
-- Admin UI Limits card calls this endpoint (5 inputs:
-  global/burst/fetch/ingest/admin).
+  `CONFIGWIRE_INGEST_RPS`, `CONFIGWIRE_ADMIN_ALLOWED_IPS`
+  (comma-separated IPs/CIDRs). Legacy `CONFIGWIRE_ADMIN_RPS` is
+  deprecated and ignored.
+- `PUT` validates numerics `1..10000` plus every allowlist entry
+  (IP-or-CIDR, max 32; outside then `400`), applies immediately in
+  memory, and persists to the `rate_settings` singleton row
+  (`key=global`). `adminAllowedIPs` absent/null keeps the stored
+  list. Empty or malformed JSON then `400`. Persist
+  failure then `500`.
+- Admin UI Limits card calls this endpoint (4 numeric inputs plus
+  the allowlist editor and the current-IP line).
 - Per-key overrides: `sdk_keys.fetchRps`/`sdk_keys.ingestRps`
   (optional, empty/0 means the global `fetchRps` 100/s /
    `ingestRps` 50/s defaults). Set via the Admin UI Keys card Edit

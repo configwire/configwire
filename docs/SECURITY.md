@@ -73,15 +73,21 @@ binary plus operator procedure.
   global per-IP (effective `min(globalRps 200, burst 400)` = 200 —
   `burst` is a hard ceiling, not a spike allowance above the sustained
   rate) plus per-key per-second (`fetchRps 100`, `ingestRps 50`,
-  fetch/ingest buckets independent) plus admin per-IP per-second
-  (`adminRps 20`, separate limiter so admin traffic never eats the
-  global budget).
-- `X-Forwarded-For`/`X-Real-IP` are trusted only when the direct TCP
-  peer is a local proxy (loopback/private); a public peer's headers
-  are ignored and the peer IP is gated. The Limits admin endpoints
-  are themselves IP-gated: an admin flood that exhausts `adminRps`
-  will `429` the request needed to raise the limit — wait out the 1s
-  window or raise `CONFIGWIRE_ADMIN_RPS` with a restart.
+  fetch/ingest buckets independent) plus the admin IP allowlist
+  (`adminAllowedIPs`, empty = allow all; denied admin IPs get
+  `403` on every `/api/v1/admin/*` path, with no admin req/s
+  rate limiting).
+- `X-Forwarded-For`/`X-Real-IP` (and the CDN headers
+  `CF-Connecting-IP`/`Fly-Client-IP`, in configured `IPHeaders`
+  order) are trusted only when the direct TCP peer is a local
+  proxy (loopback/private); a public peer's headers
+  are ignored and the peer IP is gated. The allowlist is checked
+  against this resolved client IP, so only trust proxies you
+  control — a spoofable header otherwise decides admin access.
+  Verify with the Settings current-IP line ("Your current IP (via
+  IP headers)", from `GET /api/v1/admin/limits` `clientIp`).
+  Deployments behind a remote proxy must ensure the proxy
+  overwrites `X-Forwarded-For`.
 - Every authenticated ingest hit consumes one token (even
   later-`400`s: no free probing). Over-limit then `429` with
   `Retry-After: 1` (never `500`).
@@ -97,9 +103,12 @@ binary plus operator procedure.
 - Tune via env or Admin UI Limits card:
   - Env at boot: `CONFIGWIRE_GLOBAL_RPS`, `CONFIGWIRE_BURST`,
     `CONFIGWIRE_FETCH_RPS`, `CONFIGWIRE_INGEST_RPS`,
-    `CONFIGWIRE_ADMIN_RPS`. Non-numeric falls back to the default;
-    out-of-range is clamped to `1..10000`.
-  - Admin UI Limits card (5 inputs: global/burst/fetch/ingest/admin)
+    `CONFIGWIRE_ADMIN_ALLOWED_IPS` (comma-separated IPs/CIDRs).
+    Non-numeric falls back to the default;
+    out-of-range is clamped to `1..10000`. Legacy
+    `CONFIGWIRE_ADMIN_RPS` is deprecated and ignored.
+  - Admin UI Limits card (4 numeric inputs plus the allowlist
+    editor and the current-IP line)
     calls superuser-only `GET/PUT /api/v1/admin/limits` (see
     `docs/CONTRACT.md` section 8). `PUT` validates `1..10000`, applies
     immediately, and persists to the `rate_settings` singleton row

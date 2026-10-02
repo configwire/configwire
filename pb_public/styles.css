@@ -671,6 +671,74 @@ main {
   padding-top: 0;
 }
 
+/* Current-IP pill inside the IP HEADERS field (mirrors .update-pill:
+ * pulsing status dot via cw-update-pulse, mint = valid/allowed,
+ * red = invalid/blocked). Text set via textContent only. */
+#admin-current-ip.ip-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  flex-wrap: wrap;
+}
+
+#admin-current-ip.ip-status-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-dim);
+  flex-shrink: 0;
+  animation: cw-update-pulse 2s infinite;
+}
+
+#admin-current-ip-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+#admin-current-ip .ip-copy-btn {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+#admin-current-ip.ip-status-pill.is-valid {
+  border-color: rgba(94, 234, 212, 0.35);
+  background: rgba(94, 234, 212, 0.08);
+  color: var(--mint);
+}
+
+#admin-current-ip.ip-status-pill.is-valid::before {
+  background: var(--mint);
+}
+
+#admin-current-ip.ip-status-pill.is-invalid {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.08);
+  color: var(--danger);
+}
+
+#admin-current-ip.ip-status-pill.is-invalid::before {
+  background: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #admin-current-ip.ip-status-pill::before {
+    animation: none;
+  }
+}
+
 @media (max-width: 900px) {
   .settings-grid {
     grid-template-columns: 1fr;

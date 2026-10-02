@@ -265,6 +265,9 @@ func main() {
 			security.SetHeaders(re)
 			setStaticCacheHeaders(re)
 			if !limits.CheckIP(re) {
+				if limits.IsAdminDenied(re) {
+					return limits.BlockAdmin(re)
+				}
 				return limits.BlockIP(re)
 			}
 			return re.Next()

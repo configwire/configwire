@@ -51,7 +51,10 @@ const (
 	DefaultBurst     = 400
 	DefaultFetchRps  = 100
 	DefaultIngestRps = 50
-	DefaultAdminRps  = 20
+	// DefaultAdminRps is deprecated: admin paths are now gated by the
+	// AdminAllowedIPs allowlist (empty = allow all), not a rate limiter.
+	// Kept so external references still compile.
+	DefaultAdminRps = 20
 
 	// Window is the fixed rate-limit window for every limiter here.
 	Window = time.Second
@@ -75,7 +78,9 @@ type Config struct {
 	Burst     int `json:"burst"`
 	FetchRps  int `json:"fetchRps"`
 	IngestRps int `json:"ingestRps"`
-	AdminRps  int `json:"adminRps"`
+	// AdminAllowedIPs is the admin-path IP allowlist (exact IPs + CIDR
+	// ranges). Empty/nil means allow all (safe upgrade default).
+	AdminAllowedIPs []string `json:"adminAllowedIPs"`
 	// IPHeaders is the ordered trusted-proxy header list (1..10 entries,
 	// each 1..64 chars matching ^[A-Za-z0-9-]+$, deduped
 	// case-insensitively). X-Forwarded-For entries parse the first
@@ -87,12 +92,12 @@ type Config struct {
 // Defaults returns the code defaults (before env/DB overrides).
 func Defaults() Config {
 	return Config{
-		GlobalRps:  DefaultGlobalRps,
-		Burst:      DefaultBurst,
-		FetchRps:   DefaultFetchRps,
-		IngestRps:  DefaultIngestRps,
-		AdminRps:   DefaultAdminRps,
-		IPHeaders:  DefaultIPHeaders(),
+		GlobalRps:       DefaultGlobalRps,
+		Burst:           DefaultBurst,
+		FetchRps:        DefaultFetchRps,
+		IngestRps:       DefaultIngestRps,
+		AdminAllowedIPs: DefaultAdminAllowedIPs(),
+		IPHeaders:       DefaultIPHeaders(),
 	}
 }
 
@@ -232,6 +237,161 @@ func loadIPHeadersFromEnv() []string {
 	return parseIPHeaders(os.Getenv(ipHeadersEnvName))
 }
 
+// adminAllowedIPsEnvName seeds the admin allowlist before the first DB
+// load (comma-separated exact IPs and/or CIDR ranges; empty = allow all).
+const adminAllowedIPsEnvName = "CONFIGWIRE_ADMIN_ALLOWED_IPS"
+
+// maxAdminAllowedIPs caps the allowlist size.
+const maxAdminAllowedIPs = 32
+
+// DefaultAdminAllowedIPs returns an empty slice meaning allow all.
+func DefaultAdminAllowedIPs() []string {
+	return []string{}
+}
+
+// parseAdminAllowedIPs splits a comma-separated allowlist, trimming and
+// dropping blanks. Entries are kept as-is; canonical validation happens
+// in ValidateAdminAllowedIPs / normalizeAdminAllowedIPs.
+func parseAdminAllowedIPs(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return []string{}
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		s := strings.TrimSpace(part)
+		if s == "" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// loadAdminAllowedIPsFromEnv reads CONFIGWIRE_ADMIN_ALLOWED_IPS.
+func loadAdminAllowedIPsFromEnv() []string {
+	return parseAdminAllowedIPs(os.Getenv(adminAllowedIPsEnvName))
+}
+
+// normalizeAdminAllowedIPs trims, drops blanks, lowercases (IPv6 is
+// case-insensitive), dedupes, and caps at maxAdminAllowedIPs. Empty
+// stays empty meaning allow-all.
+func normalizeAdminAllowedIPs(in []string) []string {
+	var out []string
+	seen := make(map[string]struct{}, len(in))
+	for _, raw := range in {
+		s := strings.ToLower(strings.TrimSpace(raw))
+		if s == "" {
+			continue
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	if len(out) > maxAdminAllowedIPs {
+		out = out[:maxAdminAllowedIPs]
+	}
+	return out
+}
+
+// ValidateAdminAllowedIPs enforces that each entry is a valid IP or CIDR.
+// Empty/nil is valid and means allow all.
+func ValidateAdminAllowedIPs(in []string) error {
+	if len(in) == 0 {
+		return nil
+	}
+	var deduped []string
+	seen := make(map[string]struct{}, len(in))
+	for _, raw := range in {
+		s := strings.ToLower(strings.TrimSpace(raw))
+		if s == "" {
+			return &configError{msg: "invalid adminAllowedIPs entry " + strconv.Quote(raw) + ": must be IP or CIDR."}
+		}
+		if _, dup := seen[s]; dup {
+			continue
+		}
+		seen[s] = struct{}{}
+		deduped = append(deduped, s)
+	}
+	if len(deduped) > maxAdminAllowedIPs {
+		return &configError{msg: "invalid adminAllowedIPs: must hold 0..32 entries."}
+	}
+	for _, entry := range deduped {
+		if net.ParseIP(entry) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(entry); err == nil {
+			continue
+		}
+		return &configError{msg: "invalid adminAllowedIPs entry " + strconv.Quote(entry) + ": must be IP or CIDR."}
+	}
+	return nil
+}
+
+// canonicalAdminAllowedIPs returns the storable form: normalized, empty
+// stays empty (allow-all). Invalid entries fall back to empty (allow all)
+// rather than trusting env/DB blindly.
+func canonicalAdminAllowedIPs(in []string) []string {
+	if len(in) == 0 {
+		return []string{}
+	}
+	norm := normalizeAdminAllowedIPs(in)
+	if err := ValidateAdminAllowedIPs(norm); err != nil {
+		return []string{}
+	}
+	if len(norm) == 0 {
+		return []string{}
+	}
+	return norm
+}
+
+// IsAdminIPAllowed reports whether ip may access admin paths. Empty
+// allowlist means allow all. Otherwise the IP must exactly match an
+// entry (case-insensitive normalized) or fall inside a CIDR entry.
+func IsAdminIPAllowed(ip string) bool {
+	allowed := GetConfig().AdminAllowedIPs
+	if len(allowed) == 0 {
+		return true
+	}
+	cand := net.ParseIP(strings.TrimSpace(ip))
+	if cand == nil {
+		return false
+	}
+	for _, entry := range allowed {
+		e := strings.TrimSpace(entry)
+		if e == "" {
+			continue
+		}
+		if pip := net.ParseIP(e); pip != nil {
+			if pip.Equal(cand) {
+				return true
+			}
+			continue
+		}
+		if _, cidr, err := net.ParseCIDR(e); err == nil {
+			if cidr.Contains(cand) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// IsAdminPath reports whether path is an admin API path.
+func IsAdminPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/admin/")
+}
+
+// IsAdminDenied reports whether re is an admin-path request whose client
+// IP is rejected by the allowlist (wiring helper to pick 403 vs 429).
+func IsAdminDenied(re *core.RequestEvent) bool {
+	if !IsAdminPath(re.Request.URL.Path) {
+		return false
+	}
+	return !IsAdminIPAllowed(ClientIP(re))
+}
+
 // loadDefaultsFromEnv applies the CONFIGWIRE_* overrides over Defaults.
 // Invalid (non-numeric) values fall back to the default; out-of-range env
 // values are clamped by clampConfig at package init and again in
@@ -242,14 +402,15 @@ func loadDefaultsFromEnv() Config {
 	c.Burst = parseEnvInt("CONFIGWIRE_BURST", c.Burst)
 	c.FetchRps = parseEnvInt("CONFIGWIRE_FETCH_RPS", c.FetchRps)
 	c.IngestRps = parseEnvInt("CONFIGWIRE_INGEST_RPS", c.IngestRps)
-	c.AdminRps = parseEnvInt("CONFIGWIRE_ADMIN_RPS", c.AdminRps)
+	c.AdminAllowedIPs = loadAdminAllowedIPsFromEnv()
 	c.IPHeaders = loadIPHeadersFromEnv()
 	return c
 }
 
-// ValidateConfig enforces 1..10000 on every tunable, checked in struct
-// order so multi-field failures always report the same field first, then
-// the header order (empty means code defaults and is valid).
+// ValidateConfig enforces 1..10000 on every numeric tunable, checked in
+// struct order so multi-field failures always report the same field first,
+// then the admin allowlist (empty means allow all) and the header order
+// (empty means code defaults and is valid).
 func ValidateConfig(c Config) error {
 	fields := []struct {
 		name string
@@ -259,12 +420,14 @@ func ValidateConfig(c Config) error {
 		{"burst", c.Burst},
 		{"fetchRps", c.FetchRps},
 		{"ingestRps", c.IngestRps},
-		{"adminRps", c.AdminRps},
 	}
 	for _, f := range fields {
 		if f.v < MinRps || f.v > MaxRps {
 			return &configError{msg: "invalid " + f.name + ": must be 1..10000."}
 		}
+	}
+	if err := ValidateAdminAllowedIPs(c.AdminAllowedIPs); err != nil {
+		return err
 	}
 	if err := ValidateIPHeaders(c.IPHeaders); err != nil {
 		return err
@@ -276,9 +439,11 @@ type configError struct{ msg string }
 
 func (e *configError) Error() string { return e.msg }
 
-// clampConfig forces every field into 1..10000 (used when loading env/DB
-// values that bypass admin validation) and normalizes the header order
-// to the storable form (empty/invalid becomes the code defaults).
+// clampConfig forces every numeric field into 1..10000 (used when loading
+// env/DB values that bypass admin validation), canonicalizes the admin
+// allowlist (empty stays allow-all, invalid falls back to allow-all) and
+// normalizes the header order to the storable form (empty/invalid becomes
+// the code defaults).
 func clampConfig(c Config) Config {
 	clamp := func(v, def int) int {
 		if v < MinRps || v > MaxRps {
@@ -291,7 +456,7 @@ func clampConfig(c Config) Config {
 	c.Burst = clamp(c.Burst, d.Burst)
 	c.FetchRps = clamp(c.FetchRps, d.FetchRps)
 	c.IngestRps = clamp(c.IngestRps, d.IngestRps)
-	c.AdminRps = clamp(c.AdminRps, d.AdminRps)
+	c.AdminAllowedIPs = canonicalAdminAllowedIPs(c.AdminAllowedIPs)
 	c.IPHeaders = canonicalIPHeaders(c.IPHeaders)
 	return c
 }
@@ -361,47 +526,57 @@ func (l *Limiter) Size() int {
 }
 
 // Module state: atomic config under RWMutex plus two dedicated limiters
-// (ip, admin) and one shared per-key limiter whose ids are namespaced per
-// traffic class ("fetch:"+hash / "ingest:"+hash), so fetch/ingest budgets
-// stay logically independent without consuming each other.
+// (ip, key); the key limiter ids are namespaced per traffic class
+// ("fetch:"+hash / "ingest:"+hash), so fetch/ingest budgets stay
+// logically independent without consuming each other. Admin paths use no
+// limiter: they are gated by the AdminAllowedIPs allowlist instead.
 var (
-	cfgMu        sync.RWMutex
-	current      = clampConfig(loadDefaultsFromEnv())
-	ipLimiter    = NewLimiter()
-	keyLimiter   = NewLimiter()
-	adminLimiter = NewLimiter()
+	cfgMu      sync.RWMutex
+	current    = clampConfig(loadDefaultsFromEnv())
+	ipLimiter  = NewLimiter()
+	keyLimiter = NewLimiter()
 )
 
 // resetForTest replaces config + limiters (tests only, same package).
 // The header order is normalized so bare Config literals resolve like
-// production (empty becomes the code defaults).
+// production (empty becomes the code defaults); the admin allowlist is
+// canonicalized (empty stays allow-all).
 func resetForTest(c Config) {
+	c.AdminAllowedIPs = canonicalAdminAllowedIPs(c.AdminAllowedIPs)
 	c.IPHeaders = canonicalIPHeaders(c.IPHeaders)
 	cfgMu.Lock()
 	current = c
 	cfgMu.Unlock()
 	ipLimiter = NewLimiter()
 	keyLimiter = NewLimiter()
-	adminLimiter = NewLimiter()
 }
 
-// GetConfig returns a snapshot of the active config (the header slice is
-// copied so callers cannot mutate the active order).
+// GetConfig returns a snapshot of the active config (slices are copied
+// so callers cannot mutate the active state).
 func GetConfig() Config {
 	cfgMu.RLock()
 	defer cfgMu.RUnlock()
 	out := current
+	if out.AdminAllowedIPs != nil {
+		out.AdminAllowedIPs = append([]string(nil), out.AdminAllowedIPs...)
+	}
 	if out.IPHeaders != nil {
 		out.IPHeaders = append([]string(nil), out.IPHeaders...)
 	}
 	return out
 }
 
-// applyConfig validates and installs c (admin PUT path), storing a copy
-// of the header order.
+// applyConfig validates and installs c (admin PUT path), storing copies
+// of the allowlist and header order.
 func applyConfig(c Config) error {
 	if err := ValidateConfig(c); err != nil {
 		return err
+	}
+	c.AdminAllowedIPs = canonicalAdminAllowedIPs(c.AdminAllowedIPs)
+	if len(c.AdminAllowedIPs) > 0 {
+		c.AdminAllowedIPs = append([]string(nil), normalizeAdminAllowedIPs(c.AdminAllowedIPs)...)
+	} else {
+		c.AdminAllowedIPs = []string{}
 	}
 	if len(c.IPHeaders) == 0 {
 		c.IPHeaders = DefaultIPHeaders()
@@ -492,10 +667,10 @@ func EffectiveIngestRps(key *core.Record) int {
 	return effectiveRps(key, IngestRpsField, GetConfig().IngestRps)
 }
 
-// AllowAdmin consumes one per-second token for an admin caller IP on a
-// dedicated limiter (admin traffic never eats the global budget).
+// AllowAdmin is deprecated: admin paths are gated by the allowlist, not
+// a rate limiter. Kept for back-compat; reports allowlist membership.
 func AllowAdmin(ip string) bool {
-	return adminLimiter.Allow("admin:"+ip, GetConfig().AdminRps)
+	return IsAdminIPAllowed(ip)
 }
 
 // isTrustedProxyRemote reports whether remoteAddr (the direct TCP peer)
@@ -591,22 +766,27 @@ func ClientIP(re *core.RequestEvent) string {
 	return clientIPFromHeaders(re.Request.Header, re.Request.RemoteAddr)
 }
 
-// CheckAdmin reports whether re (an /api/v1/admin/* call) may proceed on
-// the dedicated admin limiter: one per-second token for the caller IP at
-// AdminRps (default 20). Pure check — the caller renders the 429 via
-// BlockIP (Retry-After:1, {message, status:429}).
+// CheckAdmin reports whether re (an /api/v1/admin/* call) may proceed
+// under the IP allowlist. Pure check — the caller renders the 403 via
+// BlockAdmin.
 func CheckAdmin(re *core.RequestEvent) bool {
-	return AllowAdmin(ClientIP(re))
+	return IsAdminIPAllowed(ClientIP(re))
 }
 
-// CheckIP reports whether re may proceed: non-/api/ paths always pass
-// (static UI/assets are not flood-gated); /api/v1/admin/* consumes one
-// admin per-IP token on the dedicated limiter (never eats the global
-// budget); other /api/* consumes one global per-IP token. Pure check —
-// the caller renders the 429.
+// CheckIP reports whether re may proceed: non-/api/ paths always pass;
+// /api/v1/admin/* is gated by the IP allowlist only (no rate limiter);
+// other /api/* consumes one global per-IP token. Pure check — the caller
+// renders 403 (admin-denied) or 429 (global) via BlockAdmin / BlockIP.
 func CheckIP(re *core.RequestEvent) bool {
 	if !strings.HasPrefix(re.Request.URL.Path, "/api/") {
 		return true
+	}
+	if IsAdminPath(re.Request.URL.Path) {
+		ip := ClientIP(re)
+		if ip == "" {
+			return len(GetConfig().AdminAllowedIPs) == 0
+		}
+		return IsAdminIPAllowed(ip)
 	}
 	ip := ClientIP(re)
 	// Empty IP shares one "unknown" bucket instead of fail-opening:
@@ -616,9 +796,6 @@ func CheckIP(re *core.RequestEvent) bool {
 	// Fetch/ingest per-key limits still apply after auth.
 	if ip == "" {
 		ip = "unknown"
-	}
-	if strings.HasPrefix(re.Request.URL.Path, "/api/v1/admin/") {
-		return AllowAdmin(ip)
 	}
 	return AllowIP(ip)
 }
@@ -634,17 +811,30 @@ func BlockIP(re *core.RequestEvent) error {
 	})
 }
 
+// BlockAdmin renders the 403 admin-denied response (JSON shape
+// {message, status:403}); no Retry-After since this is policy, not load.
+func BlockAdmin(re *core.RequestEvent) error {
+	security.SetHeaders(re)
+	return re.JSON(http.StatusForbidden, map[string]any{
+		"message": "Admin access denied for this IP.",
+		"status":  http.StatusForbidden,
+	})
+}
+
 // Middleware adapts the IP check to a PocketBase router BindFunc: non-API
-// paths and in-budget IPs call next; over-budget /api/* callers get the
-// 429 WITHOUT reaching auth (must be bound before auth-dependent routes).
-// /api/v1/admin/* is gated by the dedicated admin limiter (AdminRps per
-// IP), all other /api/* by the global limiter — either 429 renders via
-// BlockIP.
+// paths and allowed IPs call next; denied admin /api/v1/admin/* callers
+// get the 403 WITHOUT reaching auth (must be bound before
+// auth-dependent routes), while over-budget non-admin /api/* callers get
+// the 429. Either renders before auth.
 // Usage (wiring layer): se.Router.BindFunc(func(re *core.RequestEvent) error {
-// return limits.Middleware(re.Next)(re) }) — or inline CheckIP/BlockIP.
+// return limits.Middleware(re.Next)(re) }) — or inline CheckIP with
+// IsAdminDenied to pick BlockAdmin vs BlockIP.
 func Middleware(next func(*core.RequestEvent) error) func(*core.RequestEvent) error {
 	return func(re *core.RequestEvent) error {
 		if !CheckIP(re) {
+			if IsAdminDenied(re) {
+				return BlockAdmin(re)
+			}
 			return BlockIP(re)
 		}
 		return next(re)
@@ -669,6 +859,20 @@ func setIPHeadersField(collection *core.Collection, rec *core.Record, headers []
 		return
 	}
 	rec.Set("ipHeaders", string(raw))
+}
+
+// setAdminAllowedIPsField stores the admin allowlist as a JSON string on
+// rec, but only when the collection already carries the additive
+// adminAllowedIPs field (pre-migration rows keep working without it).
+func setAdminAllowedIPsField(collection *core.Collection, rec *core.Record, allowed []string) {
+	if collection.Fields.GetByName("adminAllowedIPs") == nil {
+		return
+	}
+	raw, err := json.Marshal(canonicalAdminAllowedIPs(allowed))
+	if err != nil {
+		return
+	}
+	rec.Set("adminAllowedIPs", string(raw))
 }
 
 // ensureLoaded seeds the singleton rate_settings row when absent and loads
@@ -699,7 +903,7 @@ func ensureLoaded(app core.App) {
 		rec.Set("burst", c.Burst)
 		rec.Set("fetchRps", c.FetchRps)
 		rec.Set("ingestRps", c.IngestRps)
-		rec.Set("adminRps", c.AdminRps)
+		setAdminAllowedIPsField(collection, rec, c.AdminAllowedIPs)
 		setIPHeadersField(collection, rec, c.IPHeaders)
 		if err := app.Save(rec); err != nil {
 			log.Printf("limits: failed to seed rate_settings: %v", err)
@@ -721,8 +925,20 @@ func ensureLoaded(app core.App) {
 	if v := rec.GetInt("ingestRps"); v > 0 {
 		c.IngestRps = v
 	}
-	if v := rec.GetInt("adminRps"); v > 0 {
-		c.AdminRps = v
+	// Legacy adminRps column is silently ignored (allowlist replaced it).
+	// The admin allowlist is the rate_settings row's source of truth once
+	// stored: a parseable stored list overrides the env-seeded value;
+	// explicit empty means allow-all; missing/empty/unparseable keeps the
+	// env-seeded value, which itself falls back to allow-all.
+	if collection.Fields.GetByName("adminAllowedIPs") != nil {
+		if raw := strings.TrimSpace(rec.GetString("adminAllowedIPs")); raw != "" {
+			var stored []string
+			if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+				log.Printf("limits: ignoring unparseable rate_settings.adminAllowedIPs, using env defaults")
+			} else {
+				c.AdminAllowedIPs = canonicalAdminAllowedIPs(stored)
+			}
+		}
 	}
 	// The header order is the Settings row's source of truth once stored:
 	// a parseable stored list overrides the env-seeded value (explicit

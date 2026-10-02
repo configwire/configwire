@@ -262,7 +262,7 @@ Content-Type: application/json
 
 **Response:** `{"accepted": 2, ...}`
 
-Rate limits (per-second): global 200 rps per IP + burst 400, fetch 100 rps per key, ingest 50 rps per key, admin 20 rps per IP (1s window). Per-key `sdk_keys.fetchRps`/`sdk_keys.ingestRps` overrides (optional, empty/0 = global fetch 100/s / ingest 50/s; set via Admin UI Keys card Edit limits or `PATCH /api/collections/sdk_keys/records/:id`; effective = per-key when `1..10000` else global). Over-limit returns `429` with `Retry-After: 1`. Tune via `CONFIGWIRE_GLOBAL_RPS` / `CONFIGWIRE_BURST` / `CONFIGWIRE_FETCH_RPS` / `CONFIGWIRE_INGEST_RPS` / `CONFIGWIRE_ADMIN_RPS` or Admin UI Limits card (`GET/PUT /api/v1/admin/limits`). Buffer cap: 2048; full buffer returns `503` — never silent drop.
+Rate limits (per-second): global 200 rps per IP + burst 400, fetch 100 rps per key, ingest 50 rps per key (1s window), plus the admin IP allowlist (empty = allow all; denied admin IPs get `403`, no admin req/s limiting). Per-key `sdk_keys.fetchRps`/`sdk_keys.ingestRps` overrides (optional, empty/0 = global fetch 100/s / ingest 50/s; set via Admin UI Keys card Edit limits or `PATCH /api/collections/sdk_keys/records/:id`; effective = per-key when `1..10000` else global). Over-limit returns `429` with `Retry-After: 1`. Tune via `CONFIGWIRE_GLOBAL_RPS` / `CONFIGWIRE_BURST` / `CONFIGWIRE_FETCH_RPS` / `CONFIGWIRE_INGEST_RPS` / `CONFIGWIRE_ADMIN_ALLOWED_IPS` (comma-separated IPs/CIDRs) or Admin UI Limits card (`GET/PUT /api/v1/admin/limits`, shows your current IP). Buffer cap: 2048; full buffer returns `503` — never silent drop.
 
 ### Real-time updates (SSE)
 
@@ -368,7 +368,7 @@ Full client docs: [github.com/configwire/dart](https://github.com/configwire/dar
 | Raw `events` retention         | 30 days, then rolled into `event_daily`    |
 | `event_daily` rollup retention | 90 days                                    |
 | Stats window max               | 90 days (`approximate: true` past 30d)     |
-| Rate limits (per-second) | global 200 rps per IP + burst 400, fetch 100, ingest 50, admin 20 (1s window, `CONFIGWIRE_GLOBAL_RPS` / `CONFIGWIRE_BURST` / `CONFIGWIRE_FETCH_RPS` / `CONFIGWIRE_INGEST_RPS` / `CONFIGWIRE_ADMIN_RPS`, Admin UI Limits card `GET/PUT /api/v1/admin/limits`, every `429` carries `Retry-After: 1`); per-key `sdk_keys.fetchRps`/`sdk_keys.ingestRps` overrides in req/sec (empty/0 = global, effective when `1..10000`) |
+| Rate limits (per-second) | global 200 rps per IP + burst 400, fetch 100, ingest 50 (1s window) + admin IP allowlist (empty = allow all, `CONFIGWIRE_ADMIN_ALLOWED_IPS`, Admin UI Limits card `GET/PUT /api/v1/admin/limits`, every `429` carries `Retry-After: 1`); per-key `sdk_keys.fetchRps`/`sdk_keys.ingestRps` overrides in req/sec (empty/0 = global, effective when `1..10000`) |
 | Ingest lag bound               | ~1s + write time (max 2s); buffer cap 2048 |
 
 **Load test baseline** (`scripts/k6-fetch.js`, 60s at 100 rps fetch + 50 rps exposure):
