@@ -90,9 +90,9 @@
     var ok = isValidIP(ip) && isAllowedByList(ip, allowlist);
     var msg;
     if (ip === "") {
-      msg = "Your current IP (via IP headers): …";
+      msg = "Your IP: …";
     } else {
-      msg = "Your current IP (via IP headers): " + ip +
+      msg = "Your IP: " + ip +
         (remoteAddr ? " (remote " + remoteAddr + ")" : "");
       if (!ok) msg += " — blocked by allowlist";
     }
@@ -109,18 +109,18 @@
     var d = CW.state.limits || {};
     var ip = String(d.clientIp == null ? "" : d.clientIp).replace(/^\s+|\s+$/g, "");
     if (!ip) {
-      CW.toast("nothing to copy");
+      CW.toast("Nothing to copy.");
       return;
     }
     if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(ip).then(function () { CW.toast("copied", true); }, function () { CW.toast("copy failed"); });
+      navigator.clipboard.writeText(ip).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
     } else {
       var tmp = document.createElement("textarea");
       tmp.value = ip;
       document.body.appendChild(tmp);
       tmp.select();
-      try { document.execCommand("copy"); CW.toast("copied", true); }
-      catch (e) { CW.toast("copy failed"); }
+      try { document.execCommand("copy"); CW.toast("Copied", true); }
+      catch (e) { CW.toast("Copy failed"); }
       document.body.removeChild(tmp);
     }
   }
@@ -157,20 +157,10 @@
     return CW.api("/api/v1/admin/limits").then(function (data) {
       CW.state.limits = data;
       setInputs(data);
-      var el = CW.$("limits-result");
-      // textContent only (no innerHTML), so no CW.esc needed here.
-      if (el) {
-        el.textContent = "current: global " + data.globalRps + "/s ceiling " +
-          data.burst + " fetch " + data.fetchRps + "/s ingest " +
-          data.ingestRps + "/s allowlist " +
-          ipsToString(data.adminAllowedIPs) + " headers " +
-          headersToString(data.ipHeaders) +
-          ((data.clientIp != null && data.clientIp !== "") ? " your IP " + data.clientIp : "");
-      }
       return data;
     }, function (err) {
       var el = CW.$("limits-result");
-      if (el) el.textContent = (err && err.message) || "load failed";
+      if (el) el.textContent = (err && err.message) || "Load failed.";
       throw err;
     });
   }
@@ -192,11 +182,15 @@
       var resEl = CW.$(resElId || "limits-result");
       if (out.status === 200) {
         renderLimits(out.data);
-        if (resEl) resEl.textContent = "limits saved";
-        CW.toast("limits saved", true);
+        if (resEl) resEl.textContent = "Saved.";
+        CW.toast("Saved.", true);
+        if (CW.markFormClean) {
+          CW.markFormClean("limits-form");
+          CW.markFormClean("settings-admin-form");
+        }
         return loadLimits().catch(function () {});
       }
-      var fail = "save failed (" + out.status + "): " + CW.serverMessage(out.data);
+      var fail = "Save failed (" + out.status + "): " + CW.serverMessage(out.data);
       if (resEl) resEl.textContent = fail;
       CW.toast(fail);
       return out;
@@ -223,7 +217,7 @@
     for (var i = 0; i < fields.length; i++) {
       var v = body[fields[i]];
       if (!isFinite(v) || v < 1 || v > 10000) {
-        var msg = fields[i] + " must be 1..10000";
+        var msg = "Limits must be 1–10000.";
         CW.$("limits-result").textContent = msg;
         CW.toast(msg);
         return Promise.resolve();
@@ -231,14 +225,14 @@
     }
     // Empty header list is allowed: the server resets to defaults.
     if (body.ipHeaders.length > 10) {
-      var tooMany = "ipHeaders must hold 1..10 entries";
+      var tooMany = "Max 10 headers.";
       CW.$("limits-result").textContent = tooMany;
       CW.toast(tooMany);
       return Promise.resolve();
     }
     for (var h = 0; h < body.ipHeaders.length; h++) {
       if (!IP_HEADER_RE.test(body.ipHeaders[h])) {
-        var bad = "ipHeaders entry " + body.ipHeaders[h] + " must be 1..64 chars of [A-Za-z0-9-]";
+        var bad = "Bad header: " + body.ipHeaders[h];
         CW.$("limits-result").textContent = bad;
         CW.toast(bad);
         return Promise.resolve();
@@ -258,7 +252,7 @@
       return Promise.resolve();
     }
     if (allowed.length > 32) {
-      return fail("adminAllowedIPs must hold ≤32 entries");
+      return fail("Max 32 IPs.");
     }
     for (var a = 0; a < allowed.length; a++) {
       if (!/^[ -~]+$/.test(allowed[a])) {
@@ -267,11 +261,11 @@
     }
     var headers = stringToHeaders(CW.$("limit-ip-headers") && CW.$("limit-ip-headers").value);
     if (headers.length > 10) {
-      return fail("ipHeaders must hold 1..10 entries");
+      return fail("Max 10 headers.");
     }
     for (var h = 0; h < headers.length; h++) {
       if (!IP_HEADER_RE.test(headers[h])) {
-        return fail("ipHeaders entry " + headers[h] + " must be 1..64 chars of [A-Za-z0-9-]");
+        return fail("Bad header: " + headers[h]);
       }
     }
     function send() {

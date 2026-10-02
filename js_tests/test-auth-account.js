@@ -167,7 +167,7 @@ test("createSetup rejects empty email without fetching", async function () {
   $(ctx, "setup-password").value = "password123";
   $(ctx, "setup-password-confirm").value = "password123";
   await ctx.CW.createSetup();
-  assert.equal($(ctx, "setup-error").textContent, "email is required");
+  assert.equal($(ctx, "setup-error").textContent, "Email required.");
   assert.equal(ctx.fetchCalls.length, 0);
 });
 
@@ -179,7 +179,7 @@ test("createSetup rejects short password without fetching", async function () {
   $(ctx, "setup-password").value = "short";
   $(ctx, "setup-password-confirm").value = "short";
   await ctx.CW.createSetup();
-  assert.equal($(ctx, "setup-error").textContent, "password must be at least 8 characters");
+  assert.equal($(ctx, "setup-error").textContent, "Password needs 8+ characters.");
   assert.equal(ctx.fetchCalls.length, 0);
 });
 
@@ -191,7 +191,7 @@ test("createSetup rejects mismatched confirmation without fetching", async funct
   $(ctx, "setup-password").value = "password123";
   $(ctx, "setup-password-confirm").value = "different1";
   await ctx.CW.createSetup();
-  assert.equal($(ctx, "setup-error").textContent, "passwords do not match");
+  assert.equal($(ctx, "setup-error").textContent, "Passwords don't match.");
   assert.equal(ctx.fetchCalls.length, 0);
 });
 
@@ -272,11 +272,11 @@ test("createAccount validation branches write account-result without fetching", 
   $(ctx, "account-email").value = "";
   $(ctx, "account-password").value = "password123";
   await ctx.CW.createAccount();
-  assert.equal($(ctx, "account-result").textContent, "email is required");
+  assert.equal($(ctx, "account-result").textContent, "Email required.");
   $(ctx, "account-email").value = "n@x.test";
   $(ctx, "account-password").value = "tiny";
   await ctx.CW.createAccount();
-  assert.equal($(ctx, "account-result").textContent, "password must be at least 8 characters");
+  assert.equal($(ctx, "account-result").textContent, "Password needs 8+ characters.");
   assert.equal(ctx.fetchCalls.length, 0);
 });
 
@@ -296,7 +296,7 @@ test("createAccount posts, reports the created email, clears fields", async func
   $(ctx, "account-password").value = "password123";
   var out = await ctx.CW.createAccount();
   assert.equal(out.status, 201);
-  assert.equal($(ctx, "account-result").textContent, "admin created: n@x.test");
+  assert.equal($(ctx, "account-result").textContent, "Account created: n@x.test");
   assert.equal($(ctx, "account-email").value, "");
   assert.equal($(ctx, "account-password").value, "");
 });
@@ -313,7 +313,7 @@ test("createAccount failure pins status plus server message", async function () 
   $(ctx, "account-email").value = "n@x.test";
   $(ctx, "account-password").value = "password123";
   await ctx.CW.createAccount();
-  assert.equal($(ctx, "account-result").textContent, "admin create failed (500): boom");
+  assert.equal($(ctx, "account-result").textContent, "Account create failed (500): boom");
 });
 
 // --- changeAccountPassword via scripted promptDialog (account.js:114-132) ---
@@ -345,7 +345,7 @@ test("changeAccountPassword posts encoded id with scripted password", async func
     minLength: 8,
   });
   assert.equal(out.status, 204);
-  assert.equal($(ctx, "account-result").textContent, "password changed");
+  assert.equal($(ctx, "account-result").textContent, "Password changed.");
 });
 
 test("changeAccountPassword cancel performs zero fetches", async function () {
@@ -364,7 +364,7 @@ test("changeAccountPassword short password rejected locally, zero fetches", asyn
   });
   ctx.CW.promptDialog = function () { return Promise.resolve("short"); };
   await ctx.CW.changeAccountPassword("u1");
-  assert.equal($(ctx, "account-result").textContent, "password must be at least 8 characters");
+  assert.equal($(ctx, "account-result").textContent, "Password needs 8+ characters.");
   assert.equal(ctx.fetchCalls.length, 0);
 });
 
@@ -390,7 +390,7 @@ test("deleteAccount confirm=true issues DELETE and reports deletion", async func
   assert.equal(confirmArgs.msg, "Delete this admin account?");
   assert.deepEqual(confirmArgs.opts, { title: "Delete admin", okText: "Delete", danger: true });
   assert.equal(out.status, 204);
-  assert.equal($(ctx, "account-result").textContent, "admin deleted");
+  assert.equal($(ctx, "account-result").textContent, "Admin deleted.");
 });
 
 test("deleteAccount confirm=false performs zero apiMut calls", async function () {
@@ -414,5 +414,5 @@ test("deleteAccount failure pins status plus verbatim server message", async fun
   });
   ctx.CW.confirmDialog = function () { return Promise.resolve(true); };
   await ctx.CW.deleteAccount("u1");
-  assert.equal($(ctx, "account-result").textContent, "delete failed (400): cannot delete last admin");
+  assert.equal($(ctx, "account-result").textContent, "Delete failed (400): cannot delete last admin");
 });
