@@ -1,7 +1,8 @@
 package ingest
 
 import (
-	"encoding/json"
+	"bytes"
+	"io"
 	"log"
 	"net/http"
 
@@ -76,9 +77,32 @@ func RegisterKeys(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/keys", postMintKey).Bind(apis.RequireSuperuserAuth())
 }
 
+func decodeBody(re *core.RequestEvent, dst any) error {
+	if re.Request.ContentLength == 0 {
+		return re.BadRequestError("empty body: expected a JSON object.", nil)
+	}
+	if re.Request.Body == nil {
+		return re.BadRequestError("empty body: expected a JSON object.", nil)
+	}
+	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 1<<20+1))
+	if err != nil {
+		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
+	}
+	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return re.BadRequestError("empty body: expected a JSON object.", nil)
+	}
+	if err := re.BindBody(dst); err != nil {
+		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
+	}
+	return nil
+}
+
 func postMintKey(re *core.RequestEvent) error {
 	var req mintKeyRequest
-	_ = json.NewDecoder(re.Request.Body).Decode(&req)
+	if err := decodeBody(re, &req); err != nil {
+		return err
+	}
 	if status, msg, ok := mintInputError(re.App, req.Env, req.FetchRps, req.IngestRps); !ok {
 		if status == http.StatusNotFound {
 			return re.JSON(http.StatusNotFound, map[string]any{"message": msg, "status": 404})

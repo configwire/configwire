@@ -33,6 +33,7 @@ import (
 	"bytes"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -302,8 +303,13 @@ func EvictKeyByID(id string) {
 	fastCacheMu.Unlock()
 }
 
+// errKeyBusy signals bcrypt verifier saturation: valid keys must retry
+// instead of being misclassified as invalid credentials.
+var errKeyBusy = errors.New("ingest: bcrypt verifier saturated")
+
 // findSDKKey returns the sdk_keys row matching the full SDK key, or
-// (nil, nil) when no row matches. The prefix prefilter runs in the DB
+// (nil, nil) when no row matches, or (nil, errKeyBusy) when the bcrypt
+// semaphore is saturated. The prefix prefilter runs in the DB
 // instead of a full-table scan; rows with a verifier slow-verify under
 // the CPU-DoS semaphore. Successes populate the fast cache keyed by the
 // fast hash. Revocation is NOT checked here — the caller maps revoked
@@ -332,7 +338,7 @@ func findSDKKey(app core.App, full string) (*core.Record, error) {
 			select {
 			case slowSem <- struct{}{}:
 			default:
-				return nil, nil
+				return nil, errKeyBusy
 			}
 			fastCacheMu.Lock()
 			slowVerifyCalls++
@@ -360,7 +366,8 @@ func findSDKKey(app core.App, full string) (*core.Record, error) {
 // T10 reuse). Lookup prefilters on prefix (first 8 chars, DB-side), then
 // slow-verifies the bcrypt verifier (or the deprecated legacy fast hash).
 // Unknown/missing/revoked → 401 error suitable for returning directly from
-// a handler.
+// a handler. Verifier saturation → 429 with Retry-After: 1 (never 401, so
+// clients retry instead of rotating keys).
 func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	denied := func() (*core.Record, error) {
 		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
@@ -371,6 +378,10 @@ func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	}
 	key, err := findSDKKey(re.App, full)
 	if err != nil {
+		if errors.Is(err, errKeyBusy) {
+			re.Response.Header().Set("Retry-After", "1")
+			return nil, re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Server busy, retry.", "status": 429})
+		}
 		return denied()
 	}
 	if key == nil || key.GetBool("revoked") {
