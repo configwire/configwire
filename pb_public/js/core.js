@@ -89,6 +89,8 @@
     if ($("setup-section")) $("setup-section").hidden = on ? true : $("setup-section").hidden;
     if ($("admin-section")) $("admin-section").hidden = !on;
     if ($("logout-btn")) $("logout-btn").hidden = !on;
+    var ts = $("sidebar-scope");
+    if (ts) ts.hidden = !on;
   }
 
   function selectedEnv() {

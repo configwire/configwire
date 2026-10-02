@@ -22,7 +22,12 @@
       <span class="brand-mark" aria-hidden="true"><img src="/img/logo.png" alt="ConfigWire logo" width="22"
           height="22"></span>
       <span class="brand-text"><strong><span class="brand-config">Config</span><span
-            class="brand-wire">Wire</span></strong><small>Admin console</small></span>
+            class="brand-wire">Wire</span></strong></span>
+    </div>
+    <div class="sidebar-scope" id="sidebar-scope" hidden>
+      <label for="project-select">Project
+        <select id="project-select" aria-label="Project"></select>
+      </label>
     </div>
     <nav aria-label="Modules" id="sidebar-nav">
       <a href="#/p/flags"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
@@ -30,13 +35,7 @@
           <path d="M3 14V2" />
           <path d="M3 2.5h9.5l-2.5 3.5 2.5 3.5H3" />
         </svg><span>Flags</span></a>
-      <a href="#/p/releases"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M2.5 2.5v4a1 1 0 0 0 1 1h4" />
-          <path d="M3.5 6.5 2.5 2.5l4 1" />
-          <path d="M6 7 14 15" />
-          <circle cx="11.5" cy="11.5" r="1.6" />
-        </svg><span>Releases</span></a>
+      <a href="#/p/releases"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5H8L13.5 8 8 13.5 2.5 8V2.5Z"/><circle cx="6" cy="6" r="1.3"/></svg><span>Releases</span></a>
       <a href="#/p/publish"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
           stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M8 11V2" />
@@ -59,11 +58,7 @@
         </svg><span>Stats</span></a>
     </nav>
     <div class="sidebar-foot">
-      <a id="settings-nav-link" href="#/p/settings" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="8" cy="8" r="2" />
-          <path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M12.4 3.6l-1.2 1.2M4.8 11.2l-1.2 1.2" />
-        </svg><span>Settings</span></a>
+      <a id="settings-nav-link" href="#/p/settings" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="1.8"/><path d="M8 2.2 9.65 4.03 12.1 3.9 11.97 6.35 13.8 8l-1.83 1.65.13 2.45-2.45-.13L8 13.8l-1.65-1.83L3.9 12.1l.13-2.45L2.2 8l1.83-1.65L3.9 3.9l2.45.13L8 2.2Z"/></svg><span>Settings</span></a>
       <button id="logout-btn" type="button" class="btn ghost" hidden>Log out</button>
     </div>
   </aside>
@@ -82,7 +77,7 @@
     </header>
     <main id="main">
       <div id="toast" role="alert" aria-live="assertive" hidden></div>
-      <div id="cw-reload-bar" role="status" hidden><span>A new version of the admin console is available.</span><button id="cw-reload-btn" type="button" class="btn primary">Reload to update</button></div>
+      <div id="cw-reload-bar" role="status" hidden><span>New console version available.</span><button id="cw-reload-btn" type="button" class="btn primary">Reload</button></div>
 
       <section id="login-section" class="card auth" aria-label="Login">
         <div class="login-banner-wrap" aria-hidden="true">
@@ -90,8 +85,7 @@
             height="218">
         </div>
         <div class="auth-body">
-          <h2>Superuser login</h2>
-          <p class="muted">Sign in to continue.</p>
+          <h2>Admin login</h2>
           <form id="login-form">
             <label>Email <input id="login-email" name="identity" type="email" autocomplete="username" required></label>
             <label>Password <input id="login-password" name="password" type="password" autocomplete="current-password"
@@ -105,14 +99,13 @@
       <section id="setup-section" class="card auth" aria-label="First-run setup" hidden>
         <div class="auth-body">
           <h2>Create admin account</h2>
-          <p class="muted">Create the first admin account.</p>
           <form id="setup-form">
             <label>Email <input id="setup-email" name="email" type="email" autocomplete="username" required></label>
             <label>Password <input id="setup-password" name="password" type="password" autocomplete="new-password"
                 required minlength="8"></label>
             <label>Confirm password <input id="setup-password-confirm" name="password-confirm" type="password"
                 autocomplete="new-password" required minlength="8"></label>
-            <button type="submit" class="btn primary">Create admin account</button>
+            <button type="submit" class="btn primary">Create account</button>
           </form>
           <p id="setup-error" role="alert" hidden></p>
           <p id="setup-result" role="status" hidden></p>
@@ -124,7 +117,6 @@
           <div class="card home-head">
             <div>
               <h2>Projects</h2>
-              <p class="muted">Pick a project.</p>
             </div>
             <form id="project-create-form" class="inline-form" aria-label="Project create">
               <label>New project <input id="project-name" type="text" required maxlength="128"
@@ -134,60 +126,52 @@
           </div>
           <p id="project-result" role="status"></p>
           <div id="project-grid" class="project-grid" role="list" aria-label="Projects"></div>
-          <p id="project-empty" class="muted" hidden>No projects yet — create one above.</p>
+          <p id="project-empty" class="muted" hidden>No projects yet.</p>
         </section>
 
         <section id="view-detail" aria-label="Project detail" hidden>
           <div class="card detail-head">
             <button id="back-to-projects" type="button" class="btn ghost">&larr; Projects</button>
             <h2 id="detail-project-name">Project</h2>
-          </div>
-          <div id="scope-bar" class="card scope" aria-label="Project scope">
-            <label>Project
-              <select id="project-select" aria-label="Project"></select>
-            </label>
-            <button id="refresh-scope" type="button" class="btn secondary">Reload</button>
+            <button id="refresh-scope" type="button" class="btn secondary" title="Refresh projects">Refresh</button>
           </div>
 
           <div class="grid">
             <section class="card" aria-labelledby="flags">
               <div class="card-head">
                 <h2 id="flags">Flags</h2>
-                <div class="card-actions"><button id="group-add-btn" type="button" class="btn secondary">+
+                <div class="card-actions"><button id="group-add-btn" type="button" class="btn secondary">New
                     group</button><button id="flag-add-btn" type="button" class="btn primary">Add
-                    flag</button><button id="refresh-flags" type="button" class="btn ghost">Refresh flags</button><button id="transfer-export-btn" type="button" class="btn secondary">Export</button><button id="transfer-import-btn" type="button" class="btn secondary">Import</button></div>
+                    flag</button><button id="refresh-flags" type="button" class="btn ghost">Refresh</button><button id="transfer-export-btn" type="button" class="btn secondary">Export</button><button id="transfer-import-btn" type="button" class="btn secondary">Import</button></div>
               </div>
               <div id="flag-folders">
-                <p class="muted">Not loaded.</p>
+                <p class="muted">Loading…</p>
               </div>
             </section>
 
             <section class="scope-group scope-group-env" aria-labelledby="env-group-title">
               <div class="scope-group-head">
-                <span class="scope-group-badge scope-group-badge-env" aria-hidden="true">Environment</span>
-                <h2 id="env-group-title" class="scope-group-title">Environment scope — <span id="env-group-name">env</span></h2>
+                <h2 id="env-group-title" class="scope-group-title">Environment: <span id="env-group-name">env</span></h2>
               </div>
-              <p class="scope-group-sub muted">Env-scoped. Releases, SDK keys and Stats all follow the selected environment — switching it reloads everything inside this outline. Publish ships the project flags above into this environment.</p>
+              <p class="scope-group-sub muted">Releases, keys, stats follow this environment.</p>
               <div id="env-bar" class="card scope" aria-label="Environment scope">
                 <label>Environment
                   <select id="env-select" aria-label="Environment"></select>
                 </label>
                 <form id="env-create-form" class="inline-form" aria-label="Environment create">
-                  <label>New env slug <input id="env-slug" type="text" required maxlength="64" spellcheck="false"
+                  <label>New env <input id="env-slug" type="text" required maxlength="64" spellcheck="false"
                       placeholder="staging"></label>
-                  <button type="submit" class="btn primary">Add env</button>
+                  <button type="submit" class="btn primary">Add</button>
                 </form>
-                <p class="muted" role="status">Switching environment reloads Releases, SDK keys and Stats below. Flags above are project-wide — Publish ships them to this environment. Rate limits are global — manage them in Settings.</p>
                 <p id="env-result" role="status"></p>
               </div>
 
               <section class="card" aria-labelledby="releases">
                 <div class="card-head">
-                  <h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh
-                    releases</button>
+                  <h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh</button>
                 </div>
                 <ul id="release-list" aria-label="Releases">
-                  <li>Not loaded.</li>
+                  <li>Loading…</li>
                 </ul>
                 <hr>
                 <h3 id="publish">Publish</h3>
@@ -195,33 +179,31 @@
                 <ul id="unpublished-list" aria-label="Unpublished changes" hidden></ul>
                 <form id="publish-form">
                   <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
-                  <label>baseVersion (auto-filled) <input id="publish-base" name="baseVersion" type="number" min="0"
+                  <label>Base version <input id="publish-base" name="baseVersion" type="number" min="0"
                       required></label>
-                  <button type="submit" class="btn primary" disabled>Publish new version</button>
-                  <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View draft</button>
-                  <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard changes</button>
+                  <button type="submit" class="btn primary" disabled>Publish</button>
+                  <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View changes</button>
+                  <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard drafts</button>
                 </form>
                 <p id="publish-result" role="status"></p>
               </section>
 
               <section class="card" aria-labelledby="keys">
                 <div class="card-head">
-                  <h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh
-                    keys</button>
+                  <h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh</button>
                 </div>
                 <ul id="key-list" aria-label="SDK keys">
-                  <li>Not loaded.</li>
+                  <li>Loading…</li>
                 </ul>
                 <h3>New key</h3>
-                <p class="muted">Per-key req/sec. Empty = global.</p>
                 <form id="key-form" aria-label="SDK key create">
-                  <label>fetchRps (req/s, empty=global) <input id="key-fetch-rps" type="number" min="1" max="10000" placeholder="Global 100/s"></label>
-                  <label>ingestRps (req/s, empty=global) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
+                  <label>Fetch limit (req/s) <input id="key-fetch-rps" type="number" min="1" max="10000" placeholder="Global 100/s"></label>
+                  <label>Ingest limit (req/s) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
                   <button type="submit" class="btn primary">Create key</button>
                 </form>
                 <p id="key-result" role="status"></p>
                 <div id="key-once" hidden>
-                  <p><strong>New key (shown once — copy now):</strong></p>
+                  <p><strong>Shown once — copy now:</strong></p>
                   <code id="key-once-value"></code>
                   <button id="key-copy" type="button" class="btn secondary">Copy</button>
                 </div>
@@ -237,9 +219,9 @@
                       <option value="30d">30d</option>
                       <option value="90d">90d</option>
                     </select></label>
-                  <button id="refresh-stats" type="button" class="btn secondary">Load stats</button>
+                  <button id="refresh-stats" type="button" class="btn secondary">Refresh</button>
                 </form>
-                <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Not loaded.</div>
+                <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Loading…</div>
               </section>
             </section>
           </div>
@@ -248,12 +230,11 @@
           <div class="settings-grid">
             <div class="card" aria-labelledby="account">
               <div class="card-head">
-                <h2 id="account">Account management</h2>
-                <div class="card-actions"><button id="refresh-accounts" type="button" class="btn ghost">Refresh
-                    admins</button></div>
+                <h2 id="account">Admins</h2>
+                <div class="card-actions"><button id="refresh-accounts" type="button" class="btn ghost">Refresh</button></div>
               </div>
               <ul id="account-list" aria-label="Admin accounts">
-                <li>Not loaded.</li>
+                <li>Loading…</li>
               </ul>
               <h3>New admin</h3>
               <form id="account-create-form" aria-label="Admin create">
@@ -266,58 +247,52 @@
             </div>
             <div class="card" aria-labelledby="settings-global">
               <div class="card-head">
-                <h2 id="settings-global">Settings</h2>
-                <div class="card-actions"><button id="refresh-settings-limits" type="button" class="btn ghost">Refresh
-                    limits</button></div>
+                <h2 id="settings-global">Admin access</h2>
               </div>
-              <h3>Admin protection</h3>
-              <p class="muted">Only these IPs/CIDRs may call admin endpoints. Empty = allow all. Denied answers 403.</p>
               <form id="settings-admin-form" aria-label="Admin allowlist">
                 <div class="limit-field">
                   <label for="admin-allowed-ips">Allowed IPs</label>
-                  <input id="admin-allowed-ips" type="text" placeholder="e.g. 203.0.113.7, 198.51.100.0/24 (empty = allow all)">
-                  <small>Comma-separated IPs or CIDRs. Empty allows all.</small>
+                  <input id="admin-allowed-ips" type="text" placeholder="e.g. 203.0.113.7, 198.51.100.0/24">
                 </div>
                 <div class="limit-field">
                   <label for="limit-ip-headers">IP headers</label>
                   <input id="limit-ip-headers" type="text" placeholder="CF-Connecting-IP, Fly-Client-IP, X-Forwarded-For, X-Real-IP" title="Comma-separated trusted proxy headers, first match wins. Empty resets to defaults.">
-                  <small>Order matters: first match wins. Empty resets to defaults.</small>
-                  <p id="admin-current-ip" class="ip-status-pill" role="status"><span id="admin-current-ip-text">Your current IP (via IP headers): …</span><button id="admin-current-ip-copy" type="button" class="btn ghost ip-copy-btn" aria-label="Copy current IP">Copy</button></p>
+                  <small>First match wins.</small>
+                  <p id="admin-current-ip" class="ip-status-pill" role="status"><span id="admin-current-ip-text">Your IP: …</span><button id="admin-current-ip-copy" type="button" class="btn ghost ip-copy-btn" aria-label="Copy current IP">Copy</button></p>
                 </div>
                 <div class="limits-footer">
-                  <button type="submit" class="btn primary">Save settings</button>
+                  <button type="submit" class="btn primary">Save access</button>
                   <span id="settings-limits-result" role="status"></span>
                 </div>
               </form>
             </div>
             <section class="card" aria-labelledby="limits">
               <div class="card-head">
-                <h2 id="limits">Rate limits (req/sec)</h2><button id="refresh-limits" type="button"
-                  class="btn ghost">Refresh limits</button>
+                <h2 id="limits">Rate limits</h2><button id="refresh-limits" type="button"
+                  class="btn ghost">Refresh</button>
               </div>
-              <p class="muted">Per-IP global and per-key fetch/ingest budgets over a 1s window. Requests over budget
-                answer 429 with Retry-After: 1. Changes apply immediately.</p>
+              <p class="muted">Per-second limits. Over budget returns 429.</p>
               <form id="limits-form" aria-label="Rate limits">
                 <div class="limit-grid">
                   <div class="limit-field">
                     <label for="limit-global">Global</label>
                     <input id="limit-global" type="number" min="1" max="10000">
-                    <small>Total req/s per IP across all endpoints.</small>
+                    <small>Total per IP.</small>
                   </div>
                   <div class="limit-field">
                     <label for="limit-burst">Ceiling</label>
                     <input id="limit-burst" type="number" min="1" max="10000">
-                    <small>Hard cap per IP; effective budget is min(Global, Ceiling).</small>
+                    <small>Max per IP.</small>
                   </div>
                   <div class="limit-field">
                     <label for="limit-fetch">Fetch</label>
                     <input id="limit-fetch" type="number" min="1" max="10000">
-                    <small>Config reads per SDK key.</small>
+                    <small>Reads per key.</small>
                   </div>
                   <div class="limit-field">
                     <label for="limit-ingest">Ingest</label>
                     <input id="limit-ingest" type="number" min="1" max="10000">
-                    <small>Event writes per SDK key.</small>
+                    <small>Writes per key.</small>
                   </div>
                 </div>
                 <div class="limits-footer">
@@ -355,13 +330,12 @@
             <label>Name <input id="exp-name" type="text" required spellcheck="false"></label>
             <label>Target flag
               <select id="exp-flag-select" aria-label="Target flag" required></select>
-              <span class="muted">Each variant's Values must include this flag's key.</span>
+              <span class="muted">Values must include this flag.</span>
             </label>
             <label>Seed <input id="exp-seed" type="text" required spellcheck="false" placeholder="exp-seed-1"></label>
             <div class="rule-builder" aria-label="Variant builder">
               <h4>Variants</h4>
-              <p class="muted">Weights must sum to 100%. The last variant is
-                auto-calculated.</p>
+              <p class="muted">Weights sum to 100%. Last auto-fills.</p>
               <div id="exp-variants-builder-rows" aria-label="Variant rows">
                 <div class="rule-builder exp-variant-row" aria-label="Variant 1">
                   <strong>Variant 1</strong>
@@ -465,6 +439,27 @@
           </form>
           <p id="flag-result" role="status"></p>
         </dialog>
+        <dialog id="key-limits-dialog" aria-labelledby="key-limits-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="key-limits-title">Edit key limits</h3>
+            </div>
+            <button type="button" id="key-limits-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
+          <form id="key-limits-form" aria-label="Edit key limits">
+            <input id="key-limits-id" type="hidden" value="">
+            <label>Fetch limit (req/s) <input id="key-limits-fetch" type="number" min="1" max="10000"
+                placeholder="Global"></label>
+            <label>Ingest limit (req/s) <input id="key-limits-ingest" type="number" min="1" max="10000"
+                placeholder="Global"></label>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Save</button>
+              <button type="button" id="key-limits-cancel" class="btn ghost">Cancel</button>
+            </div>
+          </form>
+          <p id="key-limits-result" role="status"></p>
+        </dialog>
         <dialog id="flag-rules-dialog" aria-labelledby="flag-rules-title">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
             <div>
@@ -474,7 +469,7 @@
               style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
           </div>
           <ul id="flag-rules-list" aria-label="Flag rules">
-            <li>Not loaded.</li>
+            <li>Loading…</li>
           </ul>
           <h4>Rule</h4>
           <form id="flag-rules-form" aria-label="Flag rule create or edit">
@@ -550,7 +545,7 @@
               style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
           </div>
           <ul id="flag-experiments-list" aria-label="Flag experiments">
-            <li>Not loaded.</li>
+            <li>Loading…</li>
           </ul>
           <div class="form-actions">
             <button type="button" id="flag-experiments-add" class="btn primary">New experiment</button>
@@ -559,7 +554,6 @@
         </dialog>
         <dialog id="json-editor-dialog" aria-labelledby="json-editor-title">
           <h3 id="json-editor-title">Edit JSON</h3>
-          <p class="muted" id="json-editor-subtitle">Save writes back to the form.</p>
           <textarea id="json-editor-text" rows="14" spellcheck="false" aria-describedby="json-editor-status"></textarea>
           <p id="json-editor-status" class="json-hint" role="status"></p>
           <div class="dialog-actions">
@@ -591,7 +585,7 @@
             <button type="button" id="transfer-export-close" class="btn ghost" aria-label="Close dialog"
               style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
           </div>
-          <p class="muted">Snapshot JSON of merged flags+rules+experiments (group = name). Copy or download, then import elsewhere.</p>
+          <p class="muted">Merged flags, rules, experiments. Copy or download.</p>
           <textarea id="transfer-export-text" rows="14" readonly spellcheck="false" style="width:100%"></textarea>
           <p id="transfer-export-result" role="status"></p>
           <div class="dialog-actions">
@@ -609,7 +603,7 @@
             <button type="button" id="transfer-import-close" class="btn ghost" aria-label="Close dialog"
               style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
           </div>
-          <p class="muted">Paste snapshot JSON ({flags, experiments}). Import stages drafts — nothing publishes until Publish. Existing keys merge; rules per flag are replaced.</p>
+          <p class="muted">Paste snapshot. Stages drafts; Publish ships them.</p>
           <textarea id="transfer-import-text" rows="14" spellcheck="false" placeholder='{"flags": [...], "experiments": [...]}' style="width:100%"></textarea>
           <div>
             <input id="transfer-import-file" type="file" accept="application/json,.json">
@@ -629,7 +623,7 @@
             <button type="button" id="transfer-diff-close" class="btn ghost" aria-label="Close dialog"
               style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
           </div>
-          <p class="muted">Live vs merged (draft) snapshot. Green = added, red = removed, amber = modified with old → new.</p>
+          <p class="muted">Green added, red removed, amber changed.</p>
           <div id="transfer-diff-detail"></div>
           <div class="dialog-actions">
             <span class="dialog-spacer"></span>

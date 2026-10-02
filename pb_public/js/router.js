@@ -43,6 +43,14 @@
   }
 
   function syncSidebar() {
+    var ts = CW.$("sidebar-scope");
+    if (ts) {
+      ts.hidden = !CW.state.token;
+      if (!ts.hidden && CW.state.view === "home") {
+        var ps = CW.$("project-select");
+        if (ps && ps.querySelector && ps.querySelector('option[value="__all"]')) ps.value = "__all";
+      }
+    }
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
@@ -205,7 +213,7 @@
     try {
       var tb = document.querySelector(".topbar");
       if (tb && tb.getBoundingClientRect) off += tb.getBoundingClientRect().height || 0;
-      ["scope-bar", "env-bar"].forEach(function (id) {
+      ["env-bar"].forEach(function (id) {
         var bar = CW.$(id);
         if (bar && bar.getBoundingClientRect) {
           var pos = "";

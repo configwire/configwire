@@ -5,16 +5,16 @@
  * - Now: slate-charcoal scale (#141922 / #1a1f2a / #222834), brand gradient
  *   (blue → mint) on brand-mark, primary buttons, active nav wash, focus rings,
  *   chart fills; icon nav (inline SVG), status pill, polished login card,
- *   sticky thead, static scope bars, 900px + 640px breakpoints, reduced-motion.
+ *   sticky thead, static env bar, 900px + 640px breakpoints, reduced-motion.
  * v15 — Polish pass: toast slide-in animation, danger button red treatment,
  *   dialog ×-close button, empty-state helpers, topbar breadcrumb layout,
  *   sidebar separator line, improved project card hover glow, card header
  *   section divider gradient, scrollbar theming, select chevron, input height
- *   normalisation, scope-bar dividers, sidebar collapse pill indicator.
+ *   normalisation, env-bar dividers, sidebar collapse pill indicator.
  * Tokens live here in :root only (no DESIGN.md per scope).
  * JS contract: every #id / .class referenced by js/*.js is styled below —
  *   toast(.ok), login-*, admin-section, view-home/detail, project-*
-  *   (.project-card, .project-card-stats), scope-bar, flag-*
+  *   (.project-card, .project-card-stats), env-bar, flag-*
  *   (.flag-default-label, #flag-rules-dialog/-list/-form, .rule-*), exp-*, experiment-*, key-* (#key-once),
  *   release-*, transfer-* (.diff-file/.diff-badge/.diff-hunk/.diff-line/.diff-stat,
  *   .diff-field/.diff-nest/.diff-flag-exps, .staged-list, #transfer-export/-import/-diff-dialog), publish-*, setup-*, account-*(#account-list/-create-form/-result,
@@ -130,6 +130,10 @@ h3 {
   color: var(--muted);
   margin: var(--space-4) 0 var(--space-2);
   font-weight: 600;
+}
+
+section.card h3 {
+  color: var(--text);
 }
 
 p {
@@ -301,6 +305,7 @@ code {
 }
 
 .sidebar-foot {
+  margin-top: auto;
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-soft);
   display: flex;
@@ -396,6 +401,41 @@ code {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.sidebar-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.sidebar-scope[hidden] {
+  display: none;
+}
+
+.sidebar-scope label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-width: 0;
+  margin: 0;
+}
+
+.sidebar-scope select {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 8px 10px;
+  font-size: 13px;
 }
 
 .status-pill {
@@ -560,6 +600,7 @@ main {
 .scope-group-sub {
   margin: 0;
   font-size: 12px;
+  color: var(--muted);
 }
 
 .scope-group-badge {
@@ -658,6 +699,11 @@ main {
   overflow-wrap: anywhere;
 }
 
+.detail-head #refresh-scope {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 #view-home[hidden],
 #view-detail[hidden],
 #view-account[hidden],
@@ -671,7 +717,6 @@ main {
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   margin-top: var(--space-4);
-  max-width: 720px;
 }
 
 .settings-grid .card {
@@ -707,10 +752,87 @@ main {
   width: 100%;
 }
 
+/* ---- New key form: larger inputs (matches rate-limit sizing) ---- */
+#key-form label {
+  flex: 1 1 200px;
+}
+
+#key-form input {
+  height: 44px;
+  font-size: 15px;
+}
+
+#key-form button[type="submit"] {
+  height: 44px;
+  padding: 0 var(--space-6);
+}
+
+/* ---- Key list rows: prefix + status badge + limits, actions pinned right ---- */
+#key-list .key-row {
+  align-items: center;
+}
+
+#key-list .key-limits {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#key-list .key-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* ---- Key limits dialog form ---- */
+#key-limits-form {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+#key-limits-form .form-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* ---- New admin form: fields stretch full width ---- */
+#account-create-form label {
+  flex: 1 1 200px;
+}
+
+#account-create-form input {
+  width: 100%;
+}
+
+/* ---- Rate limits form: larger inputs, Save button on its own row below ---- */
+#limits-form {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+#limits-form .limit-grid {
+  width: 100%;
+}
+
+#limits-form .limit-grid input {
+  height: 44px;
+  font-size: 15px;
+}
+
+#limits-form .limits-footer {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+#limits-form .limits-footer button[type="submit"] {
+  width: auto;
+}
+
 .limit-field small {
   font-size: 11px;
   line-height: 1.5;
-  color: var(--muted-dim);
+  color: var(--muted);
 }
 
 .limit-field-wide {
@@ -960,8 +1082,9 @@ textarea {
   padding: var(--space-2) var(--space-3);
 }
 
-input::placeholder {
-  color: var(--muted-dim);
+input::placeholder,
+textarea::placeholder {
+  color: #a8b4cf;
   opacity: 1;
 }
 
@@ -1188,7 +1311,6 @@ a:focus-visible {
 }
 
 /* ---- Scope / status ---- */
-#scope-bar,
 #env-bar {
   display: flex;
   flex-wrap: wrap;
@@ -1197,18 +1319,15 @@ a:focus-visible {
   padding: var(--space-4);
 }
 
-#scope-bar label,
 #env-bar label {
   flex: 1 1 120px;
   min-width: 0;
 }
 
-#scope-bar label select,
 #env-bar label select {
   width: 100%;
 }
 
-#scope-bar>.scope-sep,
 #env-bar>.scope-sep {
   width: 1px;
   align-self: stretch;
@@ -1487,7 +1606,7 @@ td code {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--muted-dim);
+  color: var(--muted);
   text-align: left;
 }
 
@@ -1768,7 +1887,7 @@ td code {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--muted-dim);
+  color: var(--muted);
   text-align: left;
 }
 
@@ -1920,7 +2039,7 @@ td code {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: var(--muted-dim);
+  color: var(--muted);
   text-align: left;
 }
 
@@ -2964,6 +3083,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   min-height: 0;
   margin-top: 3px;
   font-weight: 500;
+  color: var(--muted);
 }
 
 .json-hint:empty {
@@ -2995,6 +3115,7 @@ dialog#json-editor-dialog,
 dialog#flag-rules-dialog,
 dialog#flag-experiments-dialog,
 dialog#flag-dialog,
+dialog#key-limits-dialog,
 dialog#experiment-dialog,
 dialog#release-dialog,
 dialog#transfer-export-dialog,
@@ -3035,6 +3156,12 @@ dialog#flag-experiments-dialog {
 }
 
 dialog#flag-dialog {
+  width: min(560px, 92vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+dialog#key-limits-dialog {
   width: min(560px, 92vw);
   max-height: 88dvh;
   overflow-y: auto;
@@ -3131,6 +3258,7 @@ dialog#json-editor-dialog::backdrop,
 dialog#flag-rules-dialog::backdrop,
 dialog#flag-experiments-dialog::backdrop,
 dialog#flag-dialog::backdrop,
+dialog#key-limits-dialog::backdrop,
 dialog#experiment-dialog::backdrop,
 dialog#release-dialog::backdrop,
 dialog#transfer-export-dialog::backdrop,
@@ -3144,6 +3272,7 @@ dialog#cw-dialog h3,
 dialog#flag-rules-dialog h3,
 dialog#flag-experiments-dialog h3,
 dialog#flag-dialog h3,
+dialog#key-limits-dialog h3,
 dialog#experiment-dialog h3,
 dialog#release-dialog h3,
 dialog#transfer-export-dialog h3,
@@ -3348,18 +3477,15 @@ dialog#json-editor-dialog .muted {
     font-size: 13px;
   }
 
-  #scope-bar,
   #env-bar {
     flex-direction: column;
     align-items: stretch;
   }
 
-  #scope-bar>.scope-sep,
   #env-bar>.scope-sep {
     display: none;
   }
 
-  #scope-bar button,
   #env-bar button {
     width: 100%;
   }
@@ -3461,6 +3587,7 @@ dialog#json-editor-dialog .muted {
   dialog#flag-rules-dialog,
   dialog#flag-experiments-dialog,
   dialog#flag-dialog,
+  dialog#key-limits-dialog,
   dialog#experiment-dialog,
   dialog#release-dialog {
     padding: var(--space-4);
