@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
@@ -128,6 +129,10 @@ func checkFlagKey(key string) error {
 	return nil
 }
 
+// envDeleteMu serializes environment deletes so two concurrent deletes
+// of a project's last two environments cannot both pass the count check.
+var envDeleteMu sync.Mutex
+
 // Exact count-query equivalent:
 //
 //	SELECT COUNT(*) FROM flags WHERE project = '<projectId>'
@@ -242,6 +247,28 @@ func registerConfigwireHooks(app core.App) {
 	app.OnRecordUpdate("environments").BindFunc(func(e *core.RecordEvent) error {
 		if err := checkEnvSlug(e.App, e.Record); err != nil {
 			return err
+		}
+		return e.Next()
+	})
+
+	// A project's last environment cannot be deleted directly (data
+	// API, dashboard, server-side saves): every project must keep at
+	// least one environment for publish/fetch to resolve. Project
+	// deletion itself still removes everything: cascaded deletes run
+	// after the project row is gone, so they pass through.
+	app.OnRecordDelete("environments").BindFunc(func(e *core.RecordEvent) error {
+		projectID := e.Record.GetString("project")
+		if _, err := e.App.FindRecordById("projects", projectID); err != nil {
+			return e.Next()
+		}
+		envDeleteMu.Lock()
+		defer envDeleteMu.Unlock()
+		n, err := e.App.CountRecords("environments", dbx.HashExp{"project": projectID})
+		if err != nil {
+			return err
+		}
+		if n <= 1 {
+			return apis.NewBadRequestError("cannot delete the last environment of this project.", nil)
 		}
 		return e.Next()
 	})
