@@ -792,7 +792,6 @@ main {
 
 #key-form input {
   height: 44px;
-  font-size: 15px;
 }
 
 #key-form button[type="submit"] {
@@ -850,7 +849,6 @@ main {
 
 #limits-form .limit-grid input {
   height: 44px;
-  font-size: 15px;
 }
 
 #limits-form .limits-footer {
@@ -1704,7 +1702,6 @@ td code {
   width: 100%;
   max-width: none;
   height: 28px;
-  font-size: 12px;
 }
 
 #flag-folders .flag-menu-label {
@@ -1993,7 +1990,6 @@ td code {
   width: 100%;
   max-width: none;
   height: 28px;
-  font-size: 12px;
 }
 
 #experiment-list .exp-menu-label {
@@ -2145,7 +2141,6 @@ td code {
   width: 100%;
   max-width: none;
   height: 28px;
-  font-size: 12px;
 }
 
 #flag-experiments-list .exp-menu-label {
