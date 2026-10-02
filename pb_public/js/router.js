@@ -187,8 +187,8 @@
 
   function scrollBelowSticky(card) {
     // Sidebar anchors land on a section card, but the sticky topbar plus
-    // the sticky scope bar would cover its head. Measure both live (scope
-    // bar is static on narrow screens, so a fixed offset would be wrong
+    // the sticky scope bars would cover its head. Measure all live (bars
+    // are static on narrow screens, so a fixed offset would be wrong
     // there) and land the card just below them in one jump.
     if (!card || !card.getBoundingClientRect) {
       if (card && card.scrollIntoView) card.scrollIntoView();
@@ -203,12 +203,14 @@
     try {
       var tb = document.querySelector(".topbar");
       if (tb && tb.getBoundingClientRect) off += tb.getBoundingClientRect().height || 0;
-      var scope = CW.$("scope-bar");
-      if (scope && scope.getBoundingClientRect) {
-        var pos = "";
-        if (window.getComputedStyle) pos = window.getComputedStyle(scope).position || "";
-        if (pos === "sticky" || pos === "fixed") off += scope.getBoundingClientRect().height || 0;
-      }
+      ["scope-bar", "env-bar"].forEach(function (id) {
+        var bar = CW.$(id);
+        if (bar && bar.getBoundingClientRect) {
+          var pos = "";
+          if (window.getComputedStyle) pos = window.getComputedStyle(bar).position || "";
+          if (pos === "sticky" || pos === "fixed") off += bar.getBoundingClientRect().height || 0;
+        }
+      });
     } catch (e2) { off = 212; }
     y = Math.max(0, y - off);
     try { window.scrollTo(0, y); }

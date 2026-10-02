@@ -148,20 +148,11 @@
             <button id="back-to-projects" type="button" class="btn ghost">&larr; Projects</button>
             <h2 id="detail-project-name">Project</h2>
           </div>
-          <div id="scope-bar" class="card scope" aria-label="Project and environment scope">
+          <div id="scope-bar" class="card scope" aria-label="Project scope">
             <label>Project
               <select id="project-select" aria-label="Project"></select>
             </label>
-            <label>Environment
-              <select id="env-select" aria-label="Environment"></select>
-            </label>
             <button id="refresh-scope" type="button" class="btn secondary">Reload</button>
-            <form id="env-create-form" class="inline-form" aria-label="Environment create">
-              <label>New env slug <input id="env-slug" type="text" required maxlength="64" spellcheck="false"
-                  placeholder="staging"></label>
-              <button type="submit" class="btn primary">Add env</button>
-            </form>
-            <p id="env-result" role="status"></p>
           </div>
 
           <div class="grid">
@@ -176,6 +167,19 @@
                 <p class="muted">Not loaded.</p>
               </div>
             </section>
+
+            <div id="env-bar" class="card scope" aria-label="Environment scope">
+              <label>Environment
+                <select id="env-select" aria-label="Environment"></select>
+              </label>
+              <form id="env-create-form" class="inline-form" aria-label="Environment create">
+                <label>New env slug <input id="env-slug" type="text" required maxlength="64" spellcheck="false"
+                    placeholder="staging"></label>
+                <button type="submit" class="btn primary">Add env</button>
+              </form>
+              <p class="muted" role="status">Switching environment reloads Releases, SDK keys and Stats below. Flags above are project-wide — Publish ships them to this environment. Rate limits are global.</p>
+              <p id="env-result" role="status"></p>
+            </div>
 
             <section class="card" aria-labelledby="releases">
               <div class="card-head">

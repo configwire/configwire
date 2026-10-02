@@ -1116,7 +1116,8 @@ a:focus-visible {
 }
 
 /* ---- Scope / status ---- */
-#scope-bar {
+#scope-bar,
+#env-bar {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
@@ -1124,16 +1125,19 @@ a:focus-visible {
   padding: var(--space-4);
 }
 
-#scope-bar label {
+#scope-bar label,
+#env-bar label {
   flex: 1 1 120px;
   min-width: 0;
 }
 
-#scope-bar label select {
+#scope-bar label select,
+#env-bar label select {
   width: 100%;
 }
 
-#scope-bar>.scope-sep {
+#scope-bar>.scope-sep,
+#env-bar>.scope-sep {
   width: 1px;
   align-self: stretch;
   background: var(--border-soft);
@@ -3272,16 +3276,19 @@ dialog#json-editor-dialog .muted {
     font-size: 13px;
   }
 
-  #scope-bar {
+  #scope-bar,
+  #env-bar {
     flex-direction: column;
     align-items: stretch;
   }
 
-  #scope-bar>.scope-sep {
+  #scope-bar>.scope-sep,
+  #env-bar>.scope-sep {
     display: none;
   }
 
-  #scope-bar button {
+  #scope-bar button,
+  #env-bar button {
     width: 100%;
   }
 
