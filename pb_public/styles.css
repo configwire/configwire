@@ -619,10 +619,9 @@ main {
 }
 
 .scope-group-env {
-  border-color: rgba(59, 130, 246, 0.45);
+  border-color: var(--border);
   background: var(--panel-2);
   background-image: linear-gradient(180deg, rgba(59, 130, 246, 0.06) 0%, transparent 64px);
-  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm);
 }
 
 .scope-group-env .scope-group-badge-env {
@@ -706,10 +705,9 @@ main {
 
 .scope-group-settings {
   margin-top: var(--space-4);
-  border-color: rgba(59, 130, 246, 0.45);
+  border-color: var(--border);
   background: var(--panel-2);
   background-image: linear-gradient(180deg, rgba(59, 130, 246, 0.06) 0%, transparent 64px);
-  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm);
 }
 
 .settings-zone-box {
@@ -727,7 +725,7 @@ main {
   padding: var(--space-4);
 }
 
-.settings-row + .settings-row {
+.settings-row+.settings-row {
   border-top: 1px solid var(--border-soft);
 }
 
@@ -2871,7 +2869,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   align-items: center;
 }
 
-#stats-view .stats-tip-row + .stats-tip-row {
+#stats-view .stats-tip-row+.stats-tip-row {
   margin-top: 3px;
 }
 
