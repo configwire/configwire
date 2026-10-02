@@ -28,7 +28,7 @@
   var MAX_FLAGS = 1000;
   var VALID_FLAG_TYPES = { number: true, string: true, bool: true, json: true };
   var VALID_EXP_STATUS = { draft: true, running: true, stopped: true };
-  var SHAPE_ERROR = "expected {flags:[...], experiments:[...]}";
+  var SHAPE_ERROR = "Expected {flags:[...], experiments:[...]}";
 
   function hasOwn(o, k) {
     return Object.prototype.hasOwnProperty.call(o, k);
@@ -197,7 +197,7 @@
     try {
       v = JSON.parse(text);
     } catch (e) {
-      return { ok: false, error: "invalid JSON: " + ((e && e.message) || "parse error") };
+      return { ok: false, error: "Invalid JSON: " + ((e && e.message) || "parse error") };
     }
     if (!isObject(v) || !Array.isArray(v.flags)) {
       return { ok: false, error: SHAPE_ERROR };
@@ -225,20 +225,20 @@
   }
 
   function conditionError(cond) {
-    if (!isObject(cond)) return "must be a JSON object with field/op/value";
-    if (typeof cond.field !== "string" || !cond.field) return "field must be a non-empty string";
-    if (typeof cond.op !== "string" || !cond.op) return "op must be a non-empty string";
-    if (!hasOwn(cond, "value")) return "missing value";
+    if (!isObject(cond)) return "Must be a JSON object with field/op/value.";
+    if (typeof cond.field !== "string" || !cond.field) return "Field must be a non-empty string.";
+    if (typeof cond.op !== "string" || !cond.op) return "Op must be a non-empty string.";
+    if (!hasOwn(cond, "value")) return "Missing value.";
     var field = cond.field;
     var base = null;
     if (field === "platform" || field === "locale" || field === "country") base = field;
     else if (field === "appVersion" || field === "percentile") base = field;
     else if (field === "custom." || field.indexOf("custom.") === 0) base = "custom.";
-    else return "unknown field " + JSON.stringify(field);
-    if (base === "custom." && field === "custom.") return "custom attribute name must not be empty";
+    else return "Unknown field " + JSON.stringify(field);
+    if (base === "custom." && field === "custom.") return "Custom attribute name must not be empty.";
     var allowed = CONDITION_OPS[base] || [];
     if (allowed.indexOf(cond.op) < 0) {
-      return "op " + JSON.stringify(cond.op) + " not allowed for field " + JSON.stringify(field);
+      return "Op " + JSON.stringify(cond.op) + " not allowed for field " + JSON.stringify(field) + ".";
     }
     return null;
   }
@@ -248,81 +248,81 @@
     var flags = snap.flags;
     var exps = snap.experiments === undefined ? [] : snap.experiments;
     if (!Array.isArray(flags) || !Array.isArray(exps)) return { ok: false, error: SHAPE_ERROR };
-    if (!flags.length) return { ok: false, error: "nothing to import: no flags" };
+    if (!flags.length) return { ok: false, error: "Nothing to import: no flags." };
     if (flags.length > MAX_FLAGS) {
-      return { ok: false, error: "flag limit reached: max " + MAX_FLAGS + " flags per project" };
+      return { ok: false, error: "Flag limit reached: max " + MAX_FLAGS + " flags per project." };
     }
     var i, j, f;
     for (i = 0; i < flags.length; i++) {
       f = flags[i];
-      if (!isObject(f)) return { ok: false, error: "flag " + i + " must be an object" };
+      if (!isObject(f)) return { ok: false, error: "Flag " + i + " must be an object." };
       if (typeof f.key !== "string" || !f.key.length || f.key.length > MAX_FLAG_KEY_LEN || !FLAG_KEY_RE.test(f.key)) {
-        return { ok: false, error: "invalid flag key " + JSON.stringify(f.key) + ": must match ^[A-Za-z_][A-Za-z0-9_.-]*$ and be 1-128 chars" };
+        return { ok: false, error: "Invalid flag key " + JSON.stringify(f.key) + ": must match ^[A-Za-z_][A-Za-z0-9_.-]*$ and be 1-128 chars." };
       }
       if (!hasOwn(VALID_FLAG_TYPES, f.type)) {
-        return { ok: false, error: "invalid flag type " + JSON.stringify(f.type) + " for flag " + JSON.stringify(f.key) + ": must be number|string|bool|json" };
+        return { ok: false, error: "Invalid flag type " + JSON.stringify(f.type) + " for flag " + JSON.stringify(f.key) + ": must be number|string|bool|json." };
       }
       if (!defaultMatchesType(f.default, f.type)) {
-        return { ok: false, error: "flag " + JSON.stringify(f.key) + ": default value does not match type " + JSON.stringify(f.type) };
+        return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": default does not match type " + JSON.stringify(f.type) + "." };
       }
       var rules = f.rules === undefined ? [] : f.rules;
       if (!Array.isArray(rules)) {
-        return { ok: false, error: "flag " + JSON.stringify(f.key) + ": rules must be an array" };
+        return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": rules must be an array." };
       }
       for (j = 0; j < rules.length; j++) {
         var rl = rules[j];
         if (!isObject(rl)) {
-          return { ok: false, error: "flag " + JSON.stringify(f.key) + ": rule " + j + " must be an object" };
+          return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": rule " + j + " must be an object." };
         }
         if (!defaultMatchesType(rl.value, f.type)) {
-          return { ok: false, error: "flag " + JSON.stringify(f.key) + ": rule value does not match type " + JSON.stringify(f.type) };
+          return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": rule value does not match type " + JSON.stringify(f.type) + "." };
         }
         var cerr = conditionError(rl.condition);
         if (cerr) {
-          return { ok: false, error: "flag " + JSON.stringify(f.key) + ": rule " + j + " has invalid condition: " + cerr };
+          return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": rule " + j + " has invalid condition: " + cerr };
         }
       }
     }
     for (i = 0; i < exps.length; i++) {
       var e = exps[i];
-      if (!isObject(e)) return { ok: false, error: "experiment " + i + " must be an object" };
+      if (!isObject(e)) return { ok: false, error: "Experiment " + i + " must be an object." };
       if (typeof e.flag !== "string" || !e.flag) {
-        return { ok: false, error: "experiment " + (e.name || i) + ": flag is required" };
+        return { ok: false, error: "Experiment " + (e.name || i) + ": Flag required." };
       }
       var label = e.name || e.flag + "/" + (e.seed || "");
       if (!Array.isArray(e.variants) || !e.variants.length) {
-        return { ok: false, error: "experiment " + JSON.stringify(String(label)) + " has no variants" };
+        return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + " has no variants." };
       }
       var seen = {};
       var sum = 0;
       for (j = 0; j < e.variants.length; j++) {
         var vv = e.variants[j];
         if (!isObject(vv)) {
-          return { ok: false, error: "experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " must be an object" };
+          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " must be an object." };
         }
         if (typeof vv.name !== "string" || !vv.name.trim()) {
-          return { ok: false, error: "experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " has an empty name" };
+          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " has an empty name." };
         }
         var vn = vv.name.trim();
         if (hasOwn(seen, vn)) {
-          return { ok: false, error: "experiment " + JSON.stringify(String(label)) + ": duplicate variant name: " + vn };
+          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": Duplicate variant name: " + vn };
         }
         seen[vn] = true;
         var w = vv.weightBps;
         if (typeof w !== "number" || !isFinite(w) || Math.floor(w) !== w) {
-          return { ok: false, error: "experiment " + JSON.stringify(String(label)) + ': variant "' + vn + '" weightBps must be an integer' };
+          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ': Variant "' + vn + '" weightBps must be an integer.' };
         }
         if (w < 0) {
-          return { ok: false, error: "experiment " + JSON.stringify(String(label)) + ': variant "' + vn + '" has negative weightBps' };
+          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ': Variant "' + vn + '" has negative weightBps.' };
         }
         sum += w;
       }
       if (sum !== 10000) {
-        return { ok: false, error: "experiment " + JSON.stringify(String(label)) + ": weights sum " + sum + "/10000 — must total 10000" };
+        return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": Weights sum " + sum + "/10000 — must total 10000." };
       }
       var st = e.status === undefined || e.status === null || e.status === "" ? "draft" : e.status;
       if (!hasOwn(VALID_EXP_STATUS, st)) {
-        return { ok: false, error: "experiment " + JSON.stringify(String(label)) + ": invalid status " + JSON.stringify(e.status) + ": must be draft|running|stopped" };
+        return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": Invalid status " + JSON.stringify(e.status) + ": must be draft|running|stopped." };
       }
     }
     return { ok: true };
@@ -541,8 +541,8 @@
     if (c.experimentsUpdated) parts.push(c.experimentsUpdated + (c.experimentsUpdated === 1 ? " experiment updated" : " experiments updated"));
     if (c.groupsCreated) parts.push(c.groupsCreated + (c.groupsCreated === 1 ? " group created" : " groups created"));
     if (c.skipped) parts.push(c.skipped + " skipped");
-    if (!parts.length) return "import staged: no changes";
-    return "import staged: " + parts.join(", ");
+    if (!parts.length) return "Import staged: no changes.";
+    return "Import staged: " + parts.join(", ");
   }
 
   // --- diffTransferSnapshots ---
@@ -768,10 +768,10 @@
       try {
         var p = navigator.clipboard.writeText(v);
         if (p && typeof p.then === "function") {
-          p.then(function () { toastSafe("copied", true); }, function () { fallbackCopy(ta, v); });
+          p.then(function () { toastSafe("Copied", true); }, function () { fallbackCopy(ta, v); });
           return;
         }
-        toastSafe("copied", true);
+        toastSafe("Copied", true);
         return;
       } catch (e) { /* fall through to textarea fallback */ }
     }
@@ -783,10 +783,10 @@
       if (ta && typeof ta.select === "function" && typeof document !== "undefined" && document &&
           typeof document.execCommand === "function") {
         ta.select();
-        if (document.execCommand("copy")) { toastSafe("copied", true); return; }
+        if (document.execCommand("copy")) { toastSafe("Copied", true); return; }
       }
     } catch (e) { /* manual fallback below */ }
-    toastSafe(v ? "copy unavailable — select the text manually" : "nothing to copy");
+    toastSafe(v ? "Copy failed." : "Nothing to copy.");
   }
 
   function downloadExport() {
@@ -814,7 +814,7 @@
         try { if (body && typeof body.removeChild === "function" && a.parentNode) body.removeChild(a); } catch (e2) { /* best-effort */ }
         try { if (typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(url); } catch (e3) { /* best-effort */ }
       }
-      toastSafe("downloaded " + name, true);
+      toastSafe("Downloaded " + name, true);
     } catch (e) { /* best-effort */ }
   }
 
@@ -856,9 +856,9 @@
         if (items[i] && String(items[i].id) === String(releaseOrId)) { rec = items[i]; break; }
       }
     }
-    if (!rec) { toastSafe("release not found"); return; }
+    if (!rec) { toastSafe("Release not found."); return; }
     var snap = releaseSnapshotToTransfer(rec);
-    if (!snap) { toastSafe("release has no snapshot"); return; }
+    if (!snap) { toastSafe("Release has no snapshot."); return; }
     try { exportName = "ConfigWire-release-v" + rec.version + ".json"; } catch (e) { exportName = ""; }
     openExportDialog(snap);
   }
@@ -871,7 +871,7 @@
     try {
       parsed = parseTransferSnapshot(text);
     } catch (e) {
-      parsed = { ok: false, error: "invalid JSON" };
+      parsed = { ok: false, error: "Invalid JSON." };
     }
     if (!parsed.ok) {
       if (res) res.textContent = parsed.error;
@@ -882,7 +882,7 @@
     try {
       v = validateTransferSnapshot(parsed.snap);
     } catch (e) {
-      v = { ok: false, error: "invalid snapshot" };
+      v = { ok: false, error: "Invalid snapshot." };
     }
     if (!v.ok) {
       if (res) res.textContent = v.error;
@@ -893,7 +893,7 @@
     try {
       counts = importTransferSnapshot(parsed.snap, {});
     } catch (e) {
-      var msg = (e && e.message) || "import failed";
+      var msg = (e && e.message) || "Import failed.";
       if (res) res.textContent = msg;
       toastSafe(msg);
       return;
@@ -1112,7 +1112,7 @@
     if (box) {
       var html = "";
       if (!d) {
-        html = "<p>diff unavailable</p>";
+        html = "<p>Diff unavailable.</p>";
       } else {
         var frows = changedRows(d.flags);
         var xrows = changedRows(d.experiments);

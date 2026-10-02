@@ -7,7 +7,7 @@
   function renderReleases() {
     var list = CW.$("release-list");
     if (!list) return;
-    if (!CW.state.releases.length) { list.innerHTML = "<li>No releases for this env.</li>"; return; }
+    if (!CW.state.releases.length) { list.innerHTML = "<li>No releases.</li>"; return; }
     if (typeof CW.state.releasesExpanded === "undefined") CW.state.releasesExpanded = false;
     var expanded = !!CW.state.releasesExpanded;
     var visible = expanded ? CW.state.releases : CW.state.releases.slice(0, 3);
@@ -24,7 +24,7 @@
         '<button type="button" role="menuitem" data-view-release="' + CW.esc(r.id) + '">' + viewIcon + "<span>view</span></button>" +
         '<button type="button" role="menuitem" data-export-release="' + CW.esc(r.id) + '">' + exportIcon + "<span>export</span></button>" +
         (idx === 0 ? "" :
-          '<button type="button" role="menuitem" data-rollback-version="' + CW.esc(r.version) + '">' + rollbackIcon + "<span>rollback to v" +
+          '<button type="button" role="menuitem" data-rollback-version="' + CW.esc(r.version) + '">' + rollbackIcon + "<span>Rollback to v" +
           CW.esc(r.version) + "</span></button>") +
         "</div></span>";
       if (idx === 0) {
@@ -35,7 +35,7 @@
     if (CW.state.releases.length > 3) {
       var hidden = CW.state.releases.length - 3;
       html += '<li><button type="button" id="releases-toggle">' +
-        (expanded ? "show less" : "show " + hidden + " more") + "</button></li>";
+        (expanded ? "Show less" : "Show " + hidden + " more") + "</button></li>";
     }
     list.innerHTML = html;
     var tog = CW.$("releases-toggle");
@@ -297,7 +297,7 @@
           ? "Unpublished changes \u2014 publish to release (" + detail + ")"
           : "Unpublished changes \u2014 publish to release";
       } else {
-        hint.textContent = "No unpublished changes";
+        hint.textContent = "Up to date.";
       }
       if (hint.classList) hint.classList.toggle("is-dirty", !!dirty);
     }
@@ -642,9 +642,8 @@
       } catch (e) { /* kept in memory */ }
       rerenderMerged();
       var kept = countDrafts();
-      var err = new Error("draft apply failed at " + s.kind + " " + s.label +
-        " (step " + stepNo + "/" + total + "): HTTP " + status + " \u2014 " + msg +
-        ". " + kept + (kept === 1 ? " draft" : " drafts") + " kept; fix and retry Publish.");
+      var err = new Error("Publish stopped at " + s.label +
+        " (step " + stepNo + "/" + total + "). " + kept + " drafts kept.");
       err.draftKind = s.kind;
       err.draftLabel = s.label;
       err.step = stepNo;

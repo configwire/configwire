@@ -135,7 +135,7 @@ test("plural/summaryText via setPublishState hint text", function () {
     "Unpublished changes — publish to release (2 flags • 1 rule • 1 group)"
   );
   h.CW.setPublishState(false);
-  assert.equal(h.elementsById["publish-hint"].textContent, "No unpublished changes");
+  assert.equal(h.elementsById["publish-hint"].textContent, "Up to date.");
 });
 
 test("setPublishState: view-draft button visible only when dirty", function () {
@@ -218,9 +218,10 @@ test("resolveFlagRef: dangling draft flag rejects with DANGLING_TEMP, draft kept
   // resolveFlagRef returns null for unmapped draft- refs (releases.js:408),
   // which runApplyStep rejects as DANGLING_TEMP (releases.js:551-554).
   assert.ok(err instanceof Error);
-  assert.ok(err.message.indexOf("rule staged against a discarded draft flag (draft-flag-9)") >= 0);
-  assert.ok(err.message.indexOf("step 1/1") >= 0);
-  assert.ok(err.message.indexOf("1 draft kept") >= 0);
+  assert.ok(err.message.indexOf("Publish stopped at") >= 0, "missing publish-stopped prefix: " + err.message);
+  assert.ok(err.message.indexOf("rule for ghost") >= 0, "missing label: " + err.message);
+  assert.ok(err.message.indexOf("step 1/1") >= 0, "missing step: " + err.message);
+  assert.ok(err.message.indexOf("1 drafts kept") >= 0, "missing kept: " + err.message);
   assert.equal(err.code, "DANGLING_TEMP");
   assert.equal(err.kept, 1);
   assert.equal(calls.length, 0);
