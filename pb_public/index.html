@@ -162,78 +162,85 @@
               </div>
             </section>
 
-            <div id="env-bar" class="card scope" aria-label="Environment scope">
-              <label>Environment
-                <select id="env-select" aria-label="Environment"></select>
-              </label>
-              <form id="env-create-form" class="inline-form" aria-label="Environment create">
-                <label>New env slug <input id="env-slug" type="text" required maxlength="64" spellcheck="false"
-                    placeholder="staging"></label>
-                <button type="submit" class="btn primary">Add env</button>
-              </form>
-              <p class="muted" role="status">Switching environment reloads Releases, SDK keys and Stats below. Flags above are project-wide — Publish ships them to this environment. Rate limits are global — manage them in Settings.</p>
-              <p id="env-result" role="status"></p>
-            </div>
+            <section class="scope-group scope-group-env" aria-labelledby="env-group-title">
+              <div class="scope-group-head">
+                <span class="scope-group-badge scope-group-badge-env" aria-hidden="true">Environment</span>
+                <h2 id="env-group-title" class="scope-group-title">Environment scope — <span id="env-group-name">env</span></h2>
+              </div>
+              <p class="scope-group-sub muted">Env-scoped. Releases, SDK keys and Stats all follow the selected environment — switching it reloads everything inside this outline. Publish ships the project flags above into this environment.</p>
+              <div id="env-bar" class="card scope" aria-label="Environment scope">
+                <label>Environment
+                  <select id="env-select" aria-label="Environment"></select>
+                </label>
+                <form id="env-create-form" class="inline-form" aria-label="Environment create">
+                  <label>New env slug <input id="env-slug" type="text" required maxlength="64" spellcheck="false"
+                      placeholder="staging"></label>
+                  <button type="submit" class="btn primary">Add env</button>
+                </form>
+                <p class="muted" role="status">Switching environment reloads Releases, SDK keys and Stats below. Flags above are project-wide — Publish ships them to this environment. Rate limits are global — manage them in Settings.</p>
+                <p id="env-result" role="status"></p>
+              </div>
 
-            <section class="card" aria-labelledby="releases">
-              <div class="card-head">
-                <h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh
-                  releases</button>
-              </div>
-              <ul id="release-list" aria-label="Releases">
-                <li>Not loaded.</li>
-              </ul>
-              <hr>
-              <h3 id="publish">Publish</h3>
-              <p id="publish-hint" class="muted" role="status">No unpublished changes</p>
-              <ul id="unpublished-list" aria-label="Unpublished changes" hidden></ul>
-              <form id="publish-form">
-                <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
-                <label>baseVersion (auto-filled) <input id="publish-base" name="baseVersion" type="number" min="0"
-                    required></label>
-                <button type="submit" class="btn primary" disabled>Publish new version</button>
-                <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View draft</button>
-                <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard changes</button>
-              </form>
-              <p id="publish-result" role="status"></p>
-            </section>
+              <section class="card" aria-labelledby="releases">
+                <div class="card-head">
+                  <h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh
+                    releases</button>
+                </div>
+                <ul id="release-list" aria-label="Releases">
+                  <li>Not loaded.</li>
+                </ul>
+                <hr>
+                <h3 id="publish">Publish</h3>
+                <p id="publish-hint" class="muted" role="status">No unpublished changes</p>
+                <ul id="unpublished-list" aria-label="Unpublished changes" hidden></ul>
+                <form id="publish-form">
+                  <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
+                  <label>baseVersion (auto-filled) <input id="publish-base" name="baseVersion" type="number" min="0"
+                      required></label>
+                  <button type="submit" class="btn primary" disabled>Publish new version</button>
+                  <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View draft</button>
+                  <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard changes</button>
+                </form>
+                <p id="publish-result" role="status"></p>
+              </section>
 
-            <section class="card" aria-labelledby="keys">
-              <div class="card-head">
-                <h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh
-                  keys</button>
-              </div>
-              <ul id="key-list" aria-label="SDK keys">
-                <li>Not loaded.</li>
-              </ul>
-              <h3>New key</h3>
-              <p class="muted">Per-key req/sec. Empty = global.</p>
-              <form id="key-form" aria-label="SDK key create">
-                <label>fetchRps (req/s, empty=global) <input id="key-fetch-rps" type="number" min="1" max="10000" placeholder="Global 100/s"></label>
-                <label>ingestRps (req/s, empty=global) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
-                <button type="submit" class="btn primary">Create key</button>
-              </form>
-              <p id="key-result" role="status"></p>
-              <div id="key-once" hidden>
-                <p><strong>New key (shown once — copy now):</strong></p>
-                <code id="key-once-value"></code>
-                <button id="key-copy" type="button" class="btn secondary">Copy</button>
-              </div>
-            </section>
+              <section class="card" aria-labelledby="keys">
+                <div class="card-head">
+                  <h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh
+                    keys</button>
+                </div>
+                <ul id="key-list" aria-label="SDK keys">
+                  <li>Not loaded.</li>
+                </ul>
+                <h3>New key</h3>
+                <p class="muted">Per-key req/sec. Empty = global.</p>
+                <form id="key-form" aria-label="SDK key create">
+                  <label>fetchRps (req/s, empty=global) <input id="key-fetch-rps" type="number" min="1" max="10000" placeholder="Global 100/s"></label>
+                  <label>ingestRps (req/s, empty=global) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
+                  <button type="submit" class="btn primary">Create key</button>
+                </form>
+                <p id="key-result" role="status"></p>
+                <div id="key-once" hidden>
+                  <p><strong>New key (shown once — copy now):</strong></p>
+                  <code id="key-once-value"></code>
+                  <button id="key-copy" type="button" class="btn secondary">Copy</button>
+                </div>
+              </section>
 
-            <section class="card" aria-labelledby="stats">
-              <div class="card-head">
-                <h2 id="stats">Stats</h2>
-              </div>
-              <form id="stats-filter-form" class="inline-form" aria-label="Stats filters">
-                <label for="stats-since">Since <select id="stats-since">
-                    <option value="7d" selected>7d</option>
-                    <option value="30d">30d</option>
-                    <option value="90d">90d</option>
-                  </select></label>
-                <button id="refresh-stats" type="button" class="btn secondary">Load stats</button>
-              </form>
-              <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Not loaded.</div>
+              <section class="card" aria-labelledby="stats">
+                <div class="card-head">
+                  <h2 id="stats">Stats</h2>
+                </div>
+                <form id="stats-filter-form" class="inline-form" aria-label="Stats filters">
+                  <label for="stats-since">Since <select id="stats-since">
+                      <option value="7d" selected>7d</option>
+                      <option value="30d">30d</option>
+                      <option value="90d">90d</option>
+                    </select></label>
+                  <button id="refresh-stats" type="button" class="btn secondary">Load stats</button>
+                </form>
+                <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Not loaded.</div>
+              </section>
             </section>
           </div>
         </section>
