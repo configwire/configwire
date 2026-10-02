@@ -10,20 +10,36 @@ All notable changes to the ConfigWire server (`configwire/`, image
 - Tunable single per-second limiter (`configwire/limits`, 1s window):
   global 200 rps per IP + burst 400 (checked before auth on `/api/*`,
   `429` with `Retry-After: 1`), fetch 100 rps per key, ingest 50 rps
-  per key, admin 20 rps per IP on a separate limiter.
+  per key. Admin paths are gated by the IP allowlist (empty = allow
+  all, denied -> `403`, no admin req/s limiting).
 - Superuser-only `GET/PUT /api/v1/admin/limits`
-  (`{globalRps, burst, fetchRps, ingestRps, adminRps, windowSec: 1}`,
+  (`{globalRps, burst, fetchRps, ingestRps, windowSec: 1}`,
   each `1..10000`, applies immediately, persisted in the
-  `rate_settings` singleton row) plus the Admin UI Limits card (5
-  inputs). Boot env overrides: `CONFIGWIRE_GLOBAL_RPS`,
-  `CONFIGWIRE_BURST`, `CONFIGWIRE_FETCH_RPS`, `CONFIGWIRE_INGEST_RPS`,
-  `CONFIGWIRE_ADMIN_RPS`.
+  `rate_settings` singleton row) plus the Admin UI Limits card.
+  Boot env overrides: `CONFIGWIRE_GLOBAL_RPS`,
+  `CONFIGWIRE_BURST`, `CONFIGWIRE_FETCH_RPS`, `CONFIGWIRE_INGEST_RPS`.
 - Per-key per-second overrides: optional `sdk_keys.fetchRps` /
   `sdk_keys.ingestRps` (empty/0 means the global `fetchRps` 100/s /
   `ingestRps` 50/s defaults). Set via the Admin UI Keys card Edit
   limits (req/sec only) or `PATCH /api/collections/sdk_keys/records/:id`;
   effective budget is the per-key value when `1..10000`, else the
    global.
+- Realtime stream `GET /api/v1/env/{env}/stream` (SSE,
+  `text/event-stream`): same `401 -> 404 -> 401` auth order as fetch,
+  one `config_update {"version","etag","env"}` frame per publish,
+  `: ping` every 20s, server closes at 10min (client reconnects with
+  backoff). Max 5 concurrent streams per key, over cap `429`.
+- Server-minted SDK keys `POST /api/v1/admin/keys`
+  (`{"env","fetchRps","ingestRps"}` -> `201 {"id","prefix","key"}`):
+  full key returned once, server stores bcrypt `verifier` only
+  (`hash=""`, `keyVer: 2`). Empty body -> `400`; unknown env -> `404`.
+- First-run setup + account management: public
+  `GET /api/v1/admin/setup/status` (`{"needsSetup"}`) and
+  `POST /api/v1/admin/setup` (creates first superuser once, `409` after),
+  plus superuser-only `GET /api/v1/admin/account/list`,
+  `POST /api/v1/admin/account/create`,
+  `POST /api/v1/admin/account/{id}/password`,
+  `DELETE /api/v1/admin/account/{id}` with stable generic error bodies.
 
 ### Deprecated
 
@@ -36,9 +52,41 @@ All notable changes to the ConfigWire server (`configwire/`, image
 
 - Removed legacy per-min limiter: the `sdk_keys.rateLimit` (req/60s)
   column is now ignored. Migration 1790000011 auto-converted existing
-  values once as `fetchRps = ingestRps = max(1, ceil(rateLimit / 60))`
-  (so `rateLimit: 60` becomes `fetchRps: 1` / `ingestRps: 1`). The
-  Keys UI edits req/sec only, and every `429` carries `Retry-After: 1`.
+  values once as `fetchRps = max(100, ceil(rateLimit / 60))` /
+  `ingestRps = max(50, ceil(rateLimit / 60))` (so `rateLimit: 60`
+  becomes `fetchRps: 100` / `ingestRps: 50`, matching fresh installs).
+  The Keys UI edits req/sec only, and every `429` carries `Retry-After: 1`.
+
+### Changed
+
+- Operator guards now refuse destructive deletes with `400`: deleting
+  the last remaining superuser (`cannot delete the last remaining
+  superuser.`) via the custom endpoint, data API, or dashboard, and
+  deleting a project's last environment (`cannot delete the last
+  environment of this project.`; project delete still cascades).
+  Automation that tears down/recreates the last env or rotates the sole
+  admin must create a replacement first.
+- Account error bodies are now stable and generic (raw DB messages stay
+  in the server log only): duplicate email `409 {"message": "email
+  already in use"}`, create failure `400 "could not create account"`,
+  status check failure `500 "internal error"`. Clients asserting on old
+  DB text must update.
+- New global per-IP gate: `200 rps + burst 400` checked before auth on
+  `/api/*`. Shared NAT / corporate egress above the gate now gets `429`
+  with `Retry-After: 1` where v0.1.2 returned `200/401`.
+- Downgrade caveat: keys minted after this upgrade store `hash=""` +
+  bcrypt `verifier` only. v0.1.2 compares `hash`, so post-upgrade keys
+  stop authenticating on rollback. Legacy `hash` rows keep working
+  forward. Migrations `0010/0011/0012` downs are intentional no-ops.
+
+### Fixed
+
+- Bcrypt backpressure no longer misclassifies as auth failure: when 4
+  verifications are in flight, the next key auth returns `429
+  {"message": "Server busy, retry."}` with `Retry-After: 1` instead of
+  `401 Missing or invalid SDK key.` Clients should retry, not rotate.
+- `POST /api/v1/admin/keys` empty body now returns `400` (consistent
+  with other admin endpoints) instead of `404 Unknown env.`
 
 ## v0.1.2 — 2026-09-30
 
