@@ -175,6 +175,10 @@
     var p = projectById(CW.state.projectId);
     var el = CW.$("detail-project-name");
     if (el) el.textContent = p ? (p.name || p.id) : "Project";
+    var sel = null;
+    try { sel = CW.selectedEnv ? CW.selectedEnv() : null; } catch (e) { sel = null; }
+    var eg = CW.$("env-group-name");
+    if (eg) eg.textContent = (sel && sel.slug) || (CW.state && CW.state.envSlug) || "env";
     syncSidebar();
   }
 
@@ -185,10 +189,9 @@
   }
 
   function scrollBelowSticky(card) {
-    // Sidebar anchors land on a section card, but the sticky topbar plus
-    // the sticky scope bars would cover its head. Measure all live (bars
-    // are static on narrow screens, so a fixed offset would be wrong
-    // there) and land the card just below them in one jump.
+    // Sidebar anchors land on a section card, but the sticky topbar would
+    // cover its head (scope bars are static). Measure live and land the
+    // card just below in one jump.
     if (!card || !card.getBoundingClientRect) {
       if (card && card.scrollIntoView) card.scrollIntoView();
       return;

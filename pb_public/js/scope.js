@@ -30,6 +30,10 @@
     } else CW.state.envId = null;
     var sel = CW.selectedEnv();
     if (sel && sel.slug) CW.state.envSlug = sel.slug;
+    try {
+      var envName = CW.$("env-group-name");
+      if (envName) envName.textContent = (sel && sel.slug) || CW.state.envSlug || "env";
+    } catch (e) { /* best-effort label */ }
   }
 
   function defaultEnvId() {

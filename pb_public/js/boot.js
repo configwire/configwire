@@ -78,6 +78,8 @@
       var sel = CW.selectedEnv();
       if (sel && sel.slug) CW.state.envSlug = sel.slug;
       CW.persistScope();
+      var eg = CW.$("env-group-name");
+      if (eg) eg.textContent = (sel && sel.slug) || CW.state.envSlug || "env";
       CW.loadReleases().catch(function () {});
       CW.loadKeys().catch(function () {});
       CW.loadStats().catch(function () {});
