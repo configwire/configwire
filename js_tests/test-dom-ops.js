@@ -203,7 +203,11 @@ function sidebar() {
     links.push(a);
   }
   nav.querySelectorAll = function () { return links; };
-  return { nav: nav, links: links };
+  var settings = el("settings-nav-link");
+  settings.attrs = {};
+  settings.setAttribute = function (k, v) { this.attrs[k] = v; };
+  settings.removeAttribute = function (k) { delete this.attrs[k]; };
+  return { nav: nav, links: links, settings: settings };
 }
 
 test("syncSidebar: home hides nav, detail shows project hrefs", function () {
@@ -216,7 +220,11 @@ test("syncSidebar: home hides nav, detail shows project hrefs", function () {
   h.CW.syncSidebar();
   assert.equal(sb.nav.style.display, "");
   assert.equal(sb.links[0].attrs.href, "#/p/p1#flags");
-  assert.equal(sb.links[5].attrs.href, "#/p/account");
+  assert.equal(sb.links[4].attrs.href, "#/p/p1#limits");
+  assert.equal(sb.links[5].attrs.href, "#/p/p1#stats");
+  h.CW.state.view = "settings";
+  h.CW.syncSidebar();
+  assert.equal(el("settings-nav-link").attrs["aria-current"], "page");
 });
 
 test("showView: toggles hidden across home/detail/account", function () {

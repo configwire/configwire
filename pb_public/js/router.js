@@ -8,6 +8,13 @@
 
   function parseHash() {
     var h = window.location.hash || "";
+    if (h === "#/p/settings" || h.indexOf("#/p/settings#") === 0 || h.indexOf("#/p/settings/") === 0) {
+      var srest = h.slice("#/p/settings".length);
+      var sanchor = "";
+      if (srest.charAt(0) === "#") sanchor = srest.slice(1);
+      else if (srest.charAt(0) === "/") sanchor = srest.slice(1);
+      return { view: "settings", id: "", anchor: sanchor };
+    }
     if (h === "#/p/account" || h.indexOf("#/p/account#") === 0 || h.indexOf("#/p/account/") === 0) {
       var arest = h.slice("#/p/account".length);
       var aanchor = "";
@@ -39,8 +46,14 @@
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
-    var mods = ["flags", "releases", "publish", "keys", "stats", "account"];
-    var showNav = (CW.state.view === "detail" && CW.state.projectId) || CW.state.view === "account";
+    var mods = ["flags", "releases", "publish", "keys", "limits", "stats"];
+    var settingsLink = CW.$("settings-nav-link");
+    if (settingsLink) {
+      var active = CW.state.view === "settings" || CW.state.view === "account";
+      if (active) settingsLink.setAttribute("aria-current", "page");
+      else if (settingsLink.removeAttribute) settingsLink.removeAttribute("aria-current");
+    }
+    var showNav = (CW.state.view === "detail" && CW.state.projectId) || CW.state.view === "settings" || CW.state.view === "account";
     if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
       for (var i = 0; i < links.length; i++) {
@@ -54,12 +67,6 @@
     nav.style.display = "";
     for (var j = 0; j < links.length; j++) {
       var m = mods[j] || "";
-      if (m === "account") {
-        links[j].removeAttribute("tabindex");
-        links[j].removeAttribute("aria-disabled");
-        links[j].setAttribute("href", "#/p/account");
-        continue;
-      }
       if (!CW.state.projectId) {
         links[j].setAttribute("tabindex", "-1");
         links[j].setAttribute("aria-disabled", "true");
@@ -77,9 +84,11 @@
     var home = CW.$("view-home");
     var detail = CW.$("view-detail");
     var account = CW.$("view-account");
+    var settings = CW.$("view-settings");
     if (home) home.hidden = name !== "home";
     if (detail) detail.hidden = name !== "detail";
-    if (account) account.hidden = name !== "account";
+    if (settings) settings.hidden = name !== "settings" && name !== "account";
+    if (account) account.hidden = true;
     syncSidebar();
   }
 
@@ -226,13 +235,22 @@
   function showAccount() {
     showView("account");
     if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
+    if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
+  }
+
+  function showSettings() {
+    showView("settings");
+    if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
+    if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
   }
 
   function route() {
     if (!CW.state.token) return;
     var r = parseHash();
-    if (r.view === "account") {
-      showAccount();
+    if (r.view === "settings") {
+      showSettings();
+    } else if (r.view === "account") {
+      showSettings();
     } else if (r.view === "detail" && r.id && projectById(r.id)) {
       // Avoid re-loading on pure in-page anchor hops to the same project.
       if (CW.state.view === "detail" && CW.state.projectId === r.id) {
@@ -265,6 +283,7 @@
   CW.renderDetailHeader = renderDetailHeader;
   CW.showHome = showHome;
   CW.showAccount = showAccount;
+  CW.showSettings = showSettings;
   CW.openProject = openProject;
   CW.route = route;
 })();
