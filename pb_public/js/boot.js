@@ -115,7 +115,7 @@
     // pre-stage signal; staging calls markFormClean on success).
     if (CW.armDirtyForm) {
       ["flag-form", "flag-rules-form", "experiment-form",
-        "env-create-form", "project-create-form", "account-create-form",
+        "project-dialog-form", "account-create-form",
         "key-limits-form", "limits-form", "settings-admin-form"
       ].forEach(function (id) { CW.armDirtyForm(id); });
     }
@@ -382,19 +382,61 @@
         CW.closeDraftSnapshotDialog();
       } catch (e) { CW.toast((e && e.message) || "Close failed."); }
     });
-    CW.on("project-create-form", "submit", CW.createProject);
-    CW.on("env-create-form", "submit", CW.createEnv);
+    CW.on("project-add-btn", "click", function () {
+      if (CW.openProjectDialog) CW.openProjectDialog();
+    });
+    CW.on("project-dialog-form", "submit", function (ev) {
+      if (CW.saveProjectDialog) CW.saveProjectDialog(ev).catch(function (e) { CW.toast(e.message); });
+      else ev.preventDefault();
+    });
+    CW.on("project-dialog-close", "click", function () {
+      if (CW.closeProjectDialog) CW.closeProjectDialog();
+    });
+    CW.on("project-dialog-cancel", "click", function () {
+      if (CW.closeProjectDialog) CW.closeProjectDialog();
+    });
     CW.on("project-rename-btn", "click", function () {
       if (CW.renameProject) CW.renameProject().catch(function (e) { CW.toast(e.message); });
     });
     CW.on("project-delete-btn", "click", function () {
       if (CW.deleteProject) CW.deleteProject().catch(function (e) { CW.toast(e.message); });
     });
-    CW.on("env-rename-btn", "click", function () {
-      if (CW.renameEnv) CW.renameEnv().catch(function (e) { CW.toast(e.message); });
-    });
-    CW.on("env-delete-btn", "click", function () {
-      if (CW.deleteEnv) CW.deleteEnv().catch(function (e) { CW.toast(e.message); });
+    CW.on("env-bar", "click", function (ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var menuBtn = null;
+      if (t && t.closest) menuBtn = t.closest("[data-env-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-env-menu") != null) menuBtn = t;
+      if (menuBtn) {
+        var wrap = menuBtn.parentNode;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".env-menu") : null;
+        if (menu) {
+          var willOpen = menu.hidden;
+          closeEnvMenu();
+          menu.hidden = !willOpen;
+          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+        }
+        return;
+      }
+      var addBtn = t && t.closest ? t.closest("[data-env-add]") : null;
+      if (!addBtn && t && t.getAttribute && t.getAttribute("data-env-add") != null) addBtn = t;
+      if (addBtn) {
+        closeEnvMenu();
+        if (CW.createEnv) CW.createEnv().catch(function (e) { CW.toast(e.message); });
+        return;
+      }
+      var renBtn = t && t.closest ? t.closest("[data-env-rename]") : null;
+      if (!renBtn && t && t.getAttribute && t.getAttribute("data-env-rename") != null) renBtn = t;
+      if (renBtn) {
+        closeEnvMenu();
+        if (CW.renameEnv) CW.renameEnv().catch(function (e) { CW.toast(e.message); });
+        return;
+      }
+      var delBtn = t && t.closest ? t.closest("[data-env-delete]") : null;
+      if (!delBtn && t && t.getAttribute && t.getAttribute("data-env-delete") != null) delBtn = t;
+      if (delBtn) {
+        closeEnvMenu();
+        if (CW.deleteEnv) CW.deleteEnv().catch(function (e) { CW.toast(e.message); });
+      }
     });
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
     CW.on("experiment-form", "submit", CW.saveExperiment);
@@ -541,6 +583,19 @@
       }
     }
 
+    function closeEnvMenu(except) {
+      var bar = document.getElementById("env-bar");
+      if (!bar || !bar.querySelectorAll) return;
+      var wraps = bar.querySelectorAll(".env-menu-wrap");
+      for (var i = 0; i < wraps.length; i++) {
+        var menu = wraps[i].querySelector ? wraps[i].querySelector(".env-menu") : null;
+        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-env-menu]") : null;
+        if (!menu || menu === except) continue;
+        menu.hidden = true;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    }
+
     function closeReleaseMenus(except) {
       var box = document.getElementById("release-list");
       if (!box || !box.querySelectorAll) return;
@@ -650,11 +705,11 @@
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
-      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap")) : null;
-      if (!inside) { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); }
+      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap")) : null;
+      if (!inside) { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
     });
     document.addEventListener("keydown", function (ev) {
-      if (ev && ev.key === "Escape") { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); }
+      if (ev && ev.key === "Escape") { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
     });
 
     CW.on("flag-rules-list", "click", function (ev) {
@@ -918,6 +973,8 @@
     get showAccount() { return CW.showAccount; },
     get showSettings() { return CW.showSettings; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
+    get openProjectDialog() { return CW.openProjectDialog; }, get closeProjectDialog() { return CW.closeProjectDialog; },
+    get saveProjectDialog() { return CW.saveProjectDialog; },
     get renameProject() { return CW.renameProject; }, get deleteProject() { return CW.deleteProject; },
     get renameEnv() { return CW.renameEnv; }, get deleteEnv() { return CW.deleteEnv; },
     get promptCreateGroup() { return CW.promptCreateGroup; },

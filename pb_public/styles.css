@@ -1379,11 +1379,86 @@ a:focus-visible {
   width: 100%;
 }
 
+/* ---- Env scope status line (own row; hidden when empty so the
+ * trailing flex gap never unbalances the control row) ---- */
+#env-bar #env-result {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+#env-bar #env-result:empty {
+  display: none;
+}
+
 #env-bar>.scope-sep {
   width: 1px;
   align-self: stretch;
   background: var(--border-soft);
   flex-shrink: 0;
+}
+
+/* ---- Env scope ⋯ action menu (mirrors the flag-table menu above:
+ * .env-menu-wrap > button.env-menu-btn ([data-env-menu], aria-haspopup=menu)
+ * + .env-menu[role=menu][hidden] holding Add/Rename/Delete menuitems
+ * that boot.js already delegates via #env-bar click handling). */
+#env-bar .env-menu-wrap {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+#env-bar .env-menu-btn {
+  width: 28px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0;
+  height: var(--input-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#env-bar .env-menu-btn:hover {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text);
+}
+
+#env-bar .env-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 30;
+}
+
+#env-bar .env-menu[hidden] {
+  display: none;
+}
+
+#env-bar .env-menu button[role="menuitem"][disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #env-bar .env-menu {
+    transition: none;
+  }
 }
 
 /* ---- Tables & lists ---- */
@@ -1756,6 +1831,7 @@ td code {
 #flag-folders .folder-actions button,
 #flag-folders tbody button,
 #flag-rules-list button,
+#env-bar .env-menu button[role="menuitem"],
 #experiment-list .exp-menu button[role="menuitem"],
 #flag-experiments-list .exp-menu button[role="menuitem"] {
   padding: 0 var(--space-2);
@@ -1767,11 +1843,18 @@ td code {
   color: var(--muted);
 }
 
+#env-bar .env-menu button[role="menuitem"] {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+}
+
 #release-list button:hover,
 #key-list button:hover,
 #flag-folders .folder-actions button:hover,
 #flag-folders tbody button:hover,
 #flag-rules-list button:hover,
+#env-bar .env-menu button[role="menuitem"]:hover,
 #experiment-list .exp-menu button[role="menuitem"]:hover,
 #flag-experiments-list .exp-menu button[role="menuitem"]:hover {
   border-color: var(--accent);
@@ -2172,6 +2255,7 @@ td code {
 #flag-folders .flag-menu button[role="menuitem"],
 #experiment-list .exp-menu button[role="menuitem"],
 #flag-experiments-list .exp-menu button[role="menuitem"],
+#env-bar .env-menu button[role="menuitem"],
 #release-list .release-menu button[role="menuitem"] {
   display: inline-flex;
   align-items: center;
@@ -3000,6 +3084,34 @@ section[aria-labelledby="stats"] form.inline-form button {
   gap: var(--space-2);
 }
 
+#project-dialog {
+  width: min(480px, 92vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+#project-dialog-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+#project-dialog-form label input {
+  width: 100%;
+}
+
+#project-dialog-form .form-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+#project-dialog-result,
+#project-result {
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
+  min-height: 1em;
+  font-size: 13px;
+}
+
 #flag-rules-form {
   display: grid;
   grid-template-columns: 140px 1fr;
@@ -3166,6 +3278,7 @@ dialog#json-editor-dialog,
 dialog#flag-rules-dialog,
 dialog#flag-experiments-dialog,
 dialog#flag-dialog,
+dialog#project-dialog,
 dialog#key-limits-dialog,
 dialog#experiment-dialog,
 dialog#release-dialog,
@@ -3309,6 +3422,7 @@ dialog#json-editor-dialog::backdrop,
 dialog#flag-rules-dialog::backdrop,
 dialog#flag-experiments-dialog::backdrop,
 dialog#flag-dialog::backdrop,
+dialog#project-dialog::backdrop,
 dialog#key-limits-dialog::backdrop,
 dialog#experiment-dialog::backdrop,
 dialog#release-dialog::backdrop,
@@ -3323,6 +3437,7 @@ dialog#cw-dialog h3,
 dialog#flag-rules-dialog h3,
 dialog#flag-experiments-dialog h3,
 dialog#flag-dialog h3,
+dialog#project-dialog h3,
 dialog#key-limits-dialog h3,
 dialog#experiment-dialog h3,
 dialog#release-dialog h3,
@@ -3638,6 +3753,7 @@ dialog#json-editor-dialog .muted {
   dialog#flag-rules-dialog,
   dialog#flag-experiments-dialog,
   dialog#flag-dialog,
+  dialog#project-dialog,
   dialog#key-limits-dialog,
   dialog#experiment-dialog,
   dialog#release-dialog {

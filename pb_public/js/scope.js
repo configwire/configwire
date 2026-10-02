@@ -40,6 +40,18 @@
       var envName = CW.$("env-group-name");
       if (envName) envName.textContent = (sel && sel.slug) || CW.state.envSlug || "env";
     } catch (e) { /* best-effort label */ }
+    try {
+      var envDel = document.querySelector ? document.querySelector("[data-env-delete]") : null;
+      if (envDel) {
+        var single = CW.state.envs.length <= 1;
+        envDel.disabled = single;
+        if (envDel.setAttribute) {
+          if (single) envDel.setAttribute("aria-disabled", "true");
+          else if (envDel.removeAttribute) envDel.removeAttribute("aria-disabled");
+        }
+        envDel.title = single ? "Cannot delete the last environment" : "Delete selected environment and its keys/releases";
+      }
+    } catch (e2) { /* best-effort menu state */ }
   }
 
   function defaultEnvId() {
@@ -85,23 +97,98 @@
     });
   }
 
-  function createProject(ev) {
+  function projectDialogEls() {
+    function opt(id) {
+      try { return CW.$(id) || null; } catch (e) { return null; }
+    }
+    return {
+      dlg: opt("project-dialog"),
+      name: opt("project-dialog-name"),
+      env: opt("project-dialog-env"),
+      result: opt("project-dialog-result"),
+      legacyName: opt("project-name"),
+      legacyResult: opt("project-result")
+    };
+  }
+
+  function openProjectDialog() {
+    var d = projectDialogEls();
+    if (d.name) d.name.value = "";
+    if (d.env && !String(d.env.value || "").trim()) d.env.value = "production";
+    if (d.result) d.result.textContent = "";
+    if (d.legacyResult) d.legacyResult.textContent = "";
+    if (d.dlg && typeof d.dlg.showModal === "function" && !d.dlg.open) {
+      try { d.dlg.showModal(); } catch (e) { /* harness stub */ }
+    } else if (d.dlg && d.dlg.setAttribute) {
+      try { d.dlg.setAttribute("open", ""); } catch (e2) { /* noop */ }
+    }
+    try { if (d.name && d.name.focus) d.name.focus(); } catch (e3) { /* best-effort */ }
+  }
+
+  function closeProjectDialog() {
+    var d = projectDialogEls();
+    if (d.dlg && d.dlg.open && typeof d.dlg.close === "function") {
+      try { d.dlg.close(); } catch (e) { /* already closed */ }
+    } else if (d.dlg && d.dlg.removeAttribute) {
+      try { d.dlg.removeAttribute("open"); } catch (e2) { /* noop */ }
+    }
+  }
+
+  function saveProjectDialog(ev) {
     if (ev) ev.preventDefault();
-    var name = CW.$("project-name").value.trim();
-    if (!name) { CW.$("project-result").textContent = "Project name required."; return Promise.resolve(); }
+    var d = projectDialogEls();
+    var name = d.name && d.name.value != null ? String(d.name.value).trim() : "";
+    var envSlug = d.env && d.env.value != null ? String(d.env.value).trim() : "";
+    if (!name) {
+      var msg = "Project name required.";
+      if (d.result) d.result.textContent = msg;
+      if (d.legacyResult) d.legacyResult.textContent = msg;
+      if (d.name && d.name.focus) { try { d.name.focus(); } catch (e) { /* noop */ } }
+      return Promise.resolve();
+    }
+    if (!envSlug) {
+      var msg2 = "Environment required.";
+      if (d.result) d.result.textContent = msg2;
+      if (d.legacyResult) d.legacyResult.textContent = msg2;
+      if (d.env && d.env.focus) { try { d.env.focus(); } catch (e2) { /* noop */ } }
+      return Promise.resolve();
+    }
+    return createProjectWithEnv(name, envSlug);
+  }
+
+  function createProjectWithEnv(name, envSlug) {
+    var d = projectDialogEls();
     return CW.apiMut("POST", "/api/collections/projects/records", { name: name }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
-      CW.$("project-result").textContent = ok
+      var msg = ok
         ? "Project created: " + (out.data.name || out.data.id)
         : "Project create failed (" + out.status + "): " + CW.serverMessage(out.data);
-      if (ok) {
-        CW.toast("Project created: " + (out.data.name || out.data.id), true);
-        CW.$("project-name").value = "";
-        if (CW.markFormClean) CW.markFormClean("project-create-form");
-        var newId = out.data.id;
+      if (d.result) d.result.textContent = msg;
+      if (d.legacyResult) d.legacyResult.textContent = msg;
+      if (!ok) return out;
+      CW.toast("Project created: " + (out.data.name || out.data.id), true);
+      var newId = out.data.id;
+      return CW.apiMut("POST", "/api/collections/environments/records", { project: newId, slug: envSlug }).then(function (eout) {
+        var eok = eout.status === 200 || eout.status === 201;
+        if (!eok) {
+          var emsg = "Env create failed (" + eout.status + "): " + CW.serverMessage(eout.data);
+          if (d.result) d.result.textContent = emsg;
+          if (d.legacyResult) d.legacyResult.textContent = emsg;
+          CW.toast(emsg);
+          return eout;
+        }
+        CW.toast("Env created: " + (eout.data.slug || eout.data.id), true);
+        if (d.name) d.name.value = "";
+        if (d.env) d.env.value = "production";
+        var legacy = d.legacyName;
+        if (legacy) legacy.value = "";
+        if (CW.markFormClean) {
+          try { CW.markFormClean("project-dialog-form"); } catch (e) { /* noop */ }
+        }
+        closeProjectDialog();
         loadProjects().then(function () {
           if (newId) { CW.state.projectId = newId; CW.persistScope(); }
-          CW.loadHomeStats().catch(function () {});
+          if (CW.loadHomeStats) CW.loadHomeStats().catch(function () {});
           if (newId) {
             window.location.hash = "#/p/" + encodeURIComponent(newId);
             // route() picks it up via hashchange; cover no-change case.
@@ -109,30 +196,55 @@
           }
           return loadEnvs();
         }).then(function () {
-          CW.loadFlags().catch(function () {});
+          if (CW.loadFlags) CW.loadFlags().catch(function () {});
         }).catch(function () {});
-      }
-      return out;
+        return out;
+      });
     });
   }
 
-  function createEnv(ev) {
-    if (ev) ev.preventDefault();
-    if (!CW.state.projectId) { CW.$("env-result").textContent = "Pick a project first."; return Promise.resolve(); }
-    var slug = CW.$("env-slug").value.trim();
-    if (!slug) { CW.$("env-result").textContent = "Env slug required."; return Promise.resolve(); }
-    return CW.apiMut("POST", "/api/collections/environments/records", { project: CW.state.projectId, slug: slug }).then(function (out) {
-      var ok = out.status === 200 || out.status === 201;
-      CW.$("env-result").textContent = ok
-        ? "Env created: " + (out.data.slug || out.data.id)
-        : "Env create failed (" + out.status + "): " + CW.serverMessage(out.data);
-      if (ok) {
-        CW.toast("Env created: " + (out.data.slug || out.data.id), true);
-        CW.$("env-slug").value = "";
-        if (CW.markFormClean) CW.markFormClean("env-create-form");
-        loadEnvs().catch(function () {});
-      }
+  function createProject(ev, envArg) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    var nameArg = null;
+    if (typeof ev === "string") nameArg = ev;
+    var slugArg = typeof envArg === "string" ? envArg : null;
+    if (nameArg != null) return createProjectWithEnv(String(nameArg).trim(), slugArg != null ? slugArg : "production").then(function (out) {
       return out;
+    });
+    var d = projectDialogEls();
+    var hasDialog = !!(d.name || d.env);
+    if (hasDialog) return saveProjectDialog(null);
+    var legacyName = d.legacyName ? String(d.legacyName.value || "").trim() : "";
+    if (!legacyName) {
+      if (d.legacyResult) d.legacyResult.textContent = "Project name required.";
+      return Promise.resolve();
+    }
+    return createProjectWithEnv(legacyName, "production");
+  }
+
+  function createEnv(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    if (!CW.state.projectId) { CW.$("env-result").textContent = "Pick a project first."; return Promise.resolve(); }
+    var slugArg = typeof ev === "string" ? ev.trim() : "";
+    function post(slug) {
+      return CW.apiMut("POST", "/api/collections/environments/records", { project: CW.state.projectId, slug: slug }).then(function (out) {
+        var ok = out.status === 200 || out.status === 201;
+        CW.$("env-result").textContent = ok
+          ? "Env created: " + (out.data.slug || out.data.id)
+          : "Env create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        if (ok) {
+          CW.toast("Env created: " + (out.data.slug || out.data.id), true);
+          loadEnvs().catch(function () {});
+        }
+        return out;
+      });
+    }
+    if (slugArg) return post(slugArg);
+    return CW.promptDialog("New environment", "", { title: "Add environment", okText: "Add", required: true, placeholder: "staging" }).then(function (slug) {
+      if (slug == null) return;
+      slug = String(slug).trim();
+      if (!slug) { CW.$("env-result").textContent = "Env slug required."; return; }
+      return post(slug);
     });
   }
 
@@ -254,6 +366,11 @@
   function deleteEnv(id) {
     var eid = id || CW.state.envId;
     if (!eid) { CW.toast("Pick an environment first."); return Promise.resolve(); }
+    if (CW.state.envs.length <= 1) {
+      try { CW.$("env-result").textContent = "Cannot delete the last environment."; } catch (e) { /* noop */ }
+      CW.toast("Cannot delete the last environment.");
+      return Promise.resolve();
+    }
     var cur = envByIdLocal(eid);
     var label = (cur && (cur.slug || cur.id)) || eid;
     return CW.confirmDialog(
@@ -315,6 +432,9 @@
   CW.loadProjects = loadProjects;
   CW.loadEnvs = loadEnvs;
   CW.createProject = createProject;
+  CW.openProjectDialog = openProjectDialog;
+  CW.closeProjectDialog = closeProjectDialog;
+  CW.saveProjectDialog = saveProjectDialog;
   CW.createEnv = createEnv;
   CW.renameProject = renameProject;
   CW.deleteProject = deleteProject;

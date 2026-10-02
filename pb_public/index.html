@@ -119,11 +119,7 @@
             <div>
               <h2>Projects</h2>
             </div>
-            <form id="project-create-form" class="inline-form" aria-label="Project create">
-              <label>New project <input id="project-name" type="text" required maxlength="128"
-                  spellcheck="false"></label>
-              <button type="submit" class="btn primary">Add project</button>
-            </form>
+            <button id="project-add-btn" type="button" class="btn primary">Add project</button>
           </div>
           <p id="project-result" role="status"></p>
           <div id="project-grid" class="project-grid" role="list" aria-label="Projects"></div>
@@ -159,13 +155,14 @@
                 <label>Environment
                   <select id="env-select" aria-label="Environment"></select>
                 </label>
-                <button id="env-rename-btn" type="button" class="btn secondary" title="Rename selected environment">Rename</button>
-                <button id="env-delete-btn" type="button" class="btn danger" title="Delete selected environment and its keys/releases">Delete</button>
-                <form id="env-create-form" class="inline-form" aria-label="Environment create">
-                  <label>New env <input id="env-slug" type="text" required maxlength="64" spellcheck="false"
-                      placeholder="staging"></label>
-                  <button type="submit" class="btn primary">Add</button>
-                </form>
+                <span class="env-menu-wrap">
+                  <button type="button" class="env-menu-btn" data-env-menu aria-haspopup="menu" aria-expanded="false" aria-label="Environment actions">&#8943;</button>
+                  <div class="env-menu" role="menu" hidden>
+                    <button type="button" role="menuitem" data-env-add><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add</span></button>
+                    <button type="button" role="menuitem" data-env-rename><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg><span>Rename</span></button>
+                    <button type="button" role="menuitem" data-env-delete><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4M5 4l.7 9.5h4.6L11 4"/></svg><span>Delete</span></button>
+                  </div>
+                </span>
                 <p id="env-result" role="status"></p>
               </div>
 
@@ -342,6 +339,26 @@
             <button type="button" id="cw-dialog-cancel" class="btn ghost">Cancel</button>
             <button type="button" id="cw-dialog-ok" class="btn primary">OK</button>
           </div>
+        </dialog>
+        <dialog id="project-dialog" aria-labelledby="project-dialog-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="project-dialog-title">Add project</h3>
+            </div>
+            <button type="button" id="project-dialog-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
+          <form id="project-dialog-form" aria-label="Project create">
+            <label>Name <input id="project-dialog-name" type="text" required maxlength="128"
+                spellcheck="false" placeholder="my project"></label>
+            <label>Environment <input id="project-dialog-env" type="text" required maxlength="64"
+                spellcheck="false" value="production" placeholder="production"></label>
+            <div class="form-actions">
+              <button type="submit" id="project-dialog-submit" class="btn primary">Add project</button>
+              <button type="button" id="project-dialog-cancel" class="btn ghost">Cancel</button>
+            </div>
+          </form>
+          <p id="project-dialog-result" role="status"></p>
         </dialog>
         <dialog id="experiment-dialog" aria-labelledby="experiment-dialog-title">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">

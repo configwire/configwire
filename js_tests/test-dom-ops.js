@@ -159,7 +159,8 @@ function reset() {
   // children), so drop them plus volatile dialog/result fields explicitly.
   var wrap = el("exp-variants-builder-rows");
   wrap.children = []; wrap.innerHTML = "";
-  ["project-name", "project-result", "env-slug", "env-result", "flag-id",
+  ["project-dialog-name", "project-dialog-env", "project-dialog-result",
+    "project-result", "env-result", "flag-id",
     "flag-key", "flag-description", "flag-default", "flag-result",
     "flag-rules-condition", "flag-rules-result", "flag-rules-cond-value",
     "flag-rules-cond-lo", "flag-rules-cond-hi", "flag-rules-seed",
@@ -353,24 +354,40 @@ test("renderProjectEnv: project/env options + envSlug", function () {
 
 test("createProject: blank name guards with zero fetch", async function () {
   reset();
-  setVal("project-name", "   ");
+  setVal("project-dialog-name", "   ");
+  setVal("project-dialog-env", "production");
   await h.CW.createProject();
   assert.equal(el("project-result").textContent, "Project name required.");
+  assert.equal(h.fetchCalls.length, 0);
+});
+
+test("createProject: blank env guards with zero fetch", async function () {
+  reset();
+  setVal("project-dialog-name", "demo");
+  setVal("project-dialog-env", "  ");
+  await h.CW.createProject();
+  assert.equal(el("project-result").textContent, "Environment required.");
   assert.equal(h.fetchCalls.length, 0);
 });
 
 test("createProject: success reports, clears, navigates hash", async function () {
   reset();
   DB.projects = [{ id: "p0", name: "Old" }];
-  setVal("project-name", "demo");
+  setVal("project-dialog-name", "demo");
+  setVal("project-dialog-env", "production");
   var out = await h.CW.createProject();
   assert.equal(out.status, 201);
   assert.equal(el("project-result").textContent, "Project created: demo");
-  assert.equal(el("project-name").value, "");
+  assert.equal(el("project-dialog-name").value, "");
+  assert.equal(el("project-dialog-env").value, "production");
   await tick(30); // inner loadProjects/loadHomeStats/loadEnvs chain (scope.js:92-101)
   assert.equal(h.context.location.hash, "#/p/p-new");
   assert.ok(h.fetchCalls.some(function (c) {
     return c.url.indexOf("/api/collections/projects/records") === 0 && c.opts.method === "POST";
+  }));
+  assert.ok(h.fetchCalls.some(function (c) {
+    return c.url.indexOf("/api/collections/environments/records") === 0 && c.opts.method === "POST" &&
+      c.opts.body.indexOf("production") >= 0;
   }));
 });
 
@@ -379,13 +396,26 @@ test("createEnv: guards + success", async function () {
   await h.CW.createEnv();
   assert.equal(el("env-result").textContent, "Pick a project first.");
   h.CW.state.projectId = "p1";
-  setVal("env-slug", "  ");
+  await h.CW.createEnv(); // prompt cancelled (stub resolves null)
+  assert.equal(h.fetchCalls.length, 0);
+  promptQueue.push("  ");
   await h.CW.createEnv();
   assert.equal(el("env-result").textContent, "Env slug required.");
-  setVal("env-slug", "dev");
+  promptQueue.push("dev");
   var out = await h.CW.createEnv();
   assert.equal(out.status, 201);
   assert.equal(el("env-result").textContent, "Env created: dev");
+});
+
+test("deleteEnv: refuses when only one environment remains", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  h.CW.state.envs = [{ id: "e1", slug: "production" }];
+  h.CW.state.envId = "e1";
+  confirmQueue.push(true);
+  await h.CW.deleteEnv();
+  assert.equal(el("env-result").textContent, "Cannot delete the last environment.");
+  assert.equal(h.fetchCalls.length, 0);
 });
 
 test("refreshAll: loads projects, routes, fans out to stubbed loaders", async function () {
