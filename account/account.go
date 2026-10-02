@@ -27,11 +27,13 @@ import (
 )
 
 // accountMu serializes the check-then-write sequences in postSetup
-// (count -> createSuperuser) and deleteAccount (count -> Delete).
+// (count -> createSuperuser), deleteAccount (count fast-path), and the
+// RegisterGuard delete hook (authoritative count inside the delete).
 // Without it two concurrent requests can both observe count 0 (or n==2)
 // and both write, creating a second superuser (or deleting the last
-// admin). The lock is acquired only around the locked re-check plus the
-// write itself — never across decodeBody/validation.
+// admin). The lock is never held across decodeBody/validation, and the
+// handler never holds it across Delete (the hook takes it): holding one
+// non-reentrant mutex across a hooked Delete would deadlock.
 var accountMu sync.Mutex
 
 // superusersCollection is the PocketBase auth collection holding admins.
@@ -62,6 +64,45 @@ func Register(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/account/create", createAccount).Bind(apis.RequireSuperuserAuth())
 	se.Router.POST("/api/v1/admin/account/{id}/password", setPassword).Bind(apis.RequireSuperuserAuth())
 	se.Router.DELETE("/api/v1/admin/account/{id}", deleteAccount).Bind(apis.RequireSuperuserAuth())
+}
+
+// lastSuperuserMsg is the stable 400 body for last-admin refusals, shared
+// by the handler fast-path, the RegisterGuard hook, and the PocketBase
+// core message normalization below.
+const lastSuperuserMsg = "cannot delete the last remaining superuser."
+
+// RegisterGuard blocks deletion of the last remaining admin on EVERY
+// _superusers delete path: the custom DELETE endpoint, the data API
+// (DELETE /api/collections/_superusers/records/:id), the dashboard, and
+// server-side saves. The installer placeholder stays deletable so
+// PocketBase can auto-remove it when the first real superuser is
+// created. This hook is the authoritative check inside the delete; the
+// handler keeps a fast-path check only for its 404 -> 400 -> 200 order.
+func RegisterGuard(app core.App) {
+	app.OnRecordDelete(superusersCollection).BindFunc(func(e *core.RecordEvent) error {
+		if strings.EqualFold(e.Record.GetString("email"), core.DefaultInstallerEmail) {
+			return e.Next()
+		}
+		accountMu.Lock()
+		defer accountMu.Unlock()
+		n, err := countRealSuperusers(e.App)
+		if err != nil {
+			return err
+		}
+		if n <= 1 {
+			return apis.NewBadRequestError(lastSuperuserMsg, nil)
+		}
+		return e.Next()
+	})
+}
+
+// isLastSuperuserErr reports whether err is a last-admin refusal from any
+// layer: our handler/hook message or PocketBase core's own "only existing
+// superuser" guard.
+func isLastSuperuserErr(err error) bool {
+	lowered := strings.ToLower(err.Error())
+	return strings.Contains(lowered, "last remaining superuser") ||
+		strings.Contains(lowered, "only existing superuser")
 }
 
 // NeedsSetup reports whether first-run setup is still pending: true
@@ -358,7 +399,10 @@ func setPassword(re *core.RequestEvent) error {
 
 // deleteAccount handles DELETE /api/v1/admin/account/{id}
 // (superuser-only). Order: 404 (unknown id) -> 400 (would delete the
-// last remaining superuser) -> 200 {"id"}.
+// last remaining superuser) -> 200 {"id"}. The fast-path count below
+// preserves the order; the RegisterGuard hook re-checks authoritatively
+// inside Delete, so losers of concurrent deletes across any path still
+// answer 400 and every refusal carries the same message.
 func deleteAccount(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	id := re.Request.PathValue("id")
@@ -369,19 +413,22 @@ func deleteAccount(re *core.RequestEvent) error {
 	if strings.EqualFold(rec.GetString("email"), core.DefaultInstallerEmail) {
 		return re.BadRequestError("cannot delete the system installer account.", nil)
 	}
-	// Locked count plus delete: concurrent deletes of the last two admins
-	// serialize, so the loser observes n==1 and answers 400 instead of
-	// deleting the last remaining superuser.
+	// Fast path only: the lock is released before Delete because the
+	// hook takes the same mutex — holding it across a hooked Delete
+	// would deadlock.
 	accountMu.Lock()
-	defer accountMu.Unlock()
 	n, err := countRealSuperusers(re.App)
+	accountMu.Unlock()
 	if err != nil {
 		return err
 	}
 	if n <= 1 {
-		return re.BadRequestError("cannot delete the last remaining superuser.", nil)
+		return re.BadRequestError(lastSuperuserMsg, nil)
 	}
 	if err := re.App.Delete(rec); err != nil {
+		if isLastSuperuserErr(err) {
+			return re.BadRequestError(lastSuperuserMsg, nil)
+		}
 		return err
 	}
 	log.Printf("account: superuser deleted id=%s", id)

@@ -67,7 +67,9 @@ func TestNeedsSetup(t *testing.T) {
 }
 
 // accountTestApp boots a TestApp with every _superusers row removed, so
-// concurrency tests start from a genuinely fresh setup state.
+// concurrency tests start from a genuinely fresh setup state. The
+// last-admin delete guard is bound exactly as in production, so handler
+// and data-API deletes run the same hooks as the live server.
 func accountTestApp(t *testing.T) *tests.TestApp {
 	t.Helper()
 	app, err := tests.NewTestApp()
@@ -75,6 +77,7 @@ func accountTestApp(t *testing.T) *tests.TestApp {
 		t.Fatalf("NewTestApp: %v", err)
 	}
 	t.Cleanup(func() { app.Cleanup() })
+	RegisterGuard(app)
 	recs, err := app.FindAllRecords(superusersCollection)
 	if err != nil {
 		t.Fatalf("list superusers: %v", err)
@@ -214,5 +217,46 @@ func TestDeleteAccountConcurrentLastAdminKept(t *testing.T) {
 	}
 	if count, err := countRealSuperusers(app); err != nil || count != 1 {
 		t.Fatalf("after concurrent delete: count=%d err=%v, want exactly 1 superuser left", count, err)
+	}
+}
+
+func TestDeleteAccountLastAdminBlocked(t *testing.T) {
+	app := accountTestApp(t)
+	rec, err := createSuperuser(app, "solo@example.com", "password123")
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	code, msg := callDeleteAccount(app, rec.Id)
+	if code != http.StatusBadRequest {
+		t.Fatalf("delete last admin: got status %d, want 400", code)
+	}
+	if !strings.Contains(msg, "last remaining superuser") {
+		t.Fatalf("delete last admin message = %q, want it to mention the last remaining superuser", msg)
+	}
+	if count, err := countRealSuperusers(app); err != nil || count != 1 {
+		t.Fatalf("after blocked delete: count=%d err=%v, want the 1 superuser kept", count, err)
+	}
+}
+
+func TestSuperuserDeleteHookCoversDataAPI(t *testing.T) {
+	app := accountTestApp(t)
+	only, err := createSuperuser(app, "hook-solo@example.com", "password123")
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	if err := app.Delete(only); err == nil {
+		t.Fatalf("direct delete of the last admin succeeded, want refusal")
+	} else if lowered := strings.ToLower(err.Error()); !strings.Contains(lowered, "superuser") {
+		t.Fatalf("direct delete error = %q, want it to mention the superuser guard", err)
+	}
+	second, err := createSuperuser(app, "hook-second@example.com", "password123")
+	if err != nil {
+		t.Fatalf("create second admin: %v", err)
+	}
+	if err := app.Delete(second); err != nil {
+		t.Fatalf("direct delete with 2 admins: unexpected error %v", err)
+	}
+	if count, err := countRealSuperusers(app); err != nil || count != 1 {
+		t.Fatalf("after data-API delete: count=%d err=%v, want exactly 1 superuser left", count, err)
 	}
 }

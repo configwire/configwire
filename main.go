@@ -138,6 +138,12 @@ func countProjectFlags(app core.App, project string) (int64, error) {
 }
 
 func registerConfigwireHooks(app core.App) {
+	// Superusers: the last remaining admin cannot be deleted on any
+	// path (custom account endpoint, data API, dashboard, server
+	// saves). The hook is authoritative; deleteAccount keeps a
+	// fast-path check for its 404 -> 400 -> 200 ordering.
+	account.RegisterGuard(app)
+
 	// Releases are immutable and publish-only: direct data-API writes are
 	// rejected; only publish/rollback handler saves (marked via a context
 	// value, see releases.IsInternalSaveCtx) pass the create/delete hooks. Updates
