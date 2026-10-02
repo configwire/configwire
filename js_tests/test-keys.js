@@ -152,7 +152,7 @@ test("renderKeys empty state", function () {
   var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
   ctx.CW.state.keys = [];
   ctx.CW.renderKeys();
-  assert.equal(ctx.elementsById["key-list"].innerHTML, "<li>No keys for this env.</li>");
+  assert.equal(ctx.elementsById["key-list"].innerHTML, "<li>No keys.</li>");
 });
 
 test("renderKeys active vs revoked vs disabled branches pinned exactly", function () {
@@ -161,13 +161,13 @@ test("renderKeys active vs revoked vs disabled branches pinned exactly", functio
   ctx.CW.renderKeys();
   assert.equal(
     ctx.elementsById["key-list"].innerHTML,
-    '<li><code>cw-abc…</code> active fetch global/s ingest global/s <button type="button" data-edit-key="k1">Edit limits</button> <button type="button" data-revoke-key="k1">revoke</button></li>'
+    '<li class="key-row"><code>cw-abc…</code> <span class="badge ok">active</span> <span class="key-limits muted">fetch global/s · ingest global/s</span> <span class="key-actions"><button type="button" data-edit-key="k1">Edit limits</button> <button type="button" data-revoke-key="k1">revoke</button></span></li>'
   );
   ctx.CW.state.keys = [{ id: "k2", prefix: "cw-xyz", revoked: true }];
   ctx.CW.renderKeys();
   assert.equal(
     ctx.elementsById["key-list"].innerHTML,
-    '<li><code>cw-xyz…</code> revoked fetch global/s ingest global/s <button type="button" data-edit-key="k2">Edit limits</button> <button type="button" data-revoke-key="k2" disabled>revoke</button></li>'
+    '<li class="key-row"><code>cw-xyz…</code> <span class="badge revoked">revoked</span> <span class="key-limits muted">fetch global/s · ingest global/s</span> <span class="key-actions"><button type="button" data-edit-key="k2">Edit limits</button> <button type="button" data-revoke-key="k2" disabled>revoke</button></span></li>'
   );
 });
 
@@ -231,7 +231,7 @@ test("loadKeys keeps all items with no scope; null items renders empty", async f
   ctx.CW.apiAll = function () { return Promise.resolve(null); };
   await ctx.CW.loadKeys();
   assert.equal(ctx.CW.state.keys.length, 0); // length-check: state.keys is a vm-realm array
-  assert.equal(ctx.elementsById["key-list"].innerHTML, "<li>No keys for this env.</li>");
+  assert.equal(ctx.elementsById["key-list"].innerHTML, "<li>No keys.</li>");
 });
 
 // --- createKey / revokeKey (keys.js:57-95) ---
@@ -240,7 +240,7 @@ test("createKey without envId sets guard text and performs no fetch", async func
   var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
   ctx.CW.state.envId = null;
   await ctx.CW.createKey();
-  assert.equal(ctx.elementsById["key-result"].textContent, "pick an environment first");
+  assert.equal(ctx.elementsById["key-result"].textContent, "Pick an environment first.");
   assert.equal(ctx.fetchCalls.length, 0);
 });
 
@@ -270,7 +270,7 @@ test("createKey success writes prefix result and one-time key value", async func
   assert.match(full, KEY_RE);
   assert.equal(
     ctx.elementsById["key-result"].textContent,
-    "key created (prefix " + minted.slice(0, 8) + ")"
+    "Key created: " + minted.slice(0, 8)
   );
   assert.equal(ctx.elementsById["key-once"].hidden, false);
 });
@@ -290,5 +290,59 @@ test("revokeKey PATCHes revoked:true and toasts on 200", async function () {
   assert.equal(mutCalls[0][0], "PATCH");
   assert.equal(mutCalls[0][1], "/api/collections/sdk_keys/records/" + encodeURIComponent("k 1"));
   assert.equal(mutCalls[0][2].revoked, true); // field-wise: body is a vm-realm object
-  assert.deepEqual(toasted, [["key revoked", true]]);
+  assert.deepEqual(toasted, [["Key revoked.", true]]);
+});
+
+test("openKeyLimitsDialog prefills both fields from the key", function () {
+  var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
+  ctx.CW.state.keys = [{ id: "k1", prefix: "cw-abc", fetchRps: 7, ingestRps: 0 }];
+  ctx.CW.openKeyLimitsDialog("k1");
+  assert.equal(ctx.elementsById["key-limits-id"].value, "k1");
+  assert.equal(ctx.elementsById["key-limits-fetch"].value, "7");
+  assert.equal(ctx.elementsById["key-limits-ingest"].value, "");
+  ctx.CW.state.keys = [];
+  ctx.CW.openKeyLimitsDialog("missing");
+  assert.equal(ctx.elementsById["key-limits-fetch"].value, "");
+  assert.equal(ctx.elementsById["key-limits-ingest"].value, "");
+});
+
+test("saveKeyLimits PATCHes both values in one call", async function () {
+  var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
+  ctx.CW.state.keys = [{ id: "k1", prefix: "cw-abc" }];
+  ctx.CW.$("key-limits-id").value = "k1";
+  ctx.CW.$("key-limits-fetch").value = "30";
+  ctx.CW.$("key-limits-ingest").value = "";
+  var mutCalls = [];
+  ctx.CW.apiMut = function (m, u, b) {
+    mutCalls.push([m, u, b]);
+    return Promise.resolve({ status: 200, data: {} });
+  };
+  ctx.CW.apiAll = function () { return Promise.resolve([]); }; // trailing loadKeys()
+  var toasted = [];
+  ctx.CW.toast = function (msg, ok) { toasted.push([msg, ok]); };
+  await ctx.CW.saveKeyLimits();
+  assert.equal(mutCalls.length, 1);
+  assert.equal(mutCalls[0][0], "PATCH");
+  assert.equal(mutCalls[0][1], "/api/collections/sdk_keys/records/k1");
+  assert.equal(mutCalls[0][2].fetchRps, 30);
+  assert.equal(mutCalls[0][2].ingestRps, null);
+  assert.deepEqual(toasted, [["Key limits updated.", true]]);
+});
+
+test("saveKeyLimits rejects out-of-range input without fetching", async function () {
+  var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
+  ctx.CW.$("key-limits-id").value = "k1";
+  ctx.CW.$("key-limits-fetch").value = "99999";
+  ctx.CW.$("key-limits-ingest").value = "";
+  var mutCalls = [];
+  ctx.CW.apiMut = function (m, u, b) {
+    mutCalls.push([m, u, b]);
+    return Promise.resolve({ status: 200, data: {} });
+  };
+  var toasted = [];
+  ctx.CW.toast = function (msg, ok) { toasted.push([msg, ok]); };
+  await ctx.CW.saveKeyLimits();
+  assert.equal(mutCalls.length, 0);
+  assert.equal(ctx.elementsById["key-limits-result"].textContent, "Limits: empty or 1–10000.");
+  assert.deepEqual(toasted, [["Limits: empty or 1–10000.", undefined]]);
 });

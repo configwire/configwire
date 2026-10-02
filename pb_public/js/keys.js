@@ -12,17 +12,20 @@
 
   function renderKeys() {
     var list = CW.$("key-list");
-    if (!CW.state.keys.length) { list.innerHTML = "<li>No keys for this env.</li>"; return; }
+    if (!CW.state.keys.length) { list.innerHTML = "<li>No keys.</li>"; return; }
     var lim = CW.state.limits || {};
     list.innerHTML = CW.state.keys.map(function (k) {
       var effFetch = effectiveRps(k.fetchRps, lim.fetchRps);
       var effIngest = effectiveRps(k.ingestRps, lim.ingestRps);
-      return "<li><code>" + CW.esc(k.prefix) + "…</code>" +
-        (k.revoked ? " revoked" : " active") +
-        " fetch " + CW.esc(effFetch) + "/s ingest " + CW.esc(effIngest) + "/s" +
-        ' <button type="button" data-edit-key="' + CW.esc(k.id) + '">Edit limits</button>' +
+      return '<li class="key-row"><code>' + CW.esc(k.prefix) + "…</code>" +
+        (k.revoked
+          ? ' <span class="badge revoked">revoked</span>'
+          : ' <span class="badge ok">active</span>') +
+        ' <span class="key-limits muted">fetch ' + CW.esc(effFetch) + "/s · ingest " + CW.esc(effIngest) + "/s</span>" +
+        ' <span class="key-actions">' +
+        '<button type="button" data-edit-key="' + CW.esc(k.id) + '">Edit limits</button>' +
         ' <button type="button" data-revoke-key="' + CW.esc(k.id) + '"' +
-        (k.revoked ? " disabled" : "") + ">revoke</button></li>";
+        (k.revoked ? " disabled" : "") + ">revoke</button></span></li>";
     }).join("");
   }
 
@@ -75,17 +78,17 @@
 
   function createKey(ev) {
     if (ev) ev.preventDefault();
-    if (!CW.state.envId) { CW.$("key-result").textContent = "pick an environment first"; return Promise.resolve(); }
+    if (!CW.state.envId) { CW.$("key-result").textContent = "Pick an environment first."; return Promise.resolve(); }
     var fetchParsed = readRpsValidated("key-fetch-rps");
     if (!fetchParsed.ok) {
-      var fetchMsg = "fetchRps must be empty or 1..10000";
+      var fetchMsg = "Limits: empty or 1–10000.";
       CW.$("key-result").textContent = fetchMsg;
       CW.toast(fetchMsg);
       return Promise.resolve();
     }
     var ingestParsed = readRpsValidated("key-ingest-rps");
     if (!ingestParsed.ok) {
-      var ingestMsg = "ingestRps must be empty or 1..10000";
+      var ingestMsg = "Limits: empty or 1–10000.";
       CW.$("key-result").textContent = ingestMsg;
       CW.toast(ingestMsg);
       return Promise.resolve();
@@ -98,11 +101,11 @@
     return CW.apiMut("POST", "/api/v1/admin/keys", body).then(function (out) {
       var data = out.data || {};
       if ((out.status === 200 || out.status === 201) && data.key) {
-        CW.$("key-result").textContent = "key created (prefix " + data.prefix + ")";
+        CW.$("key-result").textContent = "Key created: " + data.prefix;
         CW.$("key-once-value").textContent = data.key;
         CW.$("key-once").hidden = false;
       } else {
-        CW.$("key-result").textContent = "key create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        CW.$("key-result").textContent = "Key create failed (" + out.status + "): " + CW.serverMessage(out.data);
       }
       loadKeys().catch(function () {});
       return out;
@@ -114,23 +117,11 @@
       .then(function (out) {
         var keyOk = out.status === 200 || out.status === 204;
         CW.toast(keyOk
-          ? "key revoked"
-          : "revoke failed (" + out.status + "): " + CW.serverMessage(out.data), keyOk);
+          ? "Key revoked."
+          : "Revoke failed (" + out.status + "): " + CW.serverMessage(out.data), keyOk);
         loadKeys().catch(function () {});
         return out;
       });
-  }
-
-  function promptRps(message, defVal, opts) {
-    var fallbackDefault = defVal == null ? "" : String(defVal);
-    if (CW.promptDialog) {
-      return CW.promptDialog(message, fallbackDefault, opts);
-    }
-    try {
-      return Promise.resolve(window.prompt(message, fallbackDefault));
-    } catch (e) {
-      return Promise.resolve(null);
-    }
   }
 
   function parseRpsOrNull(raw) {
@@ -141,48 +132,74 @@
     return { ok: true, value: n };
   }
 
-  function editKeyLimits(id) {
+  function openKeyLimitsDialog(id) {
     var found = null;
     for (var i = 0; i < CW.state.keys.length; i++) {
       if (CW.state.keys[i].id === id) { found = CW.state.keys[i]; break; }
     }
-    var defFetch = found && found.fetchRps ? String(found.fetchRps) : "";
-    var defIngest = found && found.ingestRps ? String(found.ingestRps) : "";
-    return promptRps("fetchRps (req/s, empty=global, 1..10000)", defFetch, { title: "Edit key limits" })
-      .then(function (fetchRaw) {
-        if (fetchRaw == null) return null;
-        return promptRps("ingestRps (req/s, empty=global, 1..10000)", defIngest, { title: "Edit key limits" })
-          .then(function (ingestRaw) {
-            if (ingestRaw == null) return null;
-            return { fetchRaw: fetchRaw, ingestRaw: ingestRaw };
-          });
-      })
-      .then(function (pair) {
-        if (!pair) return null;
-        var f = parseRpsOrNull(pair.fetchRaw);
-        var g = parseRpsOrNull(pair.ingestRaw);
-        if (!f.ok || !g.ok) {
-          CW.toast("fetchRps/ingestRps must be empty or 1..10000");
-          return null;
-        }
-        return CW.apiMut("PATCH", "/api/collections/sdk_keys/records/" + encodeURIComponent(id), {
-          fetchRps: f.value,
-          ingestRps: g.value,
-        }).then(function (out) {
-          var ok = out.status === 200 || out.status === 204;
-          CW.toast(ok
-            ? "key limits updated"
-            : "update failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
-          loadKeys().catch(function () {});
-          return out;
-        });
-      });
+    var idEl = CW.$("key-limits-id");
+    if (idEl) idEl.value = id == null ? "" : String(id);
+    var fetchEl = CW.$("key-limits-fetch");
+    if (fetchEl) fetchEl.value = found && found.fetchRps ? String(found.fetchRps) : "";
+    var ingestEl = CW.$("key-limits-ingest");
+    if (ingestEl) ingestEl.value = found && found.ingestRps ? String(found.ingestRps) : "";
+    var res = CW.$("key-limits-result");
+    if (res) res.textContent = "";
+    if (CW.markFormClean) CW.markFormClean("key-limits-form");
+    var dlg = CW.$("key-limits-dialog");
+    if (!dlg) return;
+    if (dlg.showModal) {
+      try { if (!dlg.open) dlg.showModal(); } catch (e) { /* already open */ }
+    } else if (dlg.setAttribute) {
+      try { dlg.setAttribute("open", ""); } catch (e2) { /* stub DOM */ }
+    }
+  }
+
+  function closeKeyLimitsDialog() {
+    var dlg = CW.$("key-limits-dialog");
+    if (dlg && dlg.open) dlg.close();
+  }
+
+  function saveKeyLimits(ev) {
+    if (ev) ev.preventDefault();
+    var idEl = CW.$("key-limits-id");
+    var id = idEl ? idEl.value : "";
+    var fetchEl = CW.$("key-limits-fetch");
+    var ingestEl = CW.$("key-limits-ingest");
+    var f = parseRpsOrNull(fetchEl ? fetchEl.value : "");
+    var g = parseRpsOrNull(ingestEl ? ingestEl.value : "");
+    if (!f.ok || !g.ok) {
+      var msg = "Limits: empty or 1–10000.";
+      var res = CW.$("key-limits-result");
+      if (res) res.textContent = msg;
+      CW.toast(msg);
+      return Promise.resolve(null);
+    }
+    return CW.apiMut("PATCH", "/api/collections/sdk_keys/records/" + encodeURIComponent(id), {
+      fetchRps: f.value,
+      ingestRps: g.value,
+    }).then(function (out) {
+      var ok = out.status === 200 || out.status === 204;
+      CW.toast(ok
+        ? "Key limits updated."
+        : "Update failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+      if (ok) closeKeyLimitsDialog();
+      loadKeys().catch(function () {});
+      return out;
+    });
+  }
+
+  function editKeyLimits(id) {
+    openKeyLimitsDialog(id);
   }
 
   CW.renderKeys = renderKeys;
   CW.loadKeys = loadKeys;
   CW.createKey = createKey;
   CW.revokeKey = revokeKey;
+  CW.openKeyLimitsDialog = openKeyLimitsDialog;
+  CW.closeKeyLimitsDialog = closeKeyLimitsDialog;
+  CW.saveKeyLimits = saveKeyLimits;
   CW.editKeyLimits = editKeyLimits;
   CW.randomKey = randomKey;
   CW.sha256Hex = sha256Hex;
