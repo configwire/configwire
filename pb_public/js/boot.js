@@ -162,9 +162,6 @@
       if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
     });
     CW.on("flag-rules-value", "input", CW.updateFlagRuleHints);
-    CW.on("exp-flag-select", "change", function () {
-      if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
-    });
     CW.on("exp-variant-add", "click", function () {
       if (CW.addVariantRow) CW.addVariantRow("", 0, "");
       if (CW.recalcLastVariantWeight) CW.recalcLastVariantWeight();

@@ -658,6 +658,13 @@
   // Canonical event wiring lives in boot.js (mirrors flag-rules pattern).
   // This module only defines logic + CW.* exports, no self-binding.
 
+  function flagKeyOf(flagId) {
+    if (flagId && CW.flagKeyById) {
+      try { return CW.flagKeyById(flagId) || ""; } catch (e) { return ""; }
+    }
+    return "";
+  }
+
   function resetExperimentForm() {
     var idEl = CW.$("exp-id");
     if (idEl) idEl.value = "";
@@ -693,6 +700,12 @@
     return true;
   }
 
+  function experimentTitle(prefix, name, flagId) {
+    var key = flagKeyOf(flagId);
+    var head = name ? prefix + " " + name : prefix + " experiment";
+    return key ? head + " for " + key : head;
+  }
+
   function openExperimentDialog(exp, presetFlagId) {
     var title = CW.$("experiment-dialog-title");
     if (!exp) {
@@ -702,10 +715,11 @@
         if (sel) sel.value = presetFlagId;
         if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
       }
-      if (title) title.textContent = "Add experiment";
+      var addSel = CW.$("exp-flag-select");
+      if (title) title.textContent = experimentTitle("Add", "", addSel ? addSel.value : presetFlagId);
     } else {
       fillExperimentForm(exp);
-      if (title) title.textContent = exp.name ? "Edit " + exp.name : "Edit experiment";
+      if (title) title.textContent = experimentTitle("Edit", exp.name || exp.id || "", exp.flag);
     }
     var dlg = CW.$("experiment-dialog");
     if (!dlg) return;
