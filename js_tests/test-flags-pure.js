@@ -51,10 +51,10 @@ function setDefaultInput(raw, type) {
 test("flagTypeExpectation: exact hint string per type on mismatch", function () {
   reset();
   var cases = [
-    ["0", "bool", "Invalid defaultValue: expected bool (true or false)"],
-    ["true", "number", "Invalid defaultValue: expected number (e.g. 0)"],
-    ["5", "string", 'Invalid defaultValue: expected string (JSON quoted, e.g. "hello")'],
-    ["5", "json", "Invalid defaultValue: expected JSON object or array (e.g. {} or [])"],
+    ["0", "bool", "Invalid default: expected bool (true or false)"],
+    ["true", "number", "Invalid default: expected number (e.g. 0)"],
+    ["5", "string", 'Invalid default: expected string (JSON quoted, e.g. "hello")'],
+    ["5", "json", "Invalid default: expected JSON object or array (e.g. {} or [])"],
   ];
   for (var i = 0; i < cases.length; i++) {
     setDefaultInput(cases[i][0], cases[i][1]);

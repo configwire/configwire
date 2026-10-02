@@ -174,7 +174,7 @@
     var html = ids.map(function (id) { return folderHTML(id, groupNameById(id) || id, childSet); }).join("");
     var none = flagsInGroup("");
     if (none.length || !ids.length) html += folderHTML("", "Default", childSet);
-    box.innerHTML = html || '<p class="muted">No flags for this project.</p>';
+    box.innerHTML = html || '<p class="muted">No flags.</p>';
   }
 
   function toggleGroupCollapse(key) {
@@ -187,7 +187,7 @@
     var sel = CW.$("flag-group");
     if (sel) sel.value = gid || "";
     var res = CW.$("flag-result");
-    if (res) res.textContent = gid && CW.state.groups[gid] ? "new flag in " + CW.state.groups[gid] : "";
+    if (res) res.textContent = gid && CW.state.groups[gid] ? "New flag in " + CW.state.groups[gid] : "";
   }
 
   function moveFlag(id, gid) {
@@ -199,7 +199,7 @@
       baseId: id,
       label: label,
     });
-    CW.toast(staged == null ? "no changes to stage: " + label : "draft staged: " + label, true);
+    CW.toast(staged == null ? "No changes." : "Draft saved: " + label, true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
@@ -295,7 +295,7 @@
     } else {
       stagedKey = CW.drafts.draftStage("flag", { op: "create", body: body, label: body.key });
     }
-    CW.toast(stagedKey == null ? "no changes to stage: " + body.key : "draft staged: " + body.key, true);
+    CW.toast(stagedKey == null ? "No changes." : "Draft saved: " + body.key, true);
     CW.$("flag-result").textContent = "";
     if (CW.markFormClean) CW.markFormClean("flag-form");
     closeFlagDialog();
@@ -306,24 +306,24 @@
   function deleteFlag(id) {
     var delKey = flagKeyById(id) || id;
     CW.drafts.draftStage("flag", { op: "delete", body: {}, baseId: id, label: delKey + " deleted" });
-    CW.toast("draft staged: " + delKey + " deleted", true);
+    CW.toast("Draft saved: " + delKey + " deleted", true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
 
   function promptCreateGroup() {
-    if (!CW.state.projectId) { CW.toast("select a project first"); return Promise.resolve(); }
+    if (!CW.state.projectId) { CW.toast("Select a project first."); return Promise.resolve(); }
     return CW.promptDialog("New group name", "", { title: "New group", okText: "Create", placeholder: "Group name", required: true }).then(function (name) {
       if (name == null) return;
       name = name.trim();
-      if (!name) { CW.toast("group name is required"); return; }
+      if (!name) { CW.toast("Group name required."); return; }
       CW.drafts.draftStage("group", {
         op: "create",
         body: { name: name, project: CW.state.projectId },
         label: name,
       });
-      groupStatus("group staged: " + name);
-      CW.toast("draft staged: " + name, true);
+      groupStatus("Draft saved: " + name);
+      CW.toast("Draft saved: " + name, true);
       CW.drafts.refreshDraftChrome();
       return { status: 200, data: {} };
     });
@@ -335,11 +335,11 @@
     return CW.promptDialog("Rename group", cur, { title: "Rename group", okText: "Rename", required: true }).then(function (name) {
       if (name == null) return;
       name = name.trim();
-      if (!name) { groupStatus("group name is required"); return; }
+      if (!name) { groupStatus("Group name required."); return; }
       if (name === cur) return;
       var stagedGroup = CW.drafts.draftStage("group", { op: "update", body: { name: name }, baseId: id, label: name });
-      groupStatus(stagedGroup == null ? "no changes to stage: " + name : "group staged: " + name);
-      CW.toast(stagedGroup == null ? "no changes to stage: " + name : "draft staged: " + name, true);
+      groupStatus(stagedGroup == null ? "No changes." : "Draft saved: " + name);
+      CW.toast(stagedGroup == null ? "No changes." : "Draft saved: " + name, true);
       CW.drafts.refreshDraftChrome();
       return { status: 200, data: {} };
     });
@@ -360,8 +360,8 @@
         return fid !== undefined && fid !== null && fid !== "";
       });
       CW.drafts.draftStage("group", { op: "delete", body: {}, baseId: id, memberIds: memberIds, label: name });
-      groupStatus("group staged: " + name + " deleted");
-      CW.toast("draft staged: " + name + " deleted", true);
+      groupStatus("Draft saved: " + name + " deleted");
+      CW.toast("Draft saved: " + name + " deleted", true);
       CW.drafts.refreshDraftChrome();
       return { status: 200, data: {} };
     });
@@ -405,7 +405,7 @@
     var flagId = CW.state.activeFlagRulesId || "";
     if (!flagId) { list.innerHTML = "<li>Pick a flag first.</li>"; return; }
     var items = flagRulesForActive();
-    if (!items.length) { list.innerHTML = "<li>No rules for this flag.</li>"; return; }
+    if (!items.length) { list.innerHTML = "<li>No rules.</li>"; return; }
     list.innerHTML = items.map(function (r) {
       var runpub = isUnpub("rule", r.id);
       var rdeleted = isDeleted("rule", r.id, r);
@@ -476,7 +476,7 @@
       CW.state.activeFlagRulesId || "";
     if (!flagId) {
       var res0 = CW.$("flag-rules-result");
-      if (res0) res0.textContent = "pick a flag first";
+      if (res0) res0.textContent = "Pick a flag first.";
       return Promise.resolve();
     }
     var cond = CW.parseJSONInput(CW.$("flag-rules-condition").value, "condition");
@@ -494,16 +494,16 @@
     var ruleLabel = "rule for " + (flagKeyById(flagId) || flagId);
     if (id) {
       var stagedRule = CW.drafts.draftStage("rule", { op: "update", body: body, baseId: id, label: ruleLabel });
-      CW.$("flag-rules-result").textContent = stagedRule == null ? "no changes to stage" : "rule staged: " + id;
+      CW.$("flag-rules-result").textContent = stagedRule == null ? "No changes." : "Rule staged.";
     } else {
       var stagedKey = CW.drafts.draftStage("rule", { op: "create", body: body, label: ruleLabel });
-      CW.$("flag-rules-result").textContent = "rule staged: " + stagedKey;
+      CW.$("flag-rules-result").textContent = "Rule staged.";
     }
     var fid = CW.$("flag-rules-flag-id");
     if (fid) fid.value = flagId;
     CW.state.activeFlagRulesId = flagId;
     if (CW.markFormClean) CW.markFormClean("flag-rules-form");
-    CW.toast((id && stagedRule == null ? "no changes to stage: " : "draft staged: ") + ruleLabel, true);
+    CW.toast((id && stagedRule == null ? "No changes." : "Draft saved: " + ruleLabel), true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
@@ -522,7 +522,7 @@
     if (flagDefaultMatchesType(parsed, type)) return CW.updateJsonHint("flag-default");
     var hint = CW.$("flag-default-hint");
     if (hint) {
-      hint.textContent = "Invalid defaultValue: " + flagTypeExpectation(type);
+      hint.textContent = "Invalid default: " + flagTypeExpectation(type);
       hint.className = "json-hint err";
     }
     input.classList.remove("valid");
@@ -624,7 +624,7 @@
       } catch (e) { CW.$("flag-default").value = "null"; }
       syncFlagDefaultForType();
       var res = CW.$("flag-result");
-      if (res) res.textContent = "editing " + (flag.key || flag.id || "");
+      if (res) res.textContent = "Editing " + (flag.key || flag.id || "");
       if (title) title.textContent = flag.key ? "Edit " + flag.key : "Edit flag";
     }
     var dlg = CW.$("flag-dialog");

@@ -105,7 +105,7 @@
 
   function deleteRule(id) {
     CW.drafts.draftStage("rule", { op: "delete", body: {}, baseId: id, label: "rule deleted" });
-    CW.toast("draft staged: rule deleted", true);
+    CW.toast("Draft saved: rule deleted", true);
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
