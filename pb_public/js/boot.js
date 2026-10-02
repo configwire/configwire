@@ -87,6 +87,7 @@
     CW.on("refresh-releases", "click", function () { CW.loadReleases().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-keys", "click", function () { CW.loadKeys().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-limits", "click", function () { CW.loadLimits().catch(function (e) { CW.toast(e.message); }); });
+    CW.on("refresh-settings-limits", "click", function () { CW.loadLimits().catch(function (e) { CW.toast(e.message); }); });
     CW.on("refresh-stats", "click", function () {
       CW.loadStats().catch(function () { /* loadStats renders inline */ });
     });
@@ -464,6 +465,7 @@
     });
     CW.on("key-form", "submit", CW.createKey);
     CW.on("limits-form", "submit", CW.saveLimits);
+    CW.on("settings-admin-form", "submit", CW.saveAdminLimit);
     CW.on("key-copy", "click", function () {
       var v = CW.$("key-once-value").textContent;
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -880,6 +882,7 @@
     get changeAccountPassword() { return CW.changeAccountPassword; },
     get deleteAccount() { return CW.deleteAccount; },
     get showAccount() { return CW.showAccount; },
+    get showSettings() { return CW.showSettings; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
     get promptCreateGroup() { return CW.promptCreateGroup; },
     get renameGroup() { return CW.renameGroup; },

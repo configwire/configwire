@@ -50,7 +50,7 @@
       var el = CW.$("limits-result");
       // textContent only (no innerHTML), so no CW.esc needed here.
       if (el) {
-        el.textContent = "current: global " + data.globalRps + "/s burst " +
+        el.textContent = "current: global " + data.globalRps + "/s ceiling " +
           data.burst + " fetch " + data.fetchRps + "/s ingest " +
           data.ingestRps + "/s admin " + data.adminRps + "/s headers " +
           headersToString(data.ipHeaders);
@@ -63,20 +63,46 @@
     });
   }
 
+  function numOr(id, fallback) {
+    var el = CW.$(id);
+    if (!el || el.value === "" || el.value == null) return fallback;
+    var v = parseInt(el.value, 10);
+    return isFinite(v) ? v : NaN;
+  }
+
+  function currentVal(key, fallback) {
+    if (CW.state.limits && CW.state.limits[key] != null) return CW.state.limits[key];
+    return fallback;
+  }
+
+  function putLimits(body, resElId) {
+    return CW.apiMut("PUT", "/api/v1/admin/limits", body).then(function (out) {
+      var resEl = CW.$(resElId || "limits-result");
+      if (out.status === 200) {
+        renderLimits(out.data);
+        if (resEl) resEl.textContent = "limits saved";
+        CW.toast("limits saved", true);
+        return loadLimits().catch(function () {});
+      }
+      var fail = "save failed (" + out.status + "): " + CW.serverMessage(out.data);
+      if (resEl) resEl.textContent = fail;
+      CW.toast(fail);
+      return out;
+    });
+  }
+
   function saveLimits(ev) {
     if (ev) ev.preventDefault();
-    function num(id) {
-      var el = CW.$(id);
-      if (!el) return NaN;
-      return parseInt(el.value, 10);
-    }
+    var hipsEl = CW.$("limit-ip-headers");
+    var hipsInForm = hipsEl && hipsEl.closest ? hipsEl.closest("#limits-form") : null;
+    var stateHeaders = currentVal("ipHeaders", null);
     var body = {
-      globalRps: num("limit-global"),
-      burst: num("limit-burst"),
-      fetchRps: num("limit-fetch"),
-      ingestRps: num("limit-ingest"),
-      adminRps: num("limit-admin"),
-      ipHeaders: stringToHeaders(CW.$("limit-ip-headers") && CW.$("limit-ip-headers").value)
+      globalRps: numOr("limit-global", currentVal("globalRps", NaN)),
+      burst: numOr("limit-burst", currentVal("burst", NaN)),
+      fetchRps: numOr("limit-fetch", currentVal("fetchRps", NaN)),
+      ingestRps: numOr("limit-ingest", currentVal("ingestRps", NaN)),
+      adminRps: numOr("limit-admin", currentVal("adminRps", NaN)),
+      ipHeaders: hipsInForm ? stringToHeaders(hipsEl.value) : (Array.isArray(stateHeaders) ? stateHeaders : stringToHeaders(hipsEl && hipsEl.value))
     };
     var fields = ["globalRps", "burst", "fetchRps", "ingestRps", "adminRps"];
     for (var i = 0; i < fields.length; i++) {
@@ -103,22 +129,67 @@
         return Promise.resolve();
       }
     }
-    return CW.apiMut("PUT", "/api/v1/admin/limits", body).then(function (out) {
-      var resEl = CW.$("limits-result");
-      if (out.status === 200) {
-        renderLimits(out.data);
-        if (resEl) resEl.textContent = "limits saved";
-        CW.toast("limits saved", true);
-        return loadLimits().catch(function () {});
+    return putLimits(body, "limits-result");
+  }
+
+  function saveAdminLimit(ev) {
+    if (ev) ev.preventDefault();
+    var adminEl = CW.$("limit-admin");
+    var adminV = adminEl ? parseInt(adminEl.value, 10) : NaN;
+    var resEl = CW.$("settings-limits-result");
+    function fail(msg) {
+      if (resEl) resEl.textContent = msg;
+      CW.toast(msg);
+      return Promise.resolve();
+    }
+    if (!isFinite(adminV) || adminV < 1 || adminV > 10000) {
+      return fail("adminRps must be 1..10000");
+    }
+    var headers = stringToHeaders(CW.$("limit-ip-headers") && CW.$("limit-ip-headers").value);
+    if (headers.length > 10) {
+      return fail("ipHeaders must hold 1..10 entries");
+    }
+    for (var h = 0; h < headers.length; h++) {
+      if (!IP_HEADER_RE.test(headers[h])) {
+        return fail("ipHeaders entry " + headers[h] + " must be 1..64 chars of [A-Za-z0-9-]");
       }
-      var fail = "save failed (" + out.status + "): " + CW.serverMessage(out.data);
-      if (resEl) resEl.textContent = fail;
-      CW.toast(fail);
-      return out;
-    });
+    }
+    function send() {
+      var cur = CW.state.limits || {};
+      var body = {
+        globalRps: cur.globalRps,
+        burst: cur.burst,
+        fetchRps: cur.fetchRps,
+        ingestRps: cur.ingestRps,
+        adminRps: adminV,
+        ipHeaders: headers
+      };
+      var fields = ["globalRps", "burst", "fetchRps", "ingestRps"];
+      for (var i = 0; i < fields.length; i++) {
+        var v = body[fields[i]];
+        if (!isFinite(v) || v < 1 || v > 10000) {
+          return loadLimits().then(function (fresh) {
+            return putLimits({
+              globalRps: fresh.globalRps,
+              burst: fresh.burst,
+              fetchRps: fresh.fetchRps,
+              ingestRps: fresh.ingestRps,
+              adminRps: adminV,
+              ipHeaders: headers
+            }, "settings-limits-result");
+          });
+        }
+      }
+      return putLimits(body, "settings-limits-result");
+    }
+    if (!CW.state.limits) {
+      return loadLimits().then(send, send);
+    }
+    return send();
   }
 
   CW.renderLimits = renderLimits;
   CW.loadLimits = loadLimits;
   CW.saveLimits = saveLimits;
+  CW.saveAdminLimit = saveAdminLimit;
 })();
