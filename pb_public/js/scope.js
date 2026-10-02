@@ -16,6 +16,11 @@
     if (cur && CW.state.projects.some(function (p) { return p.id === cur; })) ps.value = cur;
     else if (CW.state.projects.length) { ps.value = CW.state.projects[0].id; CW.state.projectId = CW.state.projects[0].id; }
     else { ps.value = "__all"; CW.state.projectId = null; }
+    // Home lists all projects: keep the last project in state for instant
+    // preload, but the dropdown must read All. Without this, the async
+    // loadEnvs()->renderProjectEnv in refreshAll overwrites syncSidebar's
+    // All with the persisted project after every refresh.
+    if (CW.state.view === "home") ps.value = "__all";
 
     var es = CW.$("env-select");
     var ecur = CW.state.envId;
@@ -150,6 +155,7 @@
           CW.$("flag-folders").innerHTML = "<p class=\"muted\">" + CW.esc(e.message) + "</p>";
           loadScopedAfterFlags();
         });
+        if (CW.state.view === "home" && CW.syncSidebar) CW.syncSidebar();
         function loadScopedAfterFlags() {
           CW.loadRules().catch(function (e) { CW.toast(e.message); });
           CW.loadExperiments().catch(function (e) { CW.toast(e.message); });
