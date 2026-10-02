@@ -1842,6 +1842,35 @@ td code {
   filter: none;
 }
 
+/* ---- Delete affordances: always danger-red (menus + inline deletes).
+ * Covers env menu [data-env-delete] (index.html), flag menu
+ * [data-delete-flag] (js/flags.js), experiment menus
+ * [data-delete-experiment] (js/experiments.js list + dialog renderers),
+ * group [data-delete-group] and rule [data-delete-flag-rule] (js/flags.js).
+ * Icons use stroke="currentColor" so .menu-icon svg follows automatically.
+ * Specificity (ID + attr) beats the shared menuitem base/hover above, so
+ * no !important is needed. */
+#env-bar .env-menu button[role="menuitem"][data-env-delete],
+#flag-folders .flag-menu button[role="menuitem"][data-delete-flag],
+#experiment-list .exp-menu button[role="menuitem"][data-delete-experiment],
+#flag-experiments-list .exp-menu button[role="menuitem"][data-delete-experiment],
+#flag-folders .folder-actions button[data-delete-group],
+#flag-rules-list button[data-delete-flag-rule] {
+  color: var(--danger);
+}
+
+#env-bar .env-menu button[role="menuitem"][data-env-delete]:hover,
+#flag-folders .flag-menu button[role="menuitem"][data-delete-flag]:hover,
+#experiment-list .exp-menu button[role="menuitem"][data-delete-experiment]:hover,
+#flag-experiments-list .exp-menu button[role="menuitem"][data-delete-experiment]:hover,
+#flag-folders .folder-actions button[data-delete-group]:hover,
+#flag-rules-list button[data-delete-flag-rule]:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(248, 113, 113, 0.12);
+  filter: none;
+}
+
 #flag-rules-list .rule-actions {
   margin-left: auto;
   display: inline-flex;
