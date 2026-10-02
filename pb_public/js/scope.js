@@ -136,6 +136,152 @@
     });
   }
 
+  function projectByIdLocal(id) {
+    if (CW.projectById) return CW.projectById(id);
+    for (var i = 0; i < CW.state.projects.length; i++) {
+      if (CW.state.projects[i].id === id) return CW.state.projects[i];
+    }
+    return null;
+  }
+
+  function envByIdLocal(id) {
+    for (var i = 0; i < CW.state.envs.length; i++) {
+      if (CW.state.envs[i].id === id) return CW.state.envs[i];
+    }
+    return null;
+  }
+
+  function renameProject(id) {
+    var pid = id || CW.state.projectId;
+    if (!pid) { CW.toast("Pick a project first."); return Promise.resolve(); }
+    var cur = projectByIdLocal(pid);
+    var curName = (cur && cur.name) || "";
+    return CW.promptDialog("Rename project", curName, { title: "Rename project", okText: "Rename", required: true }).then(function (name) {
+      if (name == null) return; // cancelled
+      name = name.trim();
+      if (!name) { CW.toast("Project name required."); return; }
+      if (cur && name === cur.name) return;
+      return CW.apiMut("PATCH", "/api/collections/projects/records/" + encodeURIComponent(pid), { name: name })
+        .then(function (out) {
+          var ok = out.status === 200 || out.status === 204;
+          if (ok) {
+            for (var i = 0; i < CW.state.projects.length; i++) {
+              if (CW.state.projects[i].id === pid) { CW.state.projects[i].name = (out.data && out.data.name) || name; break; }
+            }
+            CW.persistScope();
+            if (CW.renderDetailHeader) CW.renderDetailHeader();
+            if (CW.loadHomeStats) CW.loadHomeStats().catch(function () {});
+            CW.toast("Project renamed: " + name, true);
+          } else {
+            CW.toast("Rename failed (" + out.status + "): " + CW.serverMessage(out.data));
+          }
+          return out;
+        });
+    });
+  }
+
+  function deleteProject(id) {
+    var pid = id || CW.state.projectId;
+    if (!pid) { CW.toast("Pick a project first."); return Promise.resolve(); }
+    var cur = projectByIdLocal(pid);
+    var label = (cur && (cur.name || cur.id)) || pid;
+    return CW.confirmDialog(
+      'Delete project "' + label + '" and all its environments, flags, keys and releases? This cannot be undone.',
+      { title: "Delete project", okText: "Delete", danger: true }
+    ).then(function (ok) {
+      if (!ok) return;
+      return CW.apiMut("DELETE", "/api/collections/projects/records/" + encodeURIComponent(pid))
+        .then(function (out) {
+          var okDel = out.status === 200 || out.status === 204;
+          if (!okDel) {
+            CW.toast("Delete failed (" + out.status + "): " + CW.serverMessage(out.data));
+            return out;
+          }
+          CW.state.projects = CW.state.projects.filter(function (p) { return p.id !== pid; });
+          if (CW.state.projectId === pid) {
+            CW.state.projectId = null;
+            CW.state.envId = null;
+            CW.state.envs = [];
+          }
+          CW.persistScope();
+          CW.toast("Project deleted: " + label, true);
+          try {
+            if (window.location.hash !== "#/") window.location.hash = "#/";
+          } catch (e) { /* non-browser harness */ }
+          if (CW.showHome) CW.showHome();
+          else renderProjectEnv();
+          loadProjects().then(function () {
+            if (CW.loadHomeStats) CW.loadHomeStats().catch(function () {});
+          }).catch(function () {});
+          return out;
+        });
+    });
+  }
+
+  function renameEnv(id) {
+    var eid = id || CW.state.envId;
+    if (!eid) { CW.toast("Pick an environment first."); return Promise.resolve(); }
+    var cur = envByIdLocal(eid);
+    var curSlug = (cur && cur.slug) || CW.state.envSlug || "";
+    return CW.promptDialog("Rename environment", curSlug, { title: "Rename environment", okText: "Rename", required: true }).then(function (slug) {
+      if (slug == null) return; // cancelled
+      slug = slug.trim();
+      if (!slug) { CW.toast("Env slug required."); return; }
+      if (cur && slug === cur.slug) return;
+      return CW.apiMut("PATCH", "/api/collections/environments/records/" + encodeURIComponent(eid), { slug: slug })
+        .then(function (out) {
+          var ok = out.status === 200 || out.status === 204;
+          if (ok) {
+            var nextSlug = (out.data && out.data.slug) || slug;
+            for (var i = 0; i < CW.state.envs.length; i++) {
+              if (CW.state.envs[i].id === eid) { CW.state.envs[i].slug = nextSlug; break; }
+            }
+            if (CW.state.envId === eid) CW.state.envSlug = nextSlug;
+            CW.persistScope();
+            renderProjectEnv();
+            if (CW.loadReleases) CW.loadReleases().catch(function () {});
+            if (CW.loadKeys) CW.loadKeys().catch(function () {});
+            if (CW.loadStats) CW.loadStats().catch(function () {});
+            CW.toast("Environment renamed: " + nextSlug, true);
+          } else {
+            CW.toast("Rename failed (" + out.status + "): " + CW.serverMessage(out.data));
+          }
+          return out;
+        });
+    });
+  }
+
+  function deleteEnv(id) {
+    var eid = id || CW.state.envId;
+    if (!eid) { CW.toast("Pick an environment first."); return Promise.resolve(); }
+    var cur = envByIdLocal(eid);
+    var label = (cur && (cur.slug || cur.id)) || eid;
+    return CW.confirmDialog(
+      'Delete environment "' + label + '" and its keys and releases? This cannot be undone.',
+      { title: "Delete environment", okText: "Delete", danger: true }
+    ).then(function (ok) {
+      if (!ok) return;
+      return CW.apiMut("DELETE", "/api/collections/environments/records/" + encodeURIComponent(eid))
+        .then(function (out) {
+          var okDel = out.status === 200 || out.status === 204;
+          if (!okDel) {
+            CW.toast("Delete failed (" + out.status + "): " + CW.serverMessage(out.data));
+            return out;
+          }
+          CW.state.envs = CW.state.envs.filter(function (e) { return e.id !== eid; });
+          if (CW.state.envId === eid) CW.state.envId = null;
+          CW.persistScope();
+          CW.toast("Environment deleted: " + label, true);
+          loadEnvs().then(function () {
+            if (CW.loadReleases) CW.loadReleases().catch(function () {});
+            if (CW.loadKeys) CW.loadKeys().catch(function () {});
+            if (CW.loadStats) CW.loadStats().catch(function () {});
+          }).catch(function () {});
+          return out;
+        });
+    });
+  }
+
   function refreshAll() {
     CW.loadPersistedScope();
     loadProjects().then(function () {
@@ -170,5 +316,9 @@
   CW.loadEnvs = loadEnvs;
   CW.createProject = createProject;
   CW.createEnv = createEnv;
+  CW.renameProject = renameProject;
+  CW.deleteProject = deleteProject;
+  CW.renameEnv = renameEnv;
+  CW.deleteEnv = deleteEnv;
   CW.refreshAll = refreshAll;
 })();

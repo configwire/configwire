@@ -384,6 +384,18 @@
     });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
+    CW.on("project-rename-btn", "click", function () {
+      if (CW.renameProject) CW.renameProject().catch(function (e) { CW.toast(e.message); });
+    });
+    CW.on("project-delete-btn", "click", function () {
+      if (CW.deleteProject) CW.deleteProject().catch(function (e) { CW.toast(e.message); });
+    });
+    CW.on("env-rename-btn", "click", function () {
+      if (CW.renameEnv) CW.renameEnv().catch(function (e) { CW.toast(e.message); });
+    });
+    CW.on("env-delete-btn", "click", function () {
+      if (CW.deleteEnv) CW.deleteEnv().catch(function (e) { CW.toast(e.message); });
+    });
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
     CW.on("experiment-form", "submit", CW.saveExperiment);
     CW.on("experiment-reset", "click", function () {
@@ -906,6 +918,8 @@
     get showAccount() { return CW.showAccount; },
     get showSettings() { return CW.showSettings; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
+    get renameProject() { return CW.renameProject; }, get deleteProject() { return CW.deleteProject; },
+    get renameEnv() { return CW.renameEnv; }, get deleteEnv() { return CW.deleteEnv; },
     get promptCreateGroup() { return CW.promptCreateGroup; },
     get renameGroup() { return CW.renameGroup; },
     get deleteGroup() { return CW.deleteGroup; },
