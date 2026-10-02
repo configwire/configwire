@@ -704,6 +704,57 @@ main {
   flex-shrink: 0;
 }
 
+.scope-group-settings {
+  margin-top: var(--space-4);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: var(--panel-2);
+  background-image: linear-gradient(180deg, rgba(59, 130, 246, 0.06) 0%, transparent 64px);
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm);
+}
+
+.settings-zone-box {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-row-text strong {
+  display: block;
+  font-size: 15px;
+}
+
+.settings-row-text p {
+  margin: var(--space-1) 0 0;
+}
+
+.settings-row .btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-row .btn {
+    width: 100%;
+  }
+}
+
 #view-home[hidden],
 #view-detail[hidden],
 #view-account[hidden],
