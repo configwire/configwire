@@ -65,23 +65,14 @@
       var id = t.getAttribute("data-project-id");
       if (id) window.location.hash = "#/p/" + encodeURIComponent(id);
     });
-    CW.on("project-select", "change", function () {
-      var id = CW.$("project-select").value || "";
-      if (id === "__all") {
-        CW.state.projectId = null;
-        CW.state.envId = null;
-        CW.state.envs = [];
-        CW.persistScope();
-        if (CW.renderProjectEnv) CW.renderProjectEnv();
-        if (window.location.hash !== "#/") window.location.hash = "#/";
-        CW.showHome();
-        return;
-      }
-      if (!id) return;
-      if (window.location.hash !== "#/p/" + encodeURIComponent(id)) {
-        window.location.hash = "#/p/" + encodeURIComponent(id);
-      }
-      CW.openProject(id, "");
+    CW.on("all-projects-btn", "click", function () {
+      CW.state.projectId = null;
+      CW.state.envId = null;
+      CW.state.envs = [];
+      CW.persistScope();
+      if (CW.renderProjectEnv) CW.renderProjectEnv();
+      if (window.location.hash !== "#/") window.location.hash = "#/";
+      CW.showHome();
     });
     CW.on("env-select", "change", function () {
       CW.state.envId = CW.$("env-select").value || null;

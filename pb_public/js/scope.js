@@ -5,18 +5,9 @@
   var CW = window.CW;
 
   function renderProjectEnv() {
-    var ps = CW.$("project-select");
-    var cur = CW.state.projectId;
-    var allOpt = '<option value="__all">All</option>';
-    ps.innerHTML = CW.state.projects.length
-      ? allOpt + CW.state.projects.map(function (p) {
-          return '<option value="' + CW.esc(p.id) + '">' + CW.esc(p.name || p.id) + "</option>";
-        }).join("")
-      : allOpt + '<option value="" disabled>(no projects)</option>';
-    if (cur && CW.state.projects.some(function (p) { return p.id === cur; })) ps.value = cur;
-    else { ps.value = "__all"; CW.state.projectId = null; }
-
-    var es = CW.$("env-select");
+    var es = null;
+    try { es = CW.$("env-select"); } catch (e) { es = null; }
+    if (!es) return;
     var ecur = CW.state.envId;
     es.innerHTML = CW.state.envs.length
       ? CW.state.envs.map(function (e) {

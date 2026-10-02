@@ -240,7 +240,8 @@ test("route: All -> Settings keeps no selection (no auto-select)", function () {
   assert.equal(h.CW.state.view, "settings");
   assert.equal(h.CW.state.projectId, null);
   assert.equal(sb.nav.style.display, "none");
-  assert.equal(el("project-select").value, "__all");
+  assert.ok(el("all-projects-btn"));
+  assert.equal(h.CW.state.projectId, null);
 });
 
 test("route: detail -> Settings keeps project context", async function () {
@@ -377,9 +378,9 @@ test("renderProjectEnv: project/env options + envSlug", function () {
   h.CW.state.projects = [{ id: "p1", name: "One" }];
   h.CW.state.envs = [{ id: "e1", slug: "dev" }, { id: "e2", slug: "prod" }];
   h.CW.renderProjectEnv();
-  assert.ok(el("project-select").innerHTML.indexOf("One") >= 0);
   assert.ok(el("env-select").innerHTML.indexOf("dev") >= 0);
   assert.equal(h.CW.state.envSlug, "dev");
+  assert.ok(el("all-projects-btn"));
 });
 
 test("createProject: blank name guards with zero fetch", async function () {

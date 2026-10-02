@@ -248,7 +248,8 @@ code {
   flex: 1 1 auto;
 }
 
-.sidebar nav a {
+.sidebar nav a,
+.sidebar-scope a {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -262,12 +263,14 @@ code {
   position: relative;
 }
 
-.sidebar nav a:hover {
+.sidebar nav a:hover,
+.sidebar-scope a:hover {
   background: var(--panel-2);
   color: var(--text);
 }
 
-.sidebar nav a:focus-visible {
+.sidebar nav a:focus-visible,
+.sidebar-scope a:focus-visible {
   outline: none;
   box-shadow: var(--ring);
 }
@@ -296,7 +299,8 @@ code {
   transition: opacity 160ms ease;
 }
 
-.sidebar nav a:hover .nav-icon {
+.sidebar nav a:hover .nav-icon,
+.sidebar-scope a:hover .nav-icon {
   opacity: 0.95;
 }
 
@@ -406,36 +410,13 @@ code {
 .sidebar-scope {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-soft);
 }
 
 .sidebar-scope[hidden] {
   display: none;
-}
-
-.sidebar-scope label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  min-width: 0;
-  margin: 0;
-}
-
-.sidebar-scope select {
-  width: 100%;
-  min-width: 0;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  white-space: nowrap;
-  padding: 8px 10px;
-  font-size: 13px;
 }
 
 .status-pill {

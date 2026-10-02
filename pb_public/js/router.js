@@ -46,10 +46,6 @@
     var ts = CW.$("sidebar-scope");
     if (ts) {
       ts.hidden = !CW.state.token;
-      if (!ts.hidden && (CW.state.view === "home" || !CW.state.projectId)) {
-        var ps = CW.$("project-select");
-        if (ps && ps.querySelector && ps.querySelector('option[value="__all"]')) ps.value = "__all";
-      }
     }
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
@@ -246,13 +242,10 @@
 
   // Global scope (All/home) implies no selected project.
   function clearStaleAllScope() {
-    var ps = null;
-    try { ps = CW.$("project-select"); } catch (e) { ps = null; }
-    var showingAll = (ps && ps.value === "__all") || CW.state.view === "home";
-    if (showingAll && CW.state.projectId) {
+    if (CW.state.view === "home" && CW.state.projectId) {
       CW.state.projectId = null;
+      CW.state.envId = null;
       CW.persistScope();
-      if (ps && ps.value !== "__all") ps.value = "__all";
     }
   }
 
