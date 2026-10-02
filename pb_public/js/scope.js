@@ -7,14 +7,15 @@
   function renderProjectEnv() {
     var ps = CW.$("project-select");
     var cur = CW.state.projectId;
+    var allOpt = '<option value="__all">All</option>';
     ps.innerHTML = CW.state.projects.length
-      ? CW.state.projects.map(function (p) {
+      ? allOpt + CW.state.projects.map(function (p) {
           return '<option value="' + CW.esc(p.id) + '">' + CW.esc(p.name || p.id) + "</option>";
         }).join("")
-      : '<option value="">(no projects)</option>';
+      : allOpt + '<option value="" disabled>(no projects)</option>';
     if (cur && CW.state.projects.some(function (p) { return p.id === cur; })) ps.value = cur;
     else if (CW.state.projects.length) { ps.value = CW.state.projects[0].id; CW.state.projectId = CW.state.projects[0].id; }
-    else CW.state.projectId = null;
+    else { ps.value = "__all"; CW.state.projectId = null; }
 
     var es = CW.$("env-select");
     var ecur = CW.state.envId;
@@ -82,14 +83,14 @@
   function createProject(ev) {
     if (ev) ev.preventDefault();
     var name = CW.$("project-name").value.trim();
-    if (!name) { CW.$("project-result").textContent = "project name is required"; return Promise.resolve(); }
+    if (!name) { CW.$("project-result").textContent = "Project name required."; return Promise.resolve(); }
     return CW.apiMut("POST", "/api/collections/projects/records", { name: name }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
       CW.$("project-result").textContent = ok
-        ? "project created: " + (out.data.name || out.data.id)
-        : "project create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        ? "Project created: " + (out.data.name || out.data.id)
+        : "Project create failed (" + out.status + "): " + CW.serverMessage(out.data);
       if (ok) {
-        CW.toast("project created: " + (out.data.name || out.data.id), true);
+        CW.toast("Project created: " + (out.data.name || out.data.id), true);
         CW.$("project-name").value = "";
         if (CW.markFormClean) CW.markFormClean("project-create-form");
         var newId = out.data.id;
@@ -112,16 +113,16 @@
 
   function createEnv(ev) {
     if (ev) ev.preventDefault();
-    if (!CW.state.projectId) { CW.$("env-result").textContent = "pick a project first"; return Promise.resolve(); }
+    if (!CW.state.projectId) { CW.$("env-result").textContent = "Pick a project first."; return Promise.resolve(); }
     var slug = CW.$("env-slug").value.trim();
-    if (!slug) { CW.$("env-result").textContent = "env slug is required"; return Promise.resolve(); }
+    if (!slug) { CW.$("env-result").textContent = "Env slug required."; return Promise.resolve(); }
     return CW.apiMut("POST", "/api/collections/environments/records", { project: CW.state.projectId, slug: slug }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
       CW.$("env-result").textContent = ok
-        ? "env created: " + (out.data.slug || out.data.id)
-        : "env create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        ? "Env created: " + (out.data.slug || out.data.id)
+        : "Env create failed (" + out.status + "): " + CW.serverMessage(out.data);
       if (ok) {
-        CW.toast("env created: " + (out.data.slug || out.data.id), true);
+        CW.toast("Env created: " + (out.data.slug || out.data.id), true);
         CW.$("env-slug").value = "";
         if (CW.markFormClean) CW.markFormClean("env-create-form");
         loadEnvs().catch(function () {});

@@ -354,7 +354,7 @@ test("createProject: blank name guards with zero fetch", async function () {
   reset();
   setVal("project-name", "   ");
   await h.CW.createProject();
-  assert.equal(el("project-result").textContent, "project name is required");
+  assert.equal(el("project-result").textContent, "Project name required.");
   assert.equal(h.fetchCalls.length, 0);
 });
 
@@ -364,7 +364,7 @@ test("createProject: success reports, clears, navigates hash", async function ()
   setVal("project-name", "demo");
   var out = await h.CW.createProject();
   assert.equal(out.status, 201);
-  assert.equal(el("project-result").textContent, "project created: demo");
+  assert.equal(el("project-result").textContent, "Project created: demo");
   assert.equal(el("project-name").value, "");
   await tick(30); // inner loadProjects/loadHomeStats/loadEnvs chain (scope.js:92-101)
   assert.equal(h.context.location.hash, "#/p/p-new");
@@ -376,15 +376,15 @@ test("createProject: success reports, clears, navigates hash", async function ()
 test("createEnv: guards + success", async function () {
   reset();
   await h.CW.createEnv();
-  assert.equal(el("env-result").textContent, "pick a project first");
+  assert.equal(el("env-result").textContent, "Pick a project first.");
   h.CW.state.projectId = "p1";
   setVal("env-slug", "  ");
   await h.CW.createEnv();
-  assert.equal(el("env-result").textContent, "env slug is required");
+  assert.equal(el("env-result").textContent, "Env slug required.");
   setVal("env-slug", "dev");
   var out = await h.CW.createEnv();
   assert.equal(out.status, 201);
-  assert.equal(el("env-result").textContent, "env created: dev");
+  assert.equal(el("env-result").textContent, "Env created: dev");
 });
 
 test("refreshAll: loads projects, routes, fans out to stubbed loaders", async function () {
@@ -629,7 +629,7 @@ test("variants builder: add/balance/recalc/validate/apply/sync", function () {
   assert.equal(applied[0].weightBps + applied[1].weightBps, 10000);
   wrap.children = [fakeVariantRow("", "50", "")];
   assert.equal(h.CW.applyVariantsBuilderToVariants(), false);
-  assert.ok(el("exp-variants-hint").textContent.indexOf("name is required") >= 0);
+  assert.ok(el("exp-variants-hint").textContent.indexOf("Name required") >= 0);
   wrap.children = []; wrap.innerHTML = "";
   setVal("exp-variants", JSON.stringify([
     { name: "c", weightBps: 6000 }, { name: "t", weightBps: 4000 },
@@ -644,7 +644,7 @@ test("createKey: no envId guards with zero fetch", async function () {
   reset();
   h.CW.state.envId = null;
   await h.CW.createKey(); // keys.js:59 guard
-  assert.equal(el("key-result").textContent, "pick an environment first");
+  assert.equal(el("key-result").textContent, "Pick an environment first.");
   assert.equal(h.fetchCalls.length, 0);
 });
 
@@ -654,7 +654,7 @@ test("createKey: success shows prefix + one-time value", async function () {
   setVal("key-fetch-rps", "1");
   setVal("key-ingest-rps", "1");
   await h.CW.createKey();
-  assert.ok(el("key-result").textContent.indexOf("key created") >= 0);
+  assert.ok(el("key-result").textContent.indexOf("Key created") >= 0);
   assert.ok(el("key-once-value").textContent.indexOf("cw-") === 0);
   assert.ok(h.fetchCalls.some(function (c) {
     return c.url.indexOf("/api/v1/admin/keys") === 0 && c.opts.method === "POST";
@@ -731,7 +731,7 @@ test("applyDrafts: dangling temp rule ref rejects with kept-count error", async 
   try { await h.CW.applyDrafts(); } catch (e) { err = e; }
   assert.ok(err instanceof Error);
   assert.equal(err.code, "DANGLING_TEMP"); // releases.js:551-554
-  assert.ok(err.message.indexOf("1 draft kept") >= 0); // releases.js:641-643
+  assert.ok(err.message.indexOf("drafts kept") >= 0); // releases.js:641-643
   assert.equal(err.kept, 1);
   assert.equal(calls.length, 0);
   assert.equal(h.CW.drafts.hasDrafts(), true);
@@ -757,11 +757,11 @@ test("publish state + dirty forms: mark/set/arm", function () {
   h.CW.markUnpublished("flag", "f1"); // releases.js:305-307
   assert.ok(el("publish-hint").textContent.indexOf("Unpublished changes") >= 0);
   h.CW.setPublishState(false); // releases.js:281-303
-  assert.equal(el("publish-hint").textContent, "No unpublished changes");
+  assert.equal(el("publish-hint").textContent, "Up to date.");
   h.CW.drafts.draftStage("flag", { op: "create", body: { key: "f" }, label: "f" });
   h.CW.markPublished(); // releases.js:337-348 consumes the store
   assert.equal(h.CW.drafts.hasDrafts(), false);
-  assert.equal(el("publish-hint").textContent, "No unpublished changes");
+  assert.equal(el("publish-hint").textContent, "Up to date.");
   h.CW.armDirtyForm("flag-form"); // releases.js:699-707
   var form = el("flag-form");
   var inputFns = form.listeners.filter(function (l) { return l.type === "input"; });

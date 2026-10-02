@@ -67,6 +67,11 @@
     });
     CW.on("project-select", "change", function () {
       var id = CW.$("project-select").value || "";
+      if (id === "__all") {
+        if (window.location.hash !== "#/") window.location.hash = "#/";
+        CW.showHome();
+        return;
+      }
       if (!id) return;
       if (window.location.hash !== "#/p/" + encodeURIComponent(id)) {
         window.location.hash = "#/p/" + encodeURIComponent(id);
@@ -110,7 +115,8 @@
     // pre-stage signal; staging calls markFormClean on success).
     if (CW.armDirtyForm) {
       ["flag-form", "flag-rules-form", "experiment-form",
-        "env-create-form", "project-create-form", "account-create-form"
+        "env-create-form", "project-create-form", "account-create-form",
+        "key-limits-form", "limits-form", "settings-admin-form"
       ].forEach(function (id) { CW.armDirtyForm(id); });
     }
     CW.on("flag-type", "change", function () {
@@ -242,57 +248,57 @@
     });
     CW.on("transfer-export-btn", "click", function () {
       try {
-        if (typeof CW.openExportDialog !== "function") { CW.toast("export unavailable"); return; }
+        if (typeof CW.openExportDialog !== "function") { CW.toast("Export unavailable."); return; }
         CW.openExportDialog();
-      } catch (e) { CW.toast((e && e.message) || "export failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Export failed."); }
     });
     CW.on("transfer-import-btn", "click", function () {
       try {
-        if (typeof CW.openImportDialog !== "function") { CW.toast("import unavailable"); return; }
+        if (typeof CW.openImportDialog !== "function") { CW.toast("Import unavailable."); return; }
         CW.openImportDialog();
-      } catch (e) { CW.toast((e && e.message) || "import failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Import failed."); }
     });
     CW.on("transfer-draft-view-btn", "click", function () {
       try {
-        if (typeof CW.openDraftSnapshotDialog !== "function") { CW.toast("draft snapshot unavailable"); return; }
+        if (typeof CW.openDraftSnapshotDialog !== "function") { CW.toast("Draft snapshot unavailable."); return; }
         CW.openDraftSnapshotDialog();
-      } catch (e) { CW.toast((e && e.message) || "draft snapshot failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Draft snapshot failed."); }
     });
     CW.on("transfer-export-close", "click", function () {
       try {
         if (typeof CW.closeExportDialog !== "function") return;
         CW.closeExportDialog();
-      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Close failed."); }
     });
     CW.on("transfer-export-ok", "click", function () {
       try {
         if (typeof CW.closeExportDialog !== "function") return;
         CW.closeExportDialog();
-      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Close failed."); }
     });
     CW.on("transfer-export-copy", "click", function () {
       try {
         var ta = CW.$("transfer-export-text");
         var v = ta && ta.value != null ? String(ta.value) : "";
-        if (!v) { CW.toast("nothing to copy"); return; }
+        if (!v) { CW.toast("Nothing to copy."); return; }
         if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(v).then(function () { CW.toast("copied", true); }, function () { CW.toast("copy failed"); });
+          navigator.clipboard.writeText(v).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
         } else {
           var tmp = document.createElement("textarea");
           tmp.value = v;
           document.body.appendChild(tmp);
           tmp.select();
-          try { document.execCommand("copy"); CW.toast("copied", true); }
-          catch (e2) { CW.toast("copy failed"); }
+          try { document.execCommand("copy"); CW.toast("Copied", true); }
+          catch (e2) { CW.toast("Copy failed"); }
           document.body.removeChild(tmp);
         }
-      } catch (e) { CW.toast((e && e.message) || "copy failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Copy failed"); }
     });
     CW.on("transfer-export-download", "click", function () {
       try {
         var ta = CW.$("transfer-export-text");
         var v = ta && ta.value != null ? String(ta.value) : "";
-        if (!v) { CW.toast("nothing to download"); return; }
+        if (!v) { CW.toast("Nothing to download."); return; }
         var blob = new Blob([v], { type: "application/json" });
         var URLobj = window.URL || window.webkitURL;
         var url = URLobj.createObjectURL(blob);
@@ -303,30 +309,30 @@
         if (a.click) a.click();
         document.body.removeChild(a);
         try { URLobj.revokeObjectURL(url); } catch (e2) { /* best-effort */ }
-      } catch (e) { CW.toast((e && e.message) || "download failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Download failed."); }
     });
     CW.on("transfer-import-close", "click", function () {
       try {
         if (typeof CW.closeImportDialog !== "function") return;
         CW.closeImportDialog();
-      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Close failed."); }
     });
     CW.on("transfer-import-cancel", "click", function () {
       try {
         if (typeof CW.closeImportDialog !== "function") return;
         CW.closeImportDialog();
-      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Close failed."); }
     });
     CW.on("transfer-import-stage", "click", function () {
       try {
         if (typeof CW.parseTransferSnapshot !== "function" ||
             typeof CW.validateTransferSnapshot !== "function" ||
-            typeof CW.importTransferSnapshot !== "function") { CW.toast("import unavailable"); return; }
+            typeof CW.importTransferSnapshot !== "function") { CW.toast("Import unavailable."); return; }
         var ta = CW.$("transfer-import-text");
         var raw = ta && ta.value != null ? String(ta.value) : "";
         var parsed = CW.parseTransferSnapshot(raw);
         if (!parsed || !parsed.ok) {
-          var perr = (parsed && parsed.error) || "invalid snapshot";
+          var perr = (parsed && parsed.error) || "Invalid snapshot.";
           var resEl = CW.$("transfer-import-result");
           if (resEl) resEl.textContent = perr;
           else CW.toast(perr);
@@ -334,7 +340,7 @@
         }
         var validated = CW.validateTransferSnapshot(parsed.snapshot);
         if (!validated || !validated.ok) {
-          var verr = (validated && validated.error) || "invalid snapshot";
+          var verr = (validated && validated.error) || "Invalid snapshot.";
           var resEl2 = CW.$("transfer-import-result");
           if (resEl2) resEl2.textContent = verr;
           else CW.toast(verr);
@@ -342,39 +348,39 @@
         }
         var counts = CW.importTransferSnapshot(parsed.snapshot) || {};
         var resEl3 = CW.$("transfer-import-result");
-        if (resEl3) resEl3.textContent = "staged: " + JSON.stringify(counts);
+        if (resEl3) resEl3.textContent = "Drafts staged.";
         if (typeof CW.closeImportDialog === "function") CW.closeImportDialog();
-        CW.toast("import staged", true);
-      } catch (e) { CW.toast((e && e.message) || "import failed"); }
+        CW.toast("Import staged.", true);
+      } catch (e) { CW.toast((e && e.message) || "Import failed."); }
     });
     CW.on("transfer-import-file", "change", function (ev) {
       try {
         var input = (ev && ev.target) || CW.$("transfer-import-file");
         var f = input && input.files ? input.files[0] : null;
         if (!f) return;
-        if (typeof FileReader === "undefined") { CW.toast("file import unavailable"); return; }
+        if (typeof FileReader === "undefined") { CW.toast("File import unavailable."); return; }
         var rd = new FileReader();
         rd.onload = function () {
           try {
             var ta = CW.$("transfer-import-text");
             if (ta) ta.value = rd.result != null ? String(rd.result) : "";
-          } catch (e) { CW.toast((e && e.message) || "file read failed"); }
+          } catch (e) { CW.toast((e && e.message) || "File read failed."); }
         };
-        rd.onerror = function () { CW.toast("file read failed"); };
+        rd.onerror = function () { CW.toast("File read failed."); };
         rd.readAsText(f);
-      } catch (e) { CW.toast((e && e.message) || "file read failed"); }
+      } catch (e) { CW.toast((e && e.message) || "File read failed."); }
     });
     CW.on("transfer-diff-close", "click", function () {
       try {
         if (typeof CW.closeDraftSnapshotDialog !== "function") return;
         CW.closeDraftSnapshotDialog();
-      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Close failed."); }
     });
     CW.on("transfer-diff-ok", "click", function () {
       try {
         if (typeof CW.closeDraftSnapshotDialog !== "function") return;
         CW.closeDraftSnapshotDialog();
-      } catch (e) { CW.toast((e && e.message) || "close failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Close failed."); }
     });
     CW.on("project-create-form", "submit", CW.createProject);
     CW.on("env-create-form", "submit", CW.createEnv);
@@ -440,7 +446,7 @@
         for (var i = 0; i < expList.length; i++) {
           if (expList[i].id === editEl) { found = expList[i]; break; }
         }
-        if (!found) { CW.toast("experiment not found: " + editEl); return; }
+        if (!found) { CW.toast("Experiment not found: " + editEl); return; }
         if (CW.openExperimentDialog) CW.openExperimentDialog(found);
         else {
           CW.$("exp-id").value = found.id;
@@ -453,7 +459,7 @@
           } catch (e) { CW.$("exp-variants").value = "[]"; }
           if (CW.syncVariantsBuilderFromInput) CW.syncVariantsBuilderFromInput();
           if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
-          CW.$("experiment-result").textContent = "editing " + (found.name || editEl);
+          CW.$("experiment-result").textContent = "Editing " + (found.name || editEl);
         }
       }
     });
@@ -466,6 +472,9 @@
       closeExpMenus();
     });
     CW.on("key-form", "submit", CW.createKey);
+    CW.on("key-limits-form", "submit", CW.saveKeyLimits);
+    CW.on("key-limits-close", "click", function () { if (CW.closeKeyLimitsDialog) CW.closeKeyLimitsDialog(); });
+    CW.on("key-limits-cancel", "click", function () { if (CW.closeKeyLimitsDialog) CW.closeKeyLimitsDialog(); });
     CW.on("limits-form", "submit", CW.saveLimits);
     CW.on("settings-admin-form", "submit", CW.saveAdminLimit);
     CW.on("admin-current-ip-copy", "click", function () {
@@ -473,23 +482,23 @@
         if (typeof CW.copyCurrentIP === "function") { CW.copyCurrentIP(); return; }
         var d = (CW.state && CW.state.limits) || {};
         var ip = d.clientIp != null ? String(d.clientIp) : "";
-        if (!ip) { CW.toast("nothing to copy"); return; }
+        if (!ip) { CW.toast("Nothing to copy."); return; }
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(ip).then(function () { CW.toast("copied", true); }, function () { CW.toast("copy failed"); });
-        } else { CW.toast("copy failed"); }
-      } catch (e) { CW.toast((e && e.message) || "copy failed"); }
+          navigator.clipboard.writeText(ip).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
+        } else { CW.toast("Copy failed"); }
+      } catch (e) { CW.toast((e && e.message) || "Copy failed"); }
     });
     CW.on("key-copy", "click", function () {
       var v = CW.$("key-once-value").textContent;
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(v).then(function () { CW.toast("copied", true); }, function () { CW.toast("copy failed"); });
+        navigator.clipboard.writeText(v).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
       } else {
         var ta = document.createElement("textarea");
         ta.value = v;
         document.body.appendChild(ta);
         ta.select();
-        try { document.execCommand("copy"); CW.toast("copied", true); }
-        catch (e) { CW.toast("copy failed"); }
+        try { document.execCommand("copy"); CW.toast("Copied", true); }
+        catch (e) { CW.toast("Copy failed"); }
         document.body.removeChild(ta);
       }
     });
@@ -577,7 +586,7 @@
               CW.$("flag-default").value = JSON.stringify(f.defaultValue === undefined ? null : f.defaultValue);
               if (CW.syncFlagDefaultForType) CW.syncFlagDefaultForType();
               else if (CW.updateFlagDefaultHint) CW.updateFlagDefaultHint();
-              CW.$("flag-result").textContent = "editing " + (f.key || fid);
+              CW.$("flag-result").textContent = "Editing " + (f.key || fid);
             }
             break;
           }
@@ -656,7 +665,7 @@
         for (var i = 0; i < ruleList.length; i++) {
           if (ruleList[i].id === rid) { found = ruleList[i]; break; }
         }
-        if (!found) { CW.toast("rule not found: " + rid); return; }
+        if (!found) { CW.toast("Rule not found: " + rid); return; }
         CW.$("flag-rules-flag-id").value = found.flag || CW.state.activeFlagRulesId || "";
         CW.$("flag-rules-id").value = found.id;
         CW.$("flag-rules-priority").value = found.priority == null ? 0 : found.priority;
@@ -672,7 +681,7 @@
         } catch (e2) { CW.$("flag-rules-value").value = "null"; }
         if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
         if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
-        CW.$("flag-rules-result").textContent = "editing " + found.id;
+        CW.$("flag-rules-result").textContent = "Editing " + found.id;
       }
     });
     CW.on("flag-rules-form", "submit", function (ev) {
@@ -732,7 +741,7 @@
       if (expId) {
         if (inMenu) closeReleaseMenus();
         if (CW.exportReleaseSnapshot) CW.exportReleaseSnapshot(expId);
-        else CW.toast("export unavailable");
+        else CW.toast("Export unavailable.");
         return;
       }
       var rb = t && t.closest ? t.closest("[data-rollback-version]") : null;
@@ -747,11 +756,11 @@
         else if (CW.unpublishedSummary) hasDrafts = CW.unpublishedSummary().total > 0;
         else hasDrafts = !!CW.state.unpublishedChanges;
       } catch (e) { hasDrafts = !!CW.state.unpublishedChanges; }
-      if (hasDrafts) { CW.toast("discard or publish drafts first"); return; }
+      if (hasDrafts) { CW.toast("Discard or publish drafts first."); return; }
       CW.rollback(v, "rollback via admin UI").then(function (out) {
         CW.$("publish-result").textContent = out.status === 200
-          ? "rolled back: now v" + out.data.version
-          : "rollback failed (" + out.status + "): " + CW.serverMessage(out.data);
+          ? "Rolled back: now v" + out.data.version
+          : "Rollback failed (" + out.status + "): " + CW.serverMessage(out.data);
         CW.loadReleases().catch(function () {});
       });
     });
@@ -792,7 +801,7 @@
         try {
           if (CW.drafts && CW.drafts.persistDrafts) CW.drafts.persistDrafts();
         } catch (e) { /* kept in memory */ }
-        CW.$("publish-result").textContent = (err && err.message) || "draft apply failed";
+        CW.$("publish-result").textContent = (err && err.message) || "Publish failed.";
       }
       var applied = null;
       try {
@@ -822,13 +831,13 @@
         CW.publish(note, base).then(function (out) {
           finishApply();
           if (out.status === 200) {
-            CW.$("publish-result").textContent = "published v" + out.data.version + " etag " + out.data.etag;
+            CW.$("publish-result").textContent = "Published v" + out.data.version + ".";
             if (CW.markPublished) CW.markPublished();
           } else if (out.status === 409) {
-            CW.$("publish-result").textContent = "stale baseVersion (409): currentVersion is " +
+            CW.$("publish-result").textContent = "Stale baseVersion (409): currentVersion is " +
               out.data.currentVersion + " — refreshed latest, retry publish. " + CW.serverMessage(out.data);
           } else {
-            CW.$("publish-result").textContent = "publish failed (" + out.status + "): " + CW.serverMessage(out.data);
+            CW.$("publish-result").textContent = "Publish failed (" + out.status + "): " + CW.serverMessage(out.data);
           }
           CW.loadReleases().then(function () {
             if (out.status !== 200 && CW.markUnpublished) CW.markUnpublished();
@@ -836,7 +845,7 @@
           reloadPublishedCollections();
         }, function (e) {
           finishApply();
-          CW.$("publish-result").textContent = "publish failed: " + ((e && e.message) || e);
+          CW.$("publish-result").textContent = "Publish failed: " + ((e && e.message) || e);
           reloadPublishedCollections();
         });
       }, applyFailed);
@@ -844,7 +853,7 @@
 
     CW.on("discard-unpublished", "click", function () {
       if (CW.state.applying) return;
-      cwConfirm("Discard all local drafts? Nothing was published; server values unchanged.", {title: "Discard drafts", okText: "Discard", danger: true}).then(function (ok) {
+      cwConfirm("Discard all drafts?", {title: "Discard drafts", okText: "Discard", danger: true}).then(function (ok) {
         if (!ok) return;
         try {
           if (CW.drafts && typeof CW.drafts.draftClearAll === "function") CW.drafts.draftClearAll();
@@ -857,7 +866,7 @@
           if (CW.clearUnpublished) CW.clearUnpublished();
           if (CW.setPublishState) CW.setPublishState(false);
         }
-        CW.$("publish-result").textContent = "local drafts discarded";
+        CW.$("publish-result").textContent = "Drafts discarded.";
       });
       return;
     });
