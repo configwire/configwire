@@ -416,3 +416,30 @@ test("deleteAccount failure pins status plus verbatim server message", async fun
   await ctx.CW.deleteAccount("u1");
   assert.equal($(ctx, "account-result").textContent, "Delete failed (400): cannot delete last admin");
 });
+
+test("deleteAccount with single cached admin blocks without confirm or fetch", async function () {
+  var ctx = fresh({
+    fetchImpl: function () { throw new Error("must not fetch"); },
+  });
+  ctx.CW.state.accounts = [{ id: "only", email: "solo@example.com" }];
+  ctx.CW.confirmDialog = function () { throw new Error("must not confirm"); };
+  await ctx.CW.deleteAccount("only");
+  assert.equal($(ctx, "account-result").textContent, "Cannot delete the last admin account.");
+  assert.equal(ctx.fetchCalls.length, 0);
+});
+
+test("renderAccounts disables Delete when a single admin remains", function () {
+  var ctx = fresh();
+  ctx.CW.state.accounts = [{ id: "only", email: "solo@example.com" }];
+  ctx.CW.renderAccounts();
+  var html = $(ctx, "account-list").innerHTML;
+  assert.ok(html.indexOf("disabled") !== -1, "delete disabled: " + html);
+  assert.ok(html.indexOf("Cannot delete the last admin account.") !== -1, "delete title: " + html);
+  ctx.CW.state.accounts = [
+    { id: "a", email: "a@example.com" },
+    { id: "b", email: "b@example.com" },
+  ];
+  ctx.CW.renderAccounts();
+  var multi = $(ctx, "account-list").innerHTML;
+  assert.ok(multi.indexOf("disabled") === -1, "delete enabled with two admins: " + multi);
+});

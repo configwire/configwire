@@ -67,11 +67,13 @@
     var list = CW.$("account-list");
     if (!list) return;
     if (!CW.state.accounts.length) { list.innerHTML = "<li>No admin accounts.</li>"; return; }
+    var single = CW.state.accounts.length === 1;
     list.innerHTML = CW.state.accounts.map(function (a) {
       return "<li><code>" + CW.esc(a.email || a.id) + "</code>" +
         (a.created ? ' <span class="muted">' + CW.esc(a.created) + "</span>" : "") +
         ' <button type="button" class="btn ghost" data-account-password="' + CW.esc(a.id) + '">Change password</button>' +
-        ' <button type="button" class="btn danger" data-account-delete="' + CW.esc(a.id) + '">Delete</button></li>';
+        ' <button type="button" class="btn danger" data-account-delete="' + CW.esc(a.id) + '"' +
+        (single ? ' disabled title="Cannot delete the last admin account."' : '') + '>Delete</button></li>';
     }).join("");
   }
 
@@ -132,6 +134,11 @@
   }
 
   function deleteAccount(id) {
+    if (CW.state.accounts.length === 1) {
+      try { CW.$("account-result").textContent = "Cannot delete the last admin account."; } catch (e) { /* non-browser harness */ }
+      CW.toast("Cannot delete the last admin account.");
+      return Promise.resolve();
+    }
     return CW.confirmDialog("Delete this admin account?", { title: "Delete admin", okText: "Delete", danger: true }).then(function (ok) {
       if (!ok) return;
       return CW.apiMut("DELETE", "/api/v1/admin/account/" + encodeURIComponent(id))
