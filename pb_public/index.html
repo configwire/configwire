@@ -230,6 +230,7 @@
                 <label>Fetch <input id="limit-fetch" type="number" min="1" max="10000"></label>
                 <label>Ingest <input id="limit-ingest" type="number" min="1" max="10000"></label>
                 <label>Admin <input id="limit-admin" type="number" min="1" max="10000"></label>
+                <label style="flex:1">IP headers (order matters) <input id="limit-ip-headers" type="text" style="min-width:320px" placeholder="CF-Connecting-IP, Fly-Client-IP, X-Forwarded-For, X-Real-IP" title="Comma-separated trusted proxy headers, first match wins. Empty resets to defaults."></label>
                 <button type="submit" class="btn primary">Save limits</button>
               </form>
               <p id="limits-result" role="status"></p>
