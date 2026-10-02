@@ -59,11 +59,11 @@ test("renderStats pins approximate:true marker", function () {
   var data = fullData();
   data.approximate = true;
   ctx.CW.renderStats(data);
-  assert.ok(statsHTML(ctx).indexOf('<p class="muted">approximate</p>') !== -1);
+  assert.ok(statsHTML(ctx).indexOf('<p class="muted">Approximate.</p>') !== -1);
   var plain = fullData();
   var ctx2 = freshStats();
   ctx2.CW.renderStats(plain);
-  assert.ok(statsHTML(ctx2).indexOf("approximate") === -1);
+  assert.ok(statsHTML(ctx2).indexOf("Approximate") === -1);
 });
 
 test("renderStats echoes lastStatsError as escaped alert", function () {
@@ -82,7 +82,7 @@ test("renderStats true-empty onboarding state and empty chart", function () {
     perVariant: {}, perVersion: {},
   });
   var html = statsHTML(ctx);
-  assert.ok(html.indexOf("No stats yet") !== -1, "missing onboarding guide: " + html);
+  assert.ok(html.indexOf("Publish, fetch, then send exposure.") !== -1, "missing onboarding guide: " + html);
   assert.ok(html.indexOf("stats-echo-quiet") === -1, "quiet echo must be gone: " + html);
   assert.ok(html.indexOf("flag ") === -1, "flag echo must be gone: " + html);
   var ctx2 = freshStats();
@@ -114,7 +114,7 @@ test("copyStatsJson clipboard branch writes lastStatsText and says copied", asyn
   ctx.CW.copyStatsJson();
   await new Promise(function (r) { setTimeout(r, 20); });
   assert.equal(written, '{"exposures":3}');
-  assert.equal(ctx.elementsById["stats-copy-status"].textContent, "copied");
+  assert.equal(ctx.elementsById["stats-copy-status"].textContent, "Copied");
 });
 
 test("copyStatsJson clipboard rejection says copy failed", async function () {
@@ -127,7 +127,7 @@ test("copyStatsJson clipboard rejection says copy failed", async function () {
   await new Promise(function (r) { setTimeout(r, 20); });
   assert.equal(
     ctx.elementsById["stats-copy-status"].textContent,
-    "copy failed — select and copy manually"
+    "Copy failed"
   );
 });
 
@@ -147,7 +147,7 @@ test("copyStatsJson fallback textarea+execCommand path copies and cleans up", fu
   assert.ok(created !== null, "fallback must create a textarea");
   assert.equal(created.value, '{"exposures":7}');
   assert.equal(ctx.context.document.body.children.length, before, "textarea must be removed");
-  assert.equal(ctx.elementsById["stats-copy-status"].textContent, "copied");
+  assert.equal(ctx.elementsById["stats-copy-status"].textContent, "Copied");
 });
 
 test("copyStatsJson fallback execCommand throw says copy failed", function () {
@@ -158,7 +158,7 @@ test("copyStatsJson fallback execCommand throw says copy failed", function () {
   ctx.CW.copyStatsJson();
   assert.equal(
     ctx.elementsById["stats-copy-status"].textContent,
-    "copy failed — select and copy manually"
+    "Copy failed"
   );
 });
 
@@ -169,7 +169,7 @@ test("copyStatsJson with empty text says nothing to copy; missing status falls b
     writeText: function () { return Promise.resolve(); },
   };
   ctx.CW.copyStatsJson();
-  assert.equal(ctx.elementsById["stats-copy-status"].textContent, "nothing to copy");
+  assert.equal(ctx.elementsById["stats-copy-status"].textContent, "Nothing to copy.");
   var ctx2 = freshStats();
   ctx2.CW.state.lastStatsText = '{"a":1}';
   delete ctx2.context.navigator.clipboard;
@@ -177,7 +177,7 @@ test("copyStatsJson with empty text says nothing to copy; missing status falls b
   var toasted = [];
   ctx2.CW.toast = function (m) { toasted.push(m); };
   ctx2.CW.copyStatsJson();
-  assert.deepEqual(toasted, ["copied"]);
+  assert.deepEqual(toasted, ["Copied"]);
 });
 
 // --- loadStats (stats.js:148-171) ---
@@ -256,7 +256,7 @@ test("loadStats error with no prior stats renders Loading failed wall", async fu
   assert.equal(ctx.CW.state.lastStats, null);
   assert.equal(ctx.CW.state.lastStatsError, "down");
   var html = statsHTML(ctx);
-  assert.ok(html.indexOf("Loading… failed.") !== -1, "missing failed wall: " + html);
+  assert.ok(html.indexOf("Load failed.") !== -1, "missing failed wall: " + html);
   assert.ok(html.indexOf("down") !== -1, "missing error text: " + html);
 });
 
@@ -425,7 +425,7 @@ test("renderStats populated branch shows empty-series note when series missing/e
     assert.ok(html.indexOf("stats-count") !== -1, c.name + ": must stay populated: " + html);
     assert.ok(html.indexOf("stats-series-empty") !== -1, c.name + ": missing empty note: " + html);
     assert.ok(
-      html.indexOf("No daily activity in this window.") !== -1,
+      html.indexOf("No activity.") !== -1,
       c.name + ": missing empty text: " + html
     );
     assert.ok(html.indexOf("<svg") === -1, c.name + ": must have no svg: " + html);
@@ -440,7 +440,7 @@ test("renderStats true-empty branch renders no svg even with series present", fu
     series: [{ day: "d1", fetches: 5, exposures: 5 }],
   });
   var html = statsHTML(ctx);
-  assert.ok(html.indexOf("No stats yet") !== -1, "missing onboarding guide: " + html);
+  assert.ok(html.indexOf("Publish, fetch, then send exposure.") !== -1, "missing onboarding guide: " + html);
   assert.ok(html.indexOf("<svg") === -1, "true-empty must have no svg: " + html);
   assert.ok(html.indexOf("stats-series") === -1, "true-empty must have no series markup: " + html);
 });
@@ -477,8 +477,8 @@ test("renderStats series draws one smooth line per version with legend and aria"
   assert.ok(html.indexOf("<title>v24 ") !== -1, "missing v24 title: " + html);
   // Legend swatches + aria range.
   assert.equal(html.split("stats-legend-ver").length - 1, 2, "two legend entries: " + html);
-  assert.ok(html.indexOf(">v0<") !== -1, "missing v0 legend label: " + html);
-  assert.ok(html.indexOf(">v24<") !== -1, "missing v24 legend label: " + html);
+  assert.ok(html.indexOf("v0: <strong>14</strong>") !== -1, "missing v0 legend count: " + html);
+  assert.ok(html.indexOf("v24: <strong>7</strong>") !== -1, "missing v24 legend count: " + html);
   assert.ok(html.indexOf("versions v0, v24") !== -1, "aria must list versions: " + html);
   // Y-scale stays on the stacked total (9/6/9 -> peak 9).
   assert.ok(html.indexOf('data-peak="9"') !== -1, "peak must stay stacked total 9: " + html);

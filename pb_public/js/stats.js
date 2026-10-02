@@ -188,7 +188,7 @@
   function renderSeries(series) {
     lastGeom = null;
     if (!series || !series.length) {
-      return '<p class="muted stats-series-empty">No daily activity in this window.</p>';
+      return '<p class="muted stats-series-empty">No activity.</p>';
     }
     var pts = series.map(function (p) {
       var f = Number(p && p.fetches) || 0;
@@ -229,7 +229,7 @@
       sumE += p.exposures;
     });
     if (!has) {
-      return '<p class="muted stats-series-empty">No daily activity in this window.</p>';
+      return '<p class="muted stats-series-empty">No activity.</p>';
     }
     var n = pts.length;
     var plotW = SERIES_W - SERIES_PAD_L - SERIES_PAD_R;
@@ -326,32 +326,23 @@
       '<rect class="stats-hit" x="' + SERIES_PAD_L + '" y="' + SERIES_PAD_T + '" width="' + plotW + '" height="' + plotH + '" fill="transparent"></rect>' +
       "</svg>";
     lastGeom = { pts: pts, n: n, max: max };
-    var verLegend = vKeys.map(function (vk, vi) {
-      return '<span class="stats-legend-item stats-legend-ver"><span class="stats-legend-dot" style="background: ' +
-        verColor(vi) + ';"></span>' + CW.esc("v" + vk) + "</span>";
-    }).join("");
     var verTotals = vKeys.map(function (vk) {
       var tot = 0;
       pts.forEach(function (p) { if (p.versions) tot += Number(p.versions[vk]) || 0; });
       return tot;
     });
+    var verLegend = vKeys.map(function (vk, vi) {
+      return '<span class="stats-legend-item stats-legend-ver"><span class="stats-legend-dot" style="background: ' +
+        verColor(vi) + ';"></span>' + CW.esc("v" + vk) + ": <strong>" + CW.esc(verTotals[vi]) + "</strong></span>";
+    }).join("");
     var legend =
       '<div class="stats-series-legend">' +
       '<span class="stats-legend-item"><span class="stats-legend-dot stats-dot-fetch-bg"></span>fetches: <strong>' + sumF + '</strong></span>' +
       '<span class="stats-legend-item"><span class="stats-legend-dot stats-dot-exposure-bg"></span>exposures: <strong>' + sumE + '</strong></span>' +
       verLegend +
       '</div>';
-    var noteText = "Thick blue = total fetches per day (" + sumF + " total)";
-    if (sumE > 0) noteText += " · Teal = exposures stacked on fetches (" + sumE + " total)";
-    else noteText += " · No exposures in this window";
-    if (vKeys.length) {
-      noteText += " · Thin lines = fetches per version (" +
-        vKeys.map(function (vk, vi) { return "v" + vk + ": " + verTotals[vi]; }).join(", ") +
-        "); total fetches = sum of versions";
-    }
-    var noteHtml = '<p class="muted stats-series-note">' + CW.esc(noteText) + "</p>";
     return '<div class="stats-series-wrap" tabindex="0" data-count="' + n + '" data-peak="' + max + '">' +
-      legend + svg + '<div class="stats-tip" hidden></div>' + noteHtml + "</div>";
+      legend + svg + '<div class="stats-tip" hidden></div>' + "</div>";
   }
 
   function bindSeriesTip() {
@@ -467,7 +458,7 @@
         '<span class="stats-ver-fill stats-bar-fill" style="width: ' + pctText + '%; background: ' + color + ';"></span></span>' +
         '<span class="stats-ver-pct stats-bar-pct">' + CW.esc(count) + " (" + CW.esc(pctText) + '%)</span></div>';
     }).join("");
-    return '<div class="stats-ver"><h4 class="stats-ver-title">versions</h4>' + totalRow + rows + "</div>";
+    return '<div class="stats-ver"><h4 class="stats-ver-title">Versions</h4>' + totalRow + rows + "</div>";
   }
 
   function renderStats(data) {
@@ -532,7 +523,7 @@
         '<div class="stats-tile"><span class="stats-tile-num">' + CW.esc(data.fetches) + '</span><span class="stats-tile-label">fetches</span></div>' +
         '<div class="stats-tile"><span class="stats-tile-num">' + CW.esc(data.exposures) + '</span><span class="stats-tile-label">exposures</span></div>' +
         "</div>" +
-        '<p class="stats-guide">No stats yet — publish a release, fetch via SDK, then post an exposure event.</p>';
+        '<p class="stats-guide">Publish, fetch, then send exposure.</p>';
     } else {
       var perVersion = data.perVersion || {};
       var vKeys = Object.keys(perVersion).sort(function (a, b) { return Number(a) - Number(b); });
@@ -553,8 +544,8 @@
         seriesHtml +
         verHtml;
     }
-    if (data.approximate) html += '<p class="muted">approximate</p>';
-    html += '<p class="stats-copy-row' + (isEmpty ? " is-secondary" : "") + '"><button type="button" id="stats-copy" class="btn ghost">Copy JSON</button> ' +
+    if (data.approximate) html += '<p class="muted">Approximate.</p>';
+    html += '<p class="stats-copy-row' + (isEmpty ? " is-secondary" : "") + '"><button type="button" id="stats-copy" class="btn ghost">Copy</button> ' +
       '<span id="stats-copy-status" class="muted" role="status"></span></p>';
     if (CW.state.lastStatsError) html += "<p role=\"alert\">" + CW.esc(CW.state.lastStatsError) + "</p>";
     CW.$("stats-view").innerHTML = html;
@@ -568,17 +559,17 @@
       else CW.toast(msg);
     }
     var text = CW.state.lastStatsText || "";
-    if (!text) { say("nothing to copy"); return; }
+    if (!text) { say("Nothing to copy."); return; }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { say("copied"); },
-        function () { say("copy failed — select and copy manually"); });
+      navigator.clipboard.writeText(text).then(function () { say("Copied"); },
+        function () { say("Copy failed"); });
     } else {
       var ta = document.createElement("textarea");
       ta.value = text;
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand("copy"); say("copied"); }
-      catch (e) { say("copy failed — select and copy manually"); }
+      try { document.execCommand("copy"); say("Copied"); }
+      catch (e) { say("Copy failed"); }
       document.body.removeChild(ta);
     }
   }
@@ -597,10 +588,10 @@
       renderStats(data);
       return data;
     }, function (err) {
-      var msg = err && err.message ? String(err.message).split("\n")[0] : "stats load failed";
+      var msg = err && err.message ? String(err.message).split("\n")[0] : "Stats load failed.";
       CW.state.lastStatsError = msg;
       if (CW.state.lastStats) renderStats(CW.state.lastStats);
-      else CW.$("stats-view").innerHTML = "<p>Loading… failed.</p><p role=\"alert\">" + CW.esc(msg) + "</p>";
+      else CW.$("stats-view").innerHTML = "<p>Load failed.</p><p role=\"alert\">" + CW.esc(msg) + "</p>";
       throw err;
     });
   }
