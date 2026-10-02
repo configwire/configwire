@@ -13,13 +13,27 @@
 // sweep, mirroring ingest.Limiter). Tunables live in Config, defaulted
 // from code, overridden by env, overridden at runtime by the
 // rate_settings collection row (key=global) via the admin API.
+//
+// Trusted proxy IP headers: clientIPFromHeaders honors the ordered header
+// list in Config.IPHeaders, persisted on the rate_settings singleton row
+// (Settings area, admin API) and seeded from CONFIGWIRE_IP_HEADERS
+// (comma-separated) only before the first DB load. Default order is
+// "CF-Connecting-IP,Fly-Client-IP,X-Forwarded-For,X-Real-IP": single-value
+// CDN headers first (Cloudflare/Fly emit exactly one client IP, so there
+// is no chain to misparse), with the X-Forwarded-For chain kept after
+// them for back-compat with plain proxy setups. Headers apply only when
+// the direct TCP peer is a trusted proxy (loopback/private/link-local)
+// or the remote host is empty/unparseable; public peers ignore all
+// headers.
 package limits
 
 import (
+	"encoding/json"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,7 +63,11 @@ const (
 	MaxRps = 10000
 )
 
-// Config carries the tunable per-second budgets.
+// Config carries the tunable per-second budgets plus the ordered trusted
+// client-IP header list. IPHeaders is wired as `ipHeaders` on the wire:
+// an operator order such as ["CF-Connecting-IP","Fly-Client-IP",
+// "X-Forwarded-For"] is honored in order by clientIPFromHeaders. Empty
+// means "code defaults" (normalized on load/apply, never stored empty).
 type Config struct {
 	GlobalRps int `json:"globalRps"`
 	// Burst is a hard ceiling / short-burst cap, NOT a token-bucket burst
@@ -58,16 +76,23 @@ type Config struct {
 	FetchRps  int `json:"fetchRps"`
 	IngestRps int `json:"ingestRps"`
 	AdminRps  int `json:"adminRps"`
+	// IPHeaders is the ordered trusted-proxy header list (1..10 entries,
+	// each 1..64 chars matching ^[A-Za-z0-9-]+$, deduped
+	// case-insensitively). X-Forwarded-For entries parse the first
+	// comma-separated item as the client IP; every other header must
+	// parse as a single IP.
+	IPHeaders []string `json:"ipHeaders"`
 }
 
 // Defaults returns the code defaults (before env/DB overrides).
 func Defaults() Config {
 	return Config{
-		GlobalRps: DefaultGlobalRps,
-		Burst:     DefaultBurst,
-		FetchRps:  DefaultFetchRps,
-		IngestRps: DefaultIngestRps,
-		AdminRps:  DefaultAdminRps,
+		GlobalRps:  DefaultGlobalRps,
+		Burst:      DefaultBurst,
+		FetchRps:   DefaultFetchRps,
+		IngestRps:  DefaultIngestRps,
+		AdminRps:   DefaultAdminRps,
+		IPHeaders:  DefaultIPHeaders(),
 	}
 }
 
@@ -84,6 +109,129 @@ func parseEnvInt(name string, def int) int {
 	return n
 }
 
+// ipHeadersEnvName is the env knob seeding the ordered trusted-proxy
+// header list before the first DB load (the rate_settings row is the
+// source of truth after load).
+const ipHeadersEnvName = "CONFIGWIRE_IP_HEADERS"
+
+// maxIPHeaders caps the configured header list; maxIPHeaderLen caps one
+// header name (fits "X-Forwarded-For"-scale names with headroom).
+const (
+	maxIPHeaders   = 10
+	maxIPHeaderLen = 64
+)
+
+// ipHeaderNameRe constrains header names to token-safe characters so a
+// stored order can never smuggle separators or whitespace into lookups.
+var ipHeaderNameRe = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+
+// defaultIPHeaders is the canonical order: single-value CDN headers
+// first (CF-Connecting-IP, Fly-Client-IP), then the X-Forwarded-For
+// chain for back-compat with plain proxy setups, then X-Real-IP.
+var defaultIPHeaders = []string{"CF-Connecting-IP", "Fly-Client-IP", "X-Forwarded-For", "X-Real-IP"}
+
+// DefaultIPHeaders returns a fresh copy of the canonical header order.
+func DefaultIPHeaders() []string {
+	out := make([]string, len(defaultIPHeaders))
+	copy(out, defaultIPHeaders)
+	return out
+}
+
+// dedupeIPHeaders trims, drops blanks, and dedupes names
+// case-insensitively (first occurrence wins, original casing kept).
+func dedupeIPHeaders(in []string) []string {
+	var out []string
+	seen := make(map[string]struct{}, len(in))
+	for _, raw := range in {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		fold := strings.ToLower(name)
+		if _, dup := seen[fold]; dup {
+			continue
+		}
+		seen[fold] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+// normalizeIPHeaders is dedupeIPHeaders capped at maxIPHeaders for
+// storage paths. Empty/nil input yields an empty slice meaning "code
+// defaults" to the callers. Character/length validity is NOT checked
+// here — ValidateIPHeaders owns rejection.
+func normalizeIPHeaders(in []string) []string {
+	out := dedupeIPHeaders(in)
+	if len(out) > maxIPHeaders {
+		out = out[:maxIPHeaders]
+	}
+	return out
+}
+
+// ValidateIPHeaders enforces 1..10 entries, each 1..64 chars matching
+// ^[A-Za-z0-9-]+$, deduped case-insensitively. Empty/nil is valid and
+// means "code defaults" so older Config literals and absent PUT fields
+// keep working; callers normalize empty to DefaultIPHeaders.
+func ValidateIPHeaders(in []string) error {
+	norm := dedupeIPHeaders(in)
+	if len(norm) == 0 {
+		return nil
+	}
+	if len(norm) > maxIPHeaders {
+		return &configError{msg: "invalid ipHeaders: must hold 1..10 entries."}
+	}
+	for _, name := range norm {
+		if len(name) > maxIPHeaderLen || !ipHeaderNameRe.MatchString(name) {
+			return &configError{msg: "invalid ipHeaders entry " + strconv.Quote(name) + ": must be 1..64 chars of [A-Za-z0-9-]."}
+		}
+	}
+	return nil
+}
+
+// canonicalIPHeaders returns the storable form of in: normalized, or the
+// code defaults when empty. Invalid entries fall back to the defaults
+// (never trust env/DB blindly — mirrors the numeric clamp posture).
+func canonicalIPHeaders(in []string) []string {
+	norm := normalizeIPHeaders(in)
+	if len(norm) == 0 {
+		return DefaultIPHeaders()
+	}
+	if err := ValidateIPHeaders(norm); err != nil {
+		return DefaultIPHeaders()
+	}
+	return norm
+}
+
+// parseIPHeaders splits a comma-separated header list into the storable
+// ordered form. Empty input returns the defaults; over-long lists keep
+// the first maxIPHeaders valid names; invalid names are dropped (env
+// input cannot fail a request, so it filters instead of rejecting).
+func parseIPHeaders(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return DefaultIPHeaders()
+	}
+	var cand []string
+	for _, part := range strings.Split(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" || len(name) > maxIPHeaderLen || !ipHeaderNameRe.MatchString(name) {
+			continue
+		}
+		cand = append(cand, name)
+	}
+	if len(cand) == 0 {
+		return DefaultIPHeaders()
+	}
+	return canonicalIPHeaders(cand)
+}
+
+// loadIPHeadersFromEnv reads CONFIGWIRE_IP_HEADERS following the
+// parseEnvInt/loadDefaultsFromEnv pattern: unset/empty/invalid falls back
+// to the default order.
+func loadIPHeadersFromEnv() []string {
+	return parseIPHeaders(os.Getenv(ipHeadersEnvName))
+}
+
 // loadDefaultsFromEnv applies the CONFIGWIRE_* overrides over Defaults.
 // Invalid (non-numeric) values fall back to the default; out-of-range env
 // values are clamped by clampConfig at package init and again in
@@ -95,11 +243,13 @@ func loadDefaultsFromEnv() Config {
 	c.FetchRps = parseEnvInt("CONFIGWIRE_FETCH_RPS", c.FetchRps)
 	c.IngestRps = parseEnvInt("CONFIGWIRE_INGEST_RPS", c.IngestRps)
 	c.AdminRps = parseEnvInt("CONFIGWIRE_ADMIN_RPS", c.AdminRps)
+	c.IPHeaders = loadIPHeadersFromEnv()
 	return c
 }
 
 // ValidateConfig enforces 1..10000 on every tunable, checked in struct
-// order so multi-field failures always report the same field first.
+// order so multi-field failures always report the same field first, then
+// the header order (empty means code defaults and is valid).
 func ValidateConfig(c Config) error {
 	fields := []struct {
 		name string
@@ -116,6 +266,9 @@ func ValidateConfig(c Config) error {
 			return &configError{msg: "invalid " + f.name + ": must be 1..10000."}
 		}
 	}
+	if err := ValidateIPHeaders(c.IPHeaders); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -124,7 +277,8 @@ type configError struct{ msg string }
 func (e *configError) Error() string { return e.msg }
 
 // clampConfig forces every field into 1..10000 (used when loading env/DB
-// values that bypass admin validation).
+// values that bypass admin validation) and normalizes the header order
+// to the storable form (empty/invalid becomes the code defaults).
 func clampConfig(c Config) Config {
 	clamp := func(v, def int) int {
 		if v < MinRps || v > MaxRps {
@@ -138,6 +292,7 @@ func clampConfig(c Config) Config {
 	c.FetchRps = clamp(c.FetchRps, d.FetchRps)
 	c.IngestRps = clamp(c.IngestRps, d.IngestRps)
 	c.AdminRps = clamp(c.AdminRps, d.AdminRps)
+	c.IPHeaders = canonicalIPHeaders(c.IPHeaders)
 	return c
 }
 
@@ -218,7 +373,10 @@ var (
 )
 
 // resetForTest replaces config + limiters (tests only, same package).
+// The header order is normalized so bare Config literals resolve like
+// production (empty becomes the code defaults).
 func resetForTest(c Config) {
+	c.IPHeaders = canonicalIPHeaders(c.IPHeaders)
 	cfgMu.Lock()
 	current = c
 	cfgMu.Unlock()
@@ -227,17 +385,28 @@ func resetForTest(c Config) {
 	adminLimiter = NewLimiter()
 }
 
-// GetConfig returns a snapshot of the active config.
+// GetConfig returns a snapshot of the active config (the header slice is
+// copied so callers cannot mutate the active order).
 func GetConfig() Config {
 	cfgMu.RLock()
 	defer cfgMu.RUnlock()
-	return current
+	out := current
+	if out.IPHeaders != nil {
+		out.IPHeaders = append([]string(nil), out.IPHeaders...)
+	}
+	return out
 }
 
-// applyConfig validates and installs c (admin PUT path).
+// applyConfig validates and installs c (admin PUT path), storing a copy
+// of the header order.
 func applyConfig(c Config) error {
 	if err := ValidateConfig(c); err != nil {
 		return err
+	}
+	if len(c.IPHeaders) == 0 {
+		c.IPHeaders = DefaultIPHeaders()
+	} else {
+		c.IPHeaders = append([]string(nil), normalizeIPHeaders(c.IPHeaders)...)
 	}
 	cfgMu.Lock()
 	current = c
@@ -364,16 +533,24 @@ func remoteHostFromAddr(remoteAddr string) string {
 }
 
 // clientIPFromHeaders extracts the client IP purely (no I/O) so it is
-// unit-testable. X-Forwarded-For / X-Real-IP are client-controlled and
-// therefore trusted ONLY when the direct peer (RemoteAddr, set by the Go
-// net stack and unspoofable) is a local proxy per isTrustedProxyRemote:
-// first X-Forwarded-For entry wins, then X-Real-IP, then the remote
-// host. A public (non-trusted) peer returns the remote host directly so
-// spoofed headers cannot move the request into another IP's bucket.
-// Empty or unparseable remote host falls back to the header-first logic
-// to preserve old behavior for test-only empty cases (RemoteAddr is
-// always set on real connections). Empty everywhere → "".
+// unit-testable. Configured headers are honored in Config.IPHeaders
+// order and ONLY when the direct peer (RemoteAddr, set by the Go net
+// stack and unspoofable) is a local proxy per isTrustedProxyRemote: an
+// X-Forwarded-For entry parses its first comma-separated item, every
+// other header must parse as a single IP, and the first parseable value
+// wins before falling back to the remote host. A public (non-trusted)
+// peer returns the remote host directly so spoofed headers cannot move
+// the request into another IP's bucket. Empty or unparseable remote
+// host falls back to the header-first logic to preserve old behavior
+// for test-only empty cases (RemoteAddr is always set on real
+// connections). Empty everywhere → "".
 func clientIPFromHeaders(hdr http.Header, remoteAddr string) string {
+	return clientIPFromHeadersWith(hdr, remoteAddr, GetConfig().IPHeaders)
+}
+
+// clientIPFromHeadersWith is the explicit-order seam behind
+// clientIPFromHeaders (tests pin precedence without touching globals).
+func clientIPFromHeadersWith(hdr http.Header, remoteAddr string, headers []string) string {
 	remoteHost := remoteHostFromAddr(remoteAddr)
 	if remoteHost != "" {
 		bare := strings.Trim(strings.Trim(remoteHost, "[]"), " ")
@@ -386,16 +563,24 @@ func clientIPFromHeaders(hdr http.Header, remoteAddr string) string {
 		// Trusted peer, or unparseable hostname: fall through to the
 		// header-first logic below (unparseable preserves old behavior).
 	}
-	if xff := hdr.Get("X-Forwarded-For"); xff != "" {
-		if first, _, _ := strings.Cut(xff, ","); strings.TrimSpace(first) != "" {
-			if cand := strings.TrimSpace(first); net.ParseIP(cand) != nil {
-				return cand
-			}
-		}
+	if len(headers) == 0 {
+		headers = defaultIPHeaders
 	}
-	if xr := strings.TrimSpace(hdr.Get("X-Real-IP")); xr != "" {
-		if net.ParseIP(xr) != nil {
-			return xr
+	for _, name := range headers {
+		raw := hdr.Get(name)
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(name), "X-Forwarded-For") {
+			if first, _, _ := strings.Cut(raw, ","); strings.TrimSpace(first) != "" {
+				if cand := strings.TrimSpace(first); net.ParseIP(cand) != nil {
+					return cand
+				}
+			}
+			continue
+		}
+		if cand := strings.TrimSpace(raw); net.ParseIP(cand) != nil {
+			return cand
 		}
 	}
 	return remoteHost
@@ -472,6 +657,20 @@ const collectionName = "rate_settings"
 // globalKey identifies the singleton settings row.
 const globalKey = "global"
 
+// setIPHeadersField stores the header order as a JSON string on rec, but
+// only when the collection already carries the additive ipHeaders field
+// (pre-migration rows keep working without it).
+func setIPHeadersField(collection *core.Collection, rec *core.Record, headers []string) {
+	if collection.Fields.GetByName("ipHeaders") == nil {
+		return
+	}
+	raw, err := json.Marshal(canonicalIPHeaders(headers))
+	if err != nil {
+		return
+	}
+	rec.Set("ipHeaders", string(raw))
+}
+
 // ensureLoaded seeds the singleton rate_settings row when absent and loads
 // DB values over env defaults. Missing collection (migration not yet
 // applied) keeps env defaults with a warning — never fatal on serve.
@@ -501,6 +700,7 @@ func ensureLoaded(app core.App) {
 		rec.Set("fetchRps", c.FetchRps)
 		rec.Set("ingestRps", c.IngestRps)
 		rec.Set("adminRps", c.AdminRps)
+		setIPHeadersField(collection, rec, c.IPHeaders)
 		if err := app.Save(rec); err != nil {
 			log.Printf("limits: failed to seed rate_settings: %v", err)
 		}
@@ -523,6 +723,18 @@ func ensureLoaded(app core.App) {
 	}
 	if v := rec.GetInt("adminRps"); v > 0 {
 		c.AdminRps = v
+	}
+	// The header order is the Settings row's source of truth once stored:
+	// a parseable stored list overrides the env-seeded value (explicit
+	// empty resets to the code defaults); missing/empty/unparseable keeps
+	// the env-seeded value, which itself falls back to the code defaults.
+	if raw := strings.TrimSpace(rec.GetString("ipHeaders")); raw != "" {
+		var stored []string
+		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+			log.Printf("limits: ignoring unparseable rate_settings.ipHeaders, using env defaults")
+		} else {
+			c.IPHeaders = canonicalIPHeaders(stored)
+		}
 	}
 	cfgMu.Lock()
 	current = clampConfig(c)

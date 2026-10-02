@@ -14,9 +14,11 @@ import (
 // Register loads persisted tunables (seeding the singleton row when
 // absent) and mounts the superuser-only admin endpoints:
 //
-//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminRps,windowSec:1}
-//	PUT /api/v1/admin/limits -> validates 1..10000, updates memory + upserts
-//	    the rate_settings row, returns the same shape.
+//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminRps,ipHeaders,windowSec:1}
+//	PUT /api/v1/admin/limits -> validates 1..10000 + header order, updates
+//	    memory + upserts the rate_settings row, returns the same shape.
+//	    ipHeaders is optional: absent (or null) keeps the stored order for
+//	    back-compat; an explicit empty list resets to the code defaults.
 func Register(se *core.ServeEvent) {
 	ensureLoaded(se.App)
 	se.Router.GET("/api/v1/admin/limits", getLimits).Bind(apis.RequireSuperuserAuth())
@@ -24,21 +26,29 @@ func Register(se *core.ServeEvent) {
 }
 
 // limitsBody is the wire shape for GET responses and PUT requests.
+// IPHeaders is a pointer so absent/null (keep stored order) stays
+// distinct from an explicit empty list (reset to the code defaults).
 type limitsBody struct {
-	GlobalRps int `json:"globalRps"`
-	Burst     int `json:"burst"`
-	FetchRps  int `json:"fetchRps"`
-	IngestRps int `json:"ingestRps"`
-	AdminRps  int `json:"adminRps"`
+	GlobalRps int       `json:"globalRps"`
+	Burst     int       `json:"burst"`
+	FetchRps  int       `json:"fetchRps"`
+	IngestRps int       `json:"ingestRps"`
+	AdminRps  int       `json:"adminRps"`
+	IPHeaders *[]string `json:"ipHeaders"`
 }
 
 func toBody(c Config) map[string]any {
+	headers := append([]string(nil), c.IPHeaders...)
+	if len(headers) == 0 {
+		headers = DefaultIPHeaders()
+	}
 	return map[string]any{
 		"globalRps": c.GlobalRps,
 		"burst":     c.Burst,
 		"fetchRps":  c.FetchRps,
 		"ingestRps": c.IngestRps,
 		"adminRps":  c.AdminRps,
+		"ipHeaders": headers,
 		"windowSec": WindowSec,
 	}
 }
@@ -75,6 +85,8 @@ func getLimits(re *core.RequestEvent) error {
 
 // putLimits handles PUT /api/v1/admin/limits (superuser-only). Order:
 // 400 (body/validation) -> 500 (persist failure) -> 200 (same shape).
+// ipHeaders absent/null keeps the stored order; explicit empty resets to
+// the code defaults.
 func putLimits(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	var req limitsBody
@@ -87,6 +99,7 @@ func putLimits(re *core.RequestEvent) error {
 		FetchRps:  req.FetchRps,
 		IngestRps: req.IngestRps,
 		AdminRps:  req.AdminRps,
+		IPHeaders: resolvePUTHeaders(GetConfig().IPHeaders, req.IPHeaders),
 	}
 	if err := ValidateConfig(next); err != nil {
 		return re.BadRequestError(err.Error(), nil)
@@ -104,6 +117,20 @@ func putLimits(re *core.RequestEvent) error {
 		})
 	}
 	return re.JSON(http.StatusOK, toBody(next))
+}
+
+// resolvePUTHeaders maps the PUT ipHeaders field onto the stored order:
+// nil (absent/null) keeps the stored order, an empty (or all-blank)
+// list resets to the code defaults, otherwise the normalized order is
+// returned for ValidateConfig to accept or reject.
+func resolvePUTHeaders(stored []string, req *[]string) []string {
+	if req == nil {
+		return append([]string(nil), stored...)
+	}
+	if norm := normalizeIPHeaders(*req); len(norm) > 0 {
+		return norm
+	}
+	return DefaultIPHeaders()
 }
 
 // upsertGlobalRow writes the singleton rate_settings row (key=global),
@@ -126,5 +153,6 @@ func upsertGlobalRow(app core.App, c Config) error {
 	rec.Set("fetchRps", c.FetchRps)
 	rec.Set("ingestRps", c.IngestRps)
 	rec.Set("adminRps", c.AdminRps)
+	setIPHeadersField(collection, rec, c.IPHeaders)
 	return app.Save(rec)
 }
