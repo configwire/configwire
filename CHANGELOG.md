@@ -1,9 +1,9 @@
 # Changelog
 
 All notable changes to the ConfigWire server (`configwire/`, image
-`ghcr.io/configwire/configwire`) are documented in this file.
+`ghcr.io/configwire/configwire`) are documented in this file.s
 
-## Unreleased
+## v0.1.3 — 2026-10-03
 
 ### Added
 
