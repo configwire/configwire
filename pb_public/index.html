@@ -50,12 +50,6 @@
           <path d="M12 8v2.5" />
           <path d="M14 8v1.8" />
         </svg><span>SDK keys</span></a>
-      <a href="#/p/limits"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M2.5 13a6 6 0 1 1 11 0" />
-          <path d="M8 13l3-4.5" />
-          <path d="M2.5 13h11" />
-        </svg><span>Limits</span></a>
       <a href="#/p/stats"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none"
           stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M2.5 13.5h11" />
@@ -177,7 +171,7 @@
                     placeholder="staging"></label>
                 <button type="submit" class="btn primary">Add env</button>
               </form>
-              <p class="muted" role="status">Switching environment reloads Releases, SDK keys and Stats below. Flags above are project-wide — Publish ships them to this environment. Rate limits are global.</p>
+              <p class="muted" role="status">Switching environment reloads Releases, SDK keys and Stats below. Flags above are project-wide — Publish ships them to this environment. Rate limits are global — manage them in Settings.</p>
               <p id="env-result" role="status"></p>
             </div>
 
@@ -225,43 +219,6 @@
                 <code id="key-once-value"></code>
                 <button id="key-copy" type="button" class="btn secondary">Copy</button>
               </div>
-            </section>
-
-            <section class="card" aria-labelledby="limits">
-              <div class="card-head">
-                <h2 id="limits">Rate limits (req/sec)</h2><button id="refresh-limits" type="button"
-                  class="btn ghost">Refresh limits</button>
-              </div>
-              <p class="muted">Per-IP global and per-key fetch/ingest budgets over a 1s window. Requests over budget
-                answer 429 with Retry-After: 1. Changes apply immediately. Admin limit and IP headers live in Settings.</p>
-              <form id="limits-form" aria-label="Rate limits">
-                <div class="limit-grid">
-                  <div class="limit-field">
-                    <label for="limit-global">Global</label>
-                    <input id="limit-global" type="number" min="1" max="10000">
-                    <small>Total req/s per IP across all endpoints.</small>
-                  </div>
-                  <div class="limit-field">
-                    <label for="limit-burst">Ceiling</label>
-                    <input id="limit-burst" type="number" min="1" max="10000">
-                    <small>Hard cap per IP; effective budget is min(Global, Ceiling).</small>
-                  </div>
-                  <div class="limit-field">
-                    <label for="limit-fetch">Fetch</label>
-                    <input id="limit-fetch" type="number" min="1" max="10000">
-                    <small>Config reads per SDK key.</small>
-                  </div>
-                  <div class="limit-field">
-                    <label for="limit-ingest">Ingest</label>
-                    <input id="limit-ingest" type="number" min="1" max="10000">
-                    <small>Event writes per SDK key.</small>
-                  </div>
-                </div>
-                <div class="limits-footer">
-                  <button type="submit" class="btn primary">Save limits</button>
-                  <span id="limits-result" role="status"></span>
-                </div>
-              </form>
             </section>
 
             <section class="card" aria-labelledby="stats">
@@ -326,6 +283,42 @@
                 </div>
               </form>
             </div>
+            <section class="card" aria-labelledby="limits">
+              <div class="card-head">
+                <h2 id="limits">Rate limits (req/sec)</h2><button id="refresh-limits" type="button"
+                  class="btn ghost">Refresh limits</button>
+              </div>
+              <p class="muted">Per-IP global and per-key fetch/ingest budgets over a 1s window. Requests over budget
+                answer 429 with Retry-After: 1. Changes apply immediately.</p>
+              <form id="limits-form" aria-label="Rate limits">
+                <div class="limit-grid">
+                  <div class="limit-field">
+                    <label for="limit-global">Global</label>
+                    <input id="limit-global" type="number" min="1" max="10000">
+                    <small>Total req/s per IP across all endpoints.</small>
+                  </div>
+                  <div class="limit-field">
+                    <label for="limit-burst">Ceiling</label>
+                    <input id="limit-burst" type="number" min="1" max="10000">
+                    <small>Hard cap per IP; effective budget is min(Global, Ceiling).</small>
+                  </div>
+                  <div class="limit-field">
+                    <label for="limit-fetch">Fetch</label>
+                    <input id="limit-fetch" type="number" min="1" max="10000">
+                    <small>Config reads per SDK key.</small>
+                  </div>
+                  <div class="limit-field">
+                    <label for="limit-ingest">Ingest</label>
+                    <input id="limit-ingest" type="number" min="1" max="10000">
+                    <small>Event writes per SDK key.</small>
+                  </div>
+                </div>
+                <div class="limits-footer">
+                  <button type="submit" class="btn primary">Save limits</button>
+                  <span id="limits-result" role="status"></span>
+                </div>
+              </form>
+            </section>
           </div>
         </section>
         <section id="view-account" aria-label="Account management (legacy alias)" hidden>

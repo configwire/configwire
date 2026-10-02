@@ -46,7 +46,7 @@
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
-    var mods = ["flags", "releases", "publish", "keys", "limits", "stats"];
+    var mods = ["flags", "releases", "publish", "keys", "stats"];
     var settingsLink = CW.$("settings-nav-link");
     if (settingsLink) {
       var active = CW.state.view === "settings" || CW.state.view === "account";
@@ -159,7 +159,6 @@
       renderDetailHeader();
       CW.loadReleases().catch(function (e) { CW.$("release-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
       CW.loadKeys().catch(function (e) { CW.$("key-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
-      CW.loadLimits().catch(function () { /* inline in limits card */ });
       CW.loadStats().catch(function () { /* inline in stats card */ });
       CW.loadFlags().then(loadScopedAfterFlags, function (e) {
         CW.$("flag-folders").innerHTML = "<p class=\"muted\">" + CW.esc(e.message) + "</p>";
