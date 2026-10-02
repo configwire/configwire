@@ -1,12 +1,17 @@
 package migrations
 
 // One-time backfill of sdk_keys.fetchRps / sdk_keys.ingestRps from the
-// previous per-minute quota so existing keys keep an equivalent budget:
+// previous per-minute quota so existing keys are never stricter than
+// fresh installs:
 //
-//	fetchRps = ingestRps = max(1, ceil(rateLimit/60))
+//	fetchRps = max(100, ceil(rateLimit/60))
+//	ingestRps = max(50, ceil(rateLimit/60))
 //
+// The floor at the global defaults (fetch 100/s, ingest 50/s) preserves
+// bursty clients: a bare ceil(rateLimit/60) would turn the old default
+// rateLimit=60 (60 burst/min) into 1/1 per-sec, 100x stricter than new
+// keys. Only rows with rateLimit > 0 are converted.
 // Rules:
-//   - Only rows with rateLimit > 0 are converted.
 //   - Rows where fetchRps/ingestRps are already set (non-zero) keep their
 //     per-key overrides; only missing (zero) fields are filled.
 //   - Idempotent: re-running changes nothing (converted rows no longer
@@ -19,15 +24,16 @@ import (
 )
 
 // ceilPerMinToPerSec converts a per-minute quota to per-second,
-// ceil(n/60) with a floor of 1.
-func ceilPerMinToPerSec(perMin int) int {
+// ceil(n/60) floored at the global defaults so upgraded keys match
+// fresh installs (fetch 100/s, ingest 50/s).
+func ceilPerMinToPerSec(perMin, floor int) int {
 	if perMin <= 0 {
-		return 1
+		return floor
 	}
-	if v := (perMin + 59) / 60; v >= 1 {
+	if v := (perMin + 59) / 60; v > floor {
 		return v
 	}
-	return 1
+	return floor
 }
 
 func init() {
@@ -44,14 +50,15 @@ func init() {
 			if perMin <= 0 {
 				continue
 			}
-			rps := ceilPerMinToPerSec(perMin)
+			fetchRps := ceilPerMinToPerSec(perMin, 100)
+			ingestRps := ceilPerMinToPerSec(perMin, 50)
 			changed := false
 			if r.GetInt("fetchRps") == 0 {
-				r.Set("fetchRps", rps)
+				r.Set("fetchRps", fetchRps)
 				changed = true
 			}
 			if r.GetInt("ingestRps") == 0 {
-				r.Set("ingestRps", rps)
+				r.Set("ingestRps", ingestRps)
 				changed = true
 			}
 			if !changed {
