@@ -5,7 +5,7 @@
  * - Now: slate-charcoal scale (#141922 / #1a1f2a / #222834), brand gradient
  *   (blue → mint) on brand-mark, primary buttons, active nav wash, focus rings,
  *   chart fills; icon nav (inline SVG), status pill, polished login card,
- *   sticky scope-bar + sticky thead, 900px + 640px breakpoints, reduced-motion.
+ *   sticky thead, static scope bars, 900px + 640px breakpoints, reduced-motion.
  * v15 — Polish pass: toast slide-in animation, danger button red treatment,
  *   dialog ×-close button, empty-state helpers, topbar breadcrumb layout,
  *   sidebar separator line, improved project card hover glow, card header
@@ -24,7 +24,10 @@
  *   .stats-empty/.stats-copy-row(.is-secondary)), json-* (.json-row/.json-hint
  *   (.ok/.err)/.json-expand/.json-field-label/.invalid/.valid),
  *   dialog#json-editor-dialog/#flag-rules-dialog (.dialog-actions/.dialog-spacer),
- *   .card(.card-head)/.grid/.btn(.primary/.secondary/.ghost/.danger)/
+ *   .card(.card-head)/.grid/.scope-group.scope-group-env(
+ *   .scope-group-head/.scope-group-title/.scope-group-sub/.scope-group-badge-env,
+ *   #env-group-title/#env-group-name)/
+ *   .btn(.primary/.secondary/.ghost/.danger)/
  *   .badge(.ok/.revoked/.unpublished/.deleted)/.table-wrap/.inline-form/.form-actions/.muted/.dot
  *   dirty tracking: tr.is-unpublished/.is-deleted, .rule-item.is-unpublished/.is-deleted, .exp-card.is-unpublished/.is-deleted,
  *   .folder.is-unpublished/.is-deleted, section.card.is-dirty/.has-unpublished, #unpublished-list,
@@ -516,6 +519,77 @@ main {
   margin-top: var(--space-4);
 }
 
+/* ---- Scope outline: Environment group (view-detail only).
+ * Renderer contract (index.html #view-detail .grid):
+ * section.scope-group-env (#env-group-title/#env-group-name) wraps #env-bar +
+ * Releases/Keys/Stats cards. All pre-existing #ids inside are unchanged; the
+ * group is layout-only. */
+.scope-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 64px);
+  box-shadow: var(--shadow-sm);
+}
+
+.scope-group .card {
+  margin-bottom: 0;
+}
+
+.scope-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.scope-group-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.scope-group-sub {
+  margin: 0;
+  font-size: 12px;
+}
+
+.scope-group-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.scope-group-env {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: var(--panel-2);
+  background-image: linear-gradient(180deg, rgba(59, 130, 246, 0.06) 0%, transparent 64px);
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm);
+}
+
+.scope-group-env .scope-group-badge-env {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.12);
+}
+
 /* ---- Projects home (two-view app: home grid + per-project detail) ---- */
 .project-grid {
   display: grid;
@@ -841,9 +915,7 @@ h2[id] {
 }
 
 .scope {
-  position: sticky;
-  top: calc(var(--topbar-h) + var(--space-3));
-  z-index: 20;
+  position: static;
   box-shadow: var(--shadow-sm);
 }
 
@@ -3359,6 +3431,10 @@ dialog#json-editor-dialog .muted {
   }
 
   .card {
+    padding: var(--space-3);
+  }
+
+  .scope-group {
     padding: var(--space-3);
   }
 
