@@ -68,6 +68,11 @@
     CW.on("project-select", "change", function () {
       var id = CW.$("project-select").value || "";
       if (id === "__all") {
+        CW.state.projectId = null;
+        CW.state.envId = null;
+        CW.state.envs = [];
+        CW.persistScope();
+        if (CW.renderProjectEnv) CW.renderProjectEnv();
         if (window.location.hash !== "#/") window.location.hash = "#/";
         CW.showHome();
         return;

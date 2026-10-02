@@ -228,6 +228,36 @@ test("syncSidebar: home hides nav, detail shows project hrefs", function () {
   assert.equal(el("settings-nav-link").attrs["aria-current"], "page");
 });
 
+test("route: All -> Settings keeps no selection (no auto-select)", function () {
+  reset();
+  var sb = sidebar();
+  h.CW.state.projects = [{ id: "p1", name: "One" }];
+  h.CW.state.projectId = null;
+  h.CW.state.view = "home";
+  h.CW.renderProjectEnv();
+  h.context.location.hash = "#/p/settings";
+  h.CW.route();
+  assert.equal(h.CW.state.view, "settings");
+  assert.equal(h.CW.state.projectId, null);
+  assert.equal(sb.nav.style.display, "none");
+  assert.equal(el("project-select").value, "__all");
+});
+
+test("route: detail -> Settings keeps project context", async function () {
+  reset();
+  var sb = sidebar();
+  h.CW.state.projects = [{ id: "p1", name: "One" }];
+  h.CW.state.projectId = "p1";
+  h.CW.state.view = "detail";
+  h.CW.renderProjectEnv();
+  h.context.location.hash = "#/p/settings";
+  h.CW.route();
+  assert.equal(h.CW.state.view, "settings");
+  assert.equal(h.CW.state.projectId, "p1");
+  assert.equal(sb.links[0].attrs.href, "#/p/p1#flags");
+  await tick(20);
+});
+
 test("showView: toggles hidden across home/detail/account", function () {
   reset();
   sidebar();
@@ -428,7 +458,7 @@ test("refreshAll: loads projects, routes, fans out to stubbed loaders", async fu
   });
   h.CW.refreshAll(); // deeper loaders stubbed per plan; loadProjects/route stay real
   await tick(40);
-  assert.equal(h.CW.state.projectId, "p1");
+  assert.equal(h.CW.state.projectId, null); // All means no implicit selection
   assert.equal(h.CW.state.view, "home");
   assert.ok(h.fetchCalls.some(function (c) { return c.url.indexOf("/api/collections/projects/records") >= 0; }));
   ["loadReleases", "loadKeys", "loadStats", "loadFlags", "loadRules", "loadExperiments"].forEach(function (n) {

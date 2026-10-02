@@ -14,13 +14,7 @@
         }).join("")
       : allOpt + '<option value="" disabled>(no projects)</option>';
     if (cur && CW.state.projects.some(function (p) { return p.id === cur; })) ps.value = cur;
-    else if (CW.state.projects.length) { ps.value = CW.state.projects[0].id; CW.state.projectId = CW.state.projects[0].id; }
     else { ps.value = "__all"; CW.state.projectId = null; }
-    // Home lists all projects: keep the last project in state for instant
-    // preload, but the dropdown must read All. Without this, the async
-    // loadEnvs()->renderProjectEnv in refreshAll overwrites syncSidebar's
-    // All with the persisted project after every refresh.
-    if (CW.state.view === "home") ps.value = "__all";
 
     var es = CW.$("env-select");
     var ecur = CW.state.envId;
@@ -70,7 +64,6 @@
         CW.state.projectId = null;
         CW.state.envId = null;
       }
-      if (!CW.state.projectId && CW.state.projects.length) CW.state.projectId = CW.state.projects[0].id;
       CW.persistScope();
     });
   }

@@ -46,7 +46,7 @@
     var ts = CW.$("sidebar-scope");
     if (ts) {
       ts.hidden = !CW.state.token;
-      if (!ts.hidden && CW.state.view === "home") {
+      if (!ts.hidden && (CW.state.view === "home" || !CW.state.projectId)) {
         var ps = CW.$("project-select");
         if (ps && ps.querySelector && ps.querySelector('option[value="__all"]')) ps.value = "__all";
       }
@@ -61,7 +61,7 @@
       if (active) settingsLink.setAttribute("aria-current", "page");
       else if (settingsLink.removeAttribute) settingsLink.removeAttribute("aria-current");
     }
-    var showNav = (CW.state.view === "detail" && CW.state.projectId) || CW.state.view === "settings" || CW.state.view === "account";
+    var showNav = !!CW.state.projectId && (CW.state.view === "detail" || CW.state.view === "settings" || CW.state.view === "account");
     if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
       for (var i = 0; i < links.length; i++) {
@@ -244,13 +244,27 @@
     }
   }
 
+  // Global scope (All/home) implies no selected project.
+  function clearStaleAllScope() {
+    var ps = null;
+    try { ps = CW.$("project-select"); } catch (e) { ps = null; }
+    var showingAll = (ps && ps.value === "__all") || CW.state.view === "home";
+    if (showingAll && CW.state.projectId) {
+      CW.state.projectId = null;
+      CW.persistScope();
+      if (ps && ps.value !== "__all") ps.value = "__all";
+    }
+  }
+
   function showAccount() {
+    clearStaleAllScope();
     showView("account");
     if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
   }
 
   function showSettings() {
+    clearStaleAllScope();
     showView("settings");
     if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
