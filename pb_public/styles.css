@@ -1441,6 +1441,72 @@ a:focus-visible {
   }
 }
 
+/* ---- Flags card-head ⋯ action menu (mirrors the env-menu pattern above:
+ * #flags-head-actions > .flags-menu-wrap > button.flags-menu-btn
+ * ([data-flags-menu], aria-haspopup=menu) + .flags-menu[role=menu][hidden]
+ * holding Refresh/Export/Import menuitems that boot.js already wires by
+ * ID, plus a delegated toggle on #flags-head-actions). */
+#flags-head-actions .flags-menu-wrap {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+#flags-head-actions .flags-menu-btn {
+  width: 28px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0;
+  height: var(--input-h);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#flags-head-actions .flags-menu-btn:hover {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text);
+}
+
+#flags-head-actions .flags-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  z-index: 30;
+}
+
+#flags-head-actions .flags-menu[hidden] {
+  display: none;
+}
+
+#flags-head-actions .flags-menu button[role="menuitem"] {
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #flags-head-actions .flags-menu {
+    transition: none;
+  }
+}
+
 /* ---- Tables & lists ---- */
 .table-wrap {
   overflow-x: auto;
@@ -1811,6 +1877,7 @@ td code {
 #flag-folders tbody button,
 #flag-rules-list button,
 #env-bar .env-menu button[role="menuitem"],
+#flags-head-actions .flags-menu button[role="menuitem"],
 #experiment-list .exp-menu button[role="menuitem"],
 #flag-experiments-list .exp-menu button[role="menuitem"] {
   padding: 0 var(--space-2);
@@ -1834,6 +1901,7 @@ td code {
 #flag-folders tbody button:hover,
 #flag-rules-list button:hover,
 #env-bar .env-menu button[role="menuitem"]:hover,
+#flags-head-actions .flags-menu button[role="menuitem"]:hover,
 #experiment-list .exp-menu button[role="menuitem"]:hover,
 #flag-experiments-list .exp-menu button[role="menuitem"]:hover {
   border-color: var(--accent);
@@ -2262,6 +2330,7 @@ td code {
 #experiment-list .exp-menu button[role="menuitem"],
 #flag-experiments-list .exp-menu button[role="menuitem"],
 #env-bar .env-menu button[role="menuitem"],
+#flags-head-actions .flags-menu button[role="menuitem"],
 #release-list .release-menu button[role="menuitem"] {
   display: inline-flex;
   align-items: center;

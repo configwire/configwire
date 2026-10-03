@@ -431,6 +431,25 @@
         if (CW.deleteEnv) CW.deleteEnv().catch(function (e) { CW.toast(e.message); });
       }
     });
+    CW.on("flags-head-actions", "click", function (ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var menuBtn = null;
+      if (t && t.closest) menuBtn = t.closest("[data-flags-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-flags-menu") != null) menuBtn = t;
+      if (menuBtn) {
+        var wrap = menuBtn.parentNode;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".flags-menu") : null;
+        if (menu) {
+          var willOpen = menu.hidden;
+          closeFlagsHeadMenu();
+          menu.hidden = !willOpen;
+          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+        }
+        return;
+      }
+      var item = t && t.closest ? t.closest('.flags-menu button[role="menuitem"]') : null;
+      if (item) closeFlagsHeadMenu();
+    });
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
     CW.on("experiment-form", "submit", CW.saveExperiment);
     CW.on("experiment-reset", "click", function () {
@@ -603,6 +622,19 @@
       }
     }
 
+    function closeFlagsHeadMenu(except) {
+      var box = document.getElementById("flags-head-actions");
+      if (!box || !box.querySelectorAll) return;
+      var wraps = box.querySelectorAll(".flags-menu-wrap");
+      for (var i = 0; i < wraps.length; i++) {
+        var menu = wraps[i].querySelector ? wraps[i].querySelector(".flags-menu") : null;
+        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-flags-menu]") : null;
+        if (!menu || menu === except) continue;
+        menu.hidden = true;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    }
+
     function closeReleaseMenus(except) {
       var box = document.getElementById("release-list");
       if (!box || !box.querySelectorAll) return;
@@ -712,11 +744,11 @@
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
-      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap")) : null;
-      if (!inside) { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
+      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".flags-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap")) : null;
+      if (!inside) { closeFlagMenus(); closeFlagsHeadMenu(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
     });
     document.addEventListener("keydown", function (ev) {
-      if (ev && ev.key === "Escape") { closeFlagMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
+      if (ev && ev.key === "Escape") { closeFlagMenus(); closeFlagsHeadMenu(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
     });
 
     CW.on("flag-rules-list", "click", function (ev) {
