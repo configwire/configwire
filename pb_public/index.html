@@ -170,7 +170,8 @@
 
               <section class="card" aria-labelledby="releases">
                 <div class="card-head">
-                  <h2 id="releases">Releases</h2><button id="refresh-releases" type="button" class="btn ghost">Refresh</button>
+                  <h2 id="releases">Releases</h2>
+                  <div class="card-actions" id="releases-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More release actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-releases" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
                 </div>
                 <ul id="release-list" aria-label="Releases">
                   <li>Loading…</li>
@@ -192,7 +193,8 @@
 
               <section class="card" aria-labelledby="keys">
                 <div class="card-head">
-                  <h2 id="keys">SDK keys</h2><button id="refresh-keys" type="button" class="btn ghost">Refresh</button>
+                  <h2 id="keys">SDK keys</h2>
+                  <div class="card-actions" id="keys-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More key actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-keys" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
                 </div>
                 <ul id="key-list" aria-label="SDK keys">
                   <li>Loading…</li>
@@ -214,6 +216,7 @@
               <section class="card" aria-labelledby="stats">
                 <div class="card-head">
                   <h2 id="stats">Stats</h2>
+                  <div class="card-actions" id="stats-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More stats actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-stats" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
                 </div>
                 <form id="stats-filter-form" class="inline-form" aria-label="Stats filters">
                   <label for="stats-since">Since <select id="stats-since">
@@ -221,7 +224,6 @@
                       <option value="30d">30d</option>
                       <option value="90d">90d</option>
                     </select></label>
-                  <button id="refresh-stats" type="button" class="btn secondary">Refresh</button>
                 </form>
                 <div id="stats-view" aria-label="Stats" role="status" aria-live="polite">Loading…</div>
               </section>
@@ -256,7 +258,7 @@
             <div class="card" aria-labelledby="account">
               <div class="card-head">
                 <h2 id="account">Admins</h2>
-                <div class="card-actions"><button id="refresh-accounts" type="button" class="btn ghost">Refresh</button></div>
+                <div class="card-actions" id="accounts-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More admin actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-accounts" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
               </div>
               <ul id="account-list" aria-label="Admin accounts">
                 <li>Loading…</li>
@@ -292,10 +294,10 @@
               </form>
             </div>
             <section class="card" aria-labelledby="limits">
-              <div class="card-head">
-                <h2 id="limits">Rate limits</h2><button id="refresh-limits" type="button"
-                  class="btn ghost">Refresh</button>
-              </div>
+                <div class="card-head">
+                  <h2 id="limits">Rate limits</h2>
+                  <div class="card-actions" id="limits-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More limit actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-limits" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
+                </div>
               <p class="muted">Per-second limits. Over budget returns 429.</p>
               <form id="limits-form" aria-label="Rate limits">
                 <div class="limit-grid">

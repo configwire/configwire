@@ -450,6 +450,28 @@
       var item = t && t.closest ? t.closest('.flags-menu button[role="menuitem"]') : null;
       if (item) closeFlagsHeadMenu();
     });
+    ["releases-head-actions", "keys-head-actions", "stats-head-actions",
+      "accounts-head-actions", "limits-head-actions"].forEach(function (boxId) {
+      CW.on(boxId, "click", function (ev) {
+        var t = ev && ev.target ? ev.target : null;
+        var menuBtn = null;
+        if (t && t.closest) menuBtn = t.closest("[data-head-menu]");
+        else if (t && t.getAttribute && t.getAttribute("data-head-menu") != null) menuBtn = t;
+        if (menuBtn) {
+          var wrap = menuBtn.parentNode;
+          var menu = wrap && wrap.querySelector ? wrap.querySelector(".head-menu") : null;
+          if (menu) {
+            var willOpen = menu.hidden;
+            closeHeadMenus();
+            menu.hidden = !willOpen;
+            menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+          }
+          return;
+        }
+        var item = t && t.closest ? t.closest('.head-menu button[role="menuitem"]') : null;
+        if (item) closeHeadMenus();
+      });
+    });
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
     CW.on("experiment-form", "submit", CW.saveExperiment);
     CW.on("experiment-reset", "click", function () {
@@ -622,6 +644,24 @@
       }
     }
 
+    function closeHeadMenus(except) {
+      closeFlagsHeadMenu(except);
+      var ids = ["releases-head-actions", "keys-head-actions", "stats-head-actions",
+        "accounts-head-actions", "limits-head-actions"];
+      for (var k = 0; k < ids.length; k++) {
+        var box = document.getElementById(ids[k]);
+        if (!box || !box.querySelectorAll) continue;
+        var wraps = box.querySelectorAll(".head-menu-wrap");
+        for (var i = 0; i < wraps.length; i++) {
+          var menu = wraps[i].querySelector ? wraps[i].querySelector(".head-menu") : null;
+          var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-head-menu]") : null;
+          if (!menu || menu === except) continue;
+          menu.hidden = true;
+          if (btn) btn.setAttribute("aria-expanded", "false");
+        }
+      }
+    }
+
     function closeFlagsHeadMenu(except) {
       var box = document.getElementById("flags-head-actions");
       if (!box || !box.querySelectorAll) return;
@@ -744,11 +784,11 @@
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
-      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".flags-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap")) : null;
-      if (!inside) { closeFlagMenus(); closeFlagsHeadMenu(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
+      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".flags-menu-wrap") || t.closest(".head-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap")) : null;
+      if (!inside) { closeFlagMenus(); closeFlagsHeadMenu(); closeHeadMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
     });
     document.addEventListener("keydown", function (ev) {
-      if (ev && ev.key === "Escape") { closeFlagMenus(); closeFlagsHeadMenu(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
+      if (ev && ev.key === "Escape") { closeFlagMenus(); closeFlagsHeadMenu(); closeHeadMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
     });
 
     CW.on("flag-rules-list", "click", function (ev) {
