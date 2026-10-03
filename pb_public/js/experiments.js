@@ -34,8 +34,34 @@
     return id;
   }
 
-  function expCountFor(flagId) {
-    var list = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
+  function generateExperimentSeed() {
+    try {
+      var cryptoObj = window.crypto || window.msCrypto;
+      if (cryptoObj && cryptoObj.getRandomValues) {
+        var bytes = new Uint8Array(8);
+        cryptoObj.getRandomValues(bytes);
+        var out = "";
+        for (var i = 0; i < bytes.length; i++) {
+          var hx = bytes[i].toString(16);
+          if (hx.length < 2) hx = "0" + hx;
+          out += hx;
+        }
+        if (/^[0-9a-f]{16}$/.test(out)) return out;
+      }
+    } catch (e) { /* fall through to Math.random */ }
+    var chars = "0123456789abcdef";
+    var fallback = "";
+    for (var j = 0; j < 16; j++) fallback += chars[Math.floor(Math.random() * 16)];
+    return fallback;
+  }
+
+  function regenerateExperimentSeed() {
+    var seedEl = CW.$("exp-seed");
+    if (seedEl) seedEl.value = generateExperimentSeed();
+    return seedEl ? seedEl.value : "";
+  }
+
+  function expCountFor(flagId) {    var list = CW.drafts ? CW.drafts.mergedExperiments() : CW.state.experiments;
     if (!Array.isArray(list)) return null;
     // Mirror ruleCountFor: plain "experiments" label until first load.
     if (!CW.state.experimentsLoaded && CW.state.experiments.length === 0) return null;
@@ -209,9 +235,16 @@
     var variants = parsed.value;
     var idEl = CW.$("exp-id");
     var id = idEl ? String(idEl.value || "").trim() : "";
+    var seedEl = CW.$("exp-seed");
+    var seed = seedEl ? String(seedEl.value || "").trim() : "";
+    if (!seed) {
+      CW.$("experiment-result").textContent = "Seed required.";
+      if (seedEl && seedEl.focus) seedEl.focus();
+      return Promise.resolve();
+    }
     var body = {
       name: CW.$("exp-name").value.trim(),
-      seed: CW.$("exp-seed").value.trim(),
+      seed: seed,
       variants: variants,
       status: CW.$("exp-status").value,
     };
@@ -669,7 +702,9 @@
     var idEl = CW.$("exp-id");
     if (idEl) idEl.value = "";
     var form = CW.$("experiment-form");
-    if (form) form.reset();
+    if (form && typeof form.reset === "function") form.reset();
+    var seedEl = CW.$("exp-seed");
+    if (seedEl && !seedEl.value) seedEl.value = generateExperimentSeed();
     if (CW.resetVariantsBuilder) CW.resetVariantsBuilder();
     if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
     if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
@@ -710,6 +745,8 @@
     var title = CW.$("experiment-dialog-title");
     if (!exp) {
       resetExperimentForm();
+      var freshSeed = CW.$("exp-seed");
+      if (freshSeed) freshSeed.value = generateExperimentSeed();
       if (presetFlagId) {
         var sel = CW.$("exp-flag-select");
         if (sel) sel.value = presetFlagId;
@@ -756,6 +793,8 @@
   CW.refreshLastRowLock = refreshLastRowLock;
   CW.resetExperimentForm = resetExperimentForm;
   CW.fillExperimentForm = fillExperimentForm;
+  CW.generateExperimentSeed = generateExperimentSeed;
+  CW.regenerateExperimentSeed = regenerateExperimentSeed;
   CW.openExperimentDialog = openExperimentDialog;
   CW.closeExperimentDialog = closeExperimentDialog;
   CW.bpsToPercent = bpsToPercent;
