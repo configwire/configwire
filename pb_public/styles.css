@@ -3480,6 +3480,58 @@ dialog#experiment-dialog h4 {
   font-size: 13px;
 }
 
+/* Suffix info icon + tooltip bubble (hover/focus for desktop, .open for tap). */
+.field-info {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.field-info-btn {
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.field-info-bubble {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 240px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  z-index: 30;
+}
+.field-info:hover .field-info-bubble,
+.field-info:focus-within .field-info-bubble,
+.field-info.open .field-info-bubble {
+  display: block;
+}
+.field-info-inside {
+  flex: 1;
+}
+.field-info-inside input {
+  width: 100%;
+  padding-right: 32px;
+  box-sizing: border-box;
+}
+.field-info-btn-inside {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 dialog#flag-rules-dialog h4 {
   margin: var(--space-4) 0 var(--space-2);
   font-size: 12px;

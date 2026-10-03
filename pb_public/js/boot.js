@@ -448,6 +448,20 @@
       if (CW.closeExperimentDialog) CW.closeExperimentDialog();
       else { var dlg = CW.$("experiment-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
+    CW.on("exp-seed-regen", "click", function () {
+      if (CW.regenerateExperimentSeed) CW.regenerateExperimentSeed();
+    });
+    CW.on("exp-seed-info-btn", "click", function () {
+      var wrap = null;
+      var btn = CW.$("exp-seed-info-btn");
+      if (btn && btn.parentNode && btn.parentNode.classList) wrap = btn.parentNode;
+      else if (btn && btn.closest) wrap = btn.closest(".field-info");
+      if (!wrap || !wrap.classList) return;
+      var willOpen = !wrap.classList.contains("open");
+      if (willOpen && wrap.classList.add) wrap.classList.add("open");
+      else if (wrap.classList.remove) wrap.classList.remove("open");
+      if (btn && btn.setAttribute) btn.setAttribute("aria-expanded", String(!!willOpen));
+    });
     CW.on("flag-experiments-close", "click", function () {
       if (CW.closeFlagExperimentsDialog) CW.closeFlagExperimentsDialog();
       else { var fdlg = CW.$("flag-experiments-dialog"); if (fdlg && fdlg.open) fdlg.close(); }

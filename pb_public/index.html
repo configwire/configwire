@@ -376,7 +376,7 @@
             <input id="exp-id" type="hidden" value="">
             <input id="exp-flag-select" type="hidden" value="">
             <label>Name <input id="exp-name" type="text" required spellcheck="false"></label>
-            <label>Seed <input id="exp-seed" type="text" required spellcheck="false" placeholder="exp-seed-1"></label>
+            <label>Seed <span style="display:flex;gap:8px;align-items:center;"><span class="field-info field-info-inside" style="flex:1;"><input id="exp-seed" type="text" required spellcheck="false" placeholder="auto-generated 16-char hex" style="flex:1;width:100%;" aria-describedby="exp-seed-info"><button type="button" id="exp-seed-info-btn" class="btn ghost field-info-btn field-info-btn-inside" aria-label="About the seed field" aria-describedby="exp-seed-info" aria-expanded="false">ⓘ</button><span id="exp-seed-info" class="field-info-bubble" role="tooltip">Seed is required and can be any text. It's combined with the user ID so each user randomly gets one of the variants, and always gets the same one.</span></span><button type="button" id="exp-seed-regen" class="btn ghost" aria-label="Regenerate seed" title="Regenerate seed" style="flex-shrink:0;width:32px;height:32px;padding:0;">↻</button></span></label>
             <div class="rule-builder" aria-label="Variant builder">
               <h4>Variants</h4>
               <p class="muted">Weights sum to 100%. Last auto-fills.</p>
