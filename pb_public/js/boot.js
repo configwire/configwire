@@ -30,9 +30,6 @@
       if (CW.createAccount) CW.createAccount(ev).catch(function (e) { CW.toast(e.message); });
       else ev.preventDefault();
     });
-    CW.on("refresh-accounts", "click", function () {
-      if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
-    });
     CW.on("account-list", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var pw = t && t.getAttribute ? t.getAttribute("data-account-password") : null;
@@ -86,14 +83,6 @@
       CW.loadStats().catch(function () {});
     });
     CW.on("stats-since", "change", function () { CW.loadStats().catch(function () {}); });
-    CW.on("refresh-flags", "click", function () { CW.loadFlags().catch(function (e) { CW.toast(e.message); }); });
-    CW.on("refresh-releases", "click", function () { CW.loadReleases().catch(function (e) { CW.toast(e.message); }); });
-    CW.on("refresh-keys", "click", function () { CW.loadKeys().catch(function (e) { CW.toast(e.message); }); });
-    CW.on("refresh-limits", "click", function () { CW.loadLimits().catch(function (e) { CW.toast(e.message); }); });
-    CW.on("refresh-settings-limits", "click", function () { CW.loadLimits().catch(function (e) { CW.toast(e.message); }); });
-    CW.on("refresh-stats", "click", function () {
-      CW.loadStats().catch(function () { /* loadStats renders inline */ });
-    });
     CW.on("stats-view", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var btn = null;
@@ -450,28 +439,6 @@
       var item = t && t.closest ? t.closest('.flags-menu button[role="menuitem"]') : null;
       if (item) closeFlagsHeadMenu();
     });
-    ["releases-head-actions", "keys-head-actions", "stats-head-actions",
-      "accounts-head-actions", "limits-head-actions"].forEach(function (boxId) {
-      CW.on(boxId, "click", function (ev) {
-        var t = ev && ev.target ? ev.target : null;
-        var menuBtn = null;
-        if (t && t.closest) menuBtn = t.closest("[data-head-menu]");
-        else if (t && t.getAttribute && t.getAttribute("data-head-menu") != null) menuBtn = t;
-        if (menuBtn) {
-          var wrap = menuBtn.parentNode;
-          var menu = wrap && wrap.querySelector ? wrap.querySelector(".head-menu") : null;
-          if (menu) {
-            var willOpen = menu.hidden;
-            closeHeadMenus();
-            menu.hidden = !willOpen;
-            menuBtn.setAttribute("aria-expanded", String(!!willOpen));
-          }
-          return;
-        }
-        var item = t && t.closest ? t.closest('.head-menu button[role="menuitem"]') : null;
-        if (item) closeHeadMenus();
-      });
-    });
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
     CW.on("experiment-form", "submit", CW.saveExperiment);
     CW.on("experiment-reset", "click", function () {
@@ -646,20 +613,6 @@
 
     function closeHeadMenus(except) {
       closeFlagsHeadMenu(except);
-      var ids = ["releases-head-actions", "keys-head-actions", "stats-head-actions",
-        "accounts-head-actions", "limits-head-actions"];
-      for (var k = 0; k < ids.length; k++) {
-        var box = document.getElementById(ids[k]);
-        if (!box || !box.querySelectorAll) continue;
-        var wraps = box.querySelectorAll(".head-menu-wrap");
-        for (var i = 0; i < wraps.length; i++) {
-          var menu = wraps[i].querySelector ? wraps[i].querySelector(".head-menu") : null;
-          var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-head-menu]") : null;
-          if (!menu || menu === except) continue;
-          menu.hidden = true;
-          if (btn) btn.setAttribute("aria-expanded", "false");
-        }
-      }
     }
 
     function closeFlagsHeadMenu(except) {

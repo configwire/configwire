@@ -134,14 +134,14 @@
           <div class="card detail-head">
             <button id="back-to-projects" type="button" class="btn ghost">&larr; Projects</button>
             <h2 id="detail-project-name">Project</h2>
-            <button id="refresh-scope" type="button" class="btn secondary" title="Refresh projects">Refresh</button>
+            <button id="refresh-scope" type="button" class="btn secondary" title="Refresh all — reload projects, flags, releases, keys and stats" aria-label="Refresh all"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg></button>
           </div>
 
           <div class="grid">
             <section class="card" aria-labelledby="flags">
               <div class="card-head">
                 <h2 id="flags">Flags</h2>
-                <div class="card-actions" id="flags-head-actions"><button id="flag-add-btn" type="button" class="btn primary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add flag</span></button><button id="group-add-btn" type="button" class="btn secondary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>New group</span></button><span class="flags-menu-wrap"><button type="button" class="flags-menu-btn" data-flags-menu aria-haspopup="menu" aria-expanded="false" aria-label="More flag actions">&#8943;</button><div class="flags-menu" role="menu" hidden><button id="refresh-flags" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button><button id="transfer-export-btn" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v9"/><path d="M4.5 7.5 8 11l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Export</span></button><button id="transfer-import-btn" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Import</span></button></div></span></div>
+                <div class="card-actions" id="flags-head-actions"><button id="flag-add-btn" type="button" class="btn primary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add flag</span></button><button id="group-add-btn" type="button" class="btn secondary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>New group</span></button><span class="flags-menu-wrap"><button type="button" class="flags-menu-btn" data-flags-menu aria-haspopup="menu" aria-expanded="false" aria-label="More flag actions">&#8942;</button><div class="flags-menu" role="menu" hidden><button id="transfer-export-btn" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v9"/><path d="M4.5 7.5 8 11l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Export</span></button><button id="transfer-import-btn" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Import</span></button></div></span></div>
               </div>
               <div id="flag-folders">
                 <p class="muted">Loading…</p>
@@ -158,7 +158,7 @@
                   <select id="env-select" aria-label="Environment"></select>
                 </label>
                 <span class="env-menu-wrap">
-                  <button type="button" class="env-menu-btn" data-env-menu aria-haspopup="menu" aria-expanded="false" aria-label="Environment actions">&#8943;</button>
+                  <button type="button" class="env-menu-btn" data-env-menu aria-haspopup="menu" aria-expanded="false" aria-label="Environment actions">&#8942;</button>
                   <div class="env-menu" role="menu" hidden>
                     <button type="button" role="menuitem" data-env-add><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add</span></button>
                     <button type="button" role="menuitem" data-env-rename><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg><span>Rename</span></button>
@@ -171,7 +171,6 @@
               <section class="card" aria-labelledby="releases">
                 <div class="card-head">
                   <h2 id="releases">Releases</h2>
-                  <div class="card-actions" id="releases-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More release actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-releases" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
                 </div>
                 <ul id="release-list" aria-label="Releases">
                   <li>Loading…</li>
@@ -194,7 +193,6 @@
               <section class="card" aria-labelledby="keys">
                 <div class="card-head">
                   <h2 id="keys">SDK keys</h2>
-                  <div class="card-actions" id="keys-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More key actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-keys" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
                 </div>
                 <ul id="key-list" aria-label="SDK keys">
                   <li>Loading…</li>
@@ -216,7 +214,6 @@
               <section class="card" aria-labelledby="stats">
                 <div class="card-head">
                   <h2 id="stats">Stats</h2>
-                  <div class="card-actions" id="stats-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More stats actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-stats" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
                 </div>
                 <form id="stats-filter-form" class="inline-form" aria-label="Stats filters">
                   <label for="stats-since">Since <select id="stats-since">
@@ -258,7 +255,6 @@
             <div class="card" aria-labelledby="account">
               <div class="card-head">
                 <h2 id="account">Admins</h2>
-                <div class="card-actions" id="accounts-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More admin actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-accounts" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
               </div>
               <ul id="account-list" aria-label="Admin accounts">
                 <li>Loading…</li>
@@ -296,7 +292,6 @@
             <section class="card" aria-labelledby="limits">
                 <div class="card-head">
                   <h2 id="limits">Rate limits</h2>
-                  <div class="card-actions" id="limits-head-actions"><span class="head-menu-wrap"><button type="button" class="head-menu-btn" data-head-menu aria-haspopup="menu" aria-expanded="false" aria-label="More limit actions">&#8943;</button><div class="head-menu" role="menu" hidden><button id="refresh-limits" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg><span>Refresh</span></button></div></span></div>
                 </div>
               <p class="muted">Per-second limits. Over budget returns 429.</p>
               <form id="limits-form" aria-label="Rate limits">
