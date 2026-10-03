@@ -89,6 +89,7 @@
       setError(refs, "Enter at least " + opts.minLength + " characters.");
       return false;
     }
+    if (opts.mustMatch != null && val !== String(opts.mustMatch)) return false;
     setError(refs, null);
     return true;
   }
@@ -164,10 +165,12 @@
         if (opts.placeholder != null) refs.input.setAttribute("placeholder", String(opts.placeholder));
         else refs.input.removeAttribute("placeholder");
         refs.input.value = defaultValue == null ? "" : String(defaultValue);
+        refs.ok.disabled = opts.mustMatch != null && refs.input.value !== String(opts.mustMatch);
       } else {
         refs.input.hidden = true;
         refs.input.value = "";
         refs.input.removeAttribute("placeholder");
+        refs.ok.disabled = false;
       }
 
       wireOnce(refs.dlg);
@@ -244,7 +247,9 @@
       input.addEventListener("input", function () {
         if (!current) return;
         var r = els();
-        if (!r.error.hidden) validate(r, current.opts || {});
+        if (current.opts && current.opts.mustMatch != null) {
+          if (r.ok) r.ok.disabled = r.input.value !== String(current.opts.mustMatch);
+        } else if (!r.error.hidden) validate(r, current.opts || {});
       });
     }
     // Ensure lazily-built JS path also wires input even if static markup

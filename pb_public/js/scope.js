@@ -281,11 +281,12 @@
     if (!pid) { CW.toast("Pick a project first."); return Promise.resolve(); }
     var cur = projectByIdLocal(pid);
     var label = (cur && (cur.name || cur.id)) || pid;
-    return CW.confirmDialog(
-      'Delete project "' + label + '" and all its environments, flags, keys and releases? This cannot be undone.',
-      { title: "Delete project", okText: "Delete", danger: true }
-    ).then(function (ok) {
-      if (!ok) return;
+    return CW.promptDialog(
+      'Delete project "' + label + '" and all its environments, flags, keys and releases? This cannot be undone. Type the project name to confirm.',
+      "",
+      { title: "Delete project", okText: "Delete", danger: true, mustMatch: label }
+    ).then(function (typed) {
+      if (typed == null) return;
       return CW.apiMut("DELETE", "/api/collections/projects/records/" + encodeURIComponent(pid))
         .then(function (out) {
           var okDel = out.status === 200 || out.status === 204;

@@ -83,6 +83,54 @@ test("prompt minLength pins exact error text then resolves once valid", async fu
   assert.equal(await p, "abcdefgh");
 });
 
+// --- validate: mustMatch branch (OK disabled until exact match, no hint) ---
+
+test("prompt mustMatch keeps OK disabled until the exact value is typed, with no hint", async function () {
+  var ctx = fresh();
+  var settled = false;
+  var p = ctx.CW.promptDialog("Type the project name to confirm:", "", { mustMatch: "demo" });
+  p.then(function () { settled = true; });
+  assert.equal(el(ctx, IDS.ok).disabled, true, "empty input starts disabled");
+  el(ctx, IDS.input).value = "Demo";
+  assert.equal(fire(el(ctx, IDS.input), "input"), 1);
+  assert.equal(el(ctx, IDS.ok).disabled, true, "case-differing value keeps OK disabled");
+  assert.equal(el(ctx, IDS.error).textContent, "", "no hint shown");
+  await flush();
+  assert.equal(settled, false);
+  el(ctx, IDS.input).value = "demo";
+  assert.equal(fire(el(ctx, IDS.input), "input"), 1);
+  assert.equal(el(ctx, IDS.ok).disabled, false, "exact match enables OK");
+  assert.equal(fire(el(ctx, IDS.ok), "click"), 1);
+  assert.equal(await p, "demo");
+});
+
+test("prompt mustMatch Enter on mismatch stays pending with no hint", async function () {
+  var ctx = fresh();
+  var settled = false;
+  var p = ctx.CW.promptDialog("Confirm:", "", { mustMatch: "demo" });
+  p.then(function () { settled = true; });
+  el(ctx, IDS.input).value = "nope";
+  assert.equal(fire(el(ctx, IDS.input), "keydown", {
+    key: "Enter",
+    preventDefault: function () {},
+  }), 1);
+  await flush();
+  assert.equal(settled, false);
+  assert.equal(el(ctx, IDS.error).textContent, "", "no hint shown");
+});
+
+test("OK disabled state does not leak into the next dialog", async function () {
+  var ctx = fresh();
+  var p1 = ctx.CW.promptDialog("Confirm:", "", { mustMatch: "demo" });
+  assert.equal(el(ctx, IDS.ok).disabled, true);
+  assert.equal(fire(el(ctx, IDS.cancel), "click"), 1);
+  assert.strictEqual(await p1, null);
+  var p2 = ctx.CW.confirmDialog("Proceed?");
+  assert.equal(el(ctx, IDS.ok).disabled, false);
+  assert.equal(fire(el(ctx, IDS.ok), "click"), 1);
+  assert.strictEqual(await p2, true);
+});
+
 test("prompt without opts resolves empty string (no required gate)", async function () {
   var ctx = fresh();
   var p = ctx.CW.promptDialog("Optional note:");
