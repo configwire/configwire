@@ -654,6 +654,19 @@
       }
     }
 
+    function closeRuleMenus(except) {
+      var box = document.getElementById("flag-rules-list");
+      if (!box || !box.querySelectorAll) return;
+      var wraps = box.querySelectorAll(".rule-menu-wrap");
+      for (var i = 0; i < wraps.length; i++) {
+        var menu = wraps[i].querySelector ? wraps[i].querySelector(".rule-menu") : null;
+        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-rule-menu]") : null;
+        if (!menu || menu === except) continue;
+        menu.hidden = true;
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      }
+    }
+
     function closeEnvMenu(except) {
       var bar = document.getElementById("env-bar");
       if (!bar || !bar.querySelectorAll) return;
@@ -793,17 +806,37 @@
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
-      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".flags-menu-wrap") || t.closest(".head-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap")) : null;
-      if (!inside) { closeFlagMenus(); closeFlagsHeadMenu(); closeHeadMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
+      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".flags-menu-wrap") || t.closest(".head-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap") || t.closest(".rule-menu-wrap")) : null;
+      if (!inside) { closeFlagMenus(); closeFlagsHeadMenu(); closeHeadMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); closeRuleMenus(); }
     });
     document.addEventListener("keydown", function (ev) {
-      if (ev && ev.key === "Escape") { closeFlagMenus(); closeFlagsHeadMenu(); closeHeadMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); }
+      if (ev && ev.key === "Escape") { closeFlagMenus(); closeFlagsHeadMenu(); closeHeadMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); closeRuleMenus(); }
     });
 
     CW.on("flag-rules-list", "click", function (ev) {
       var t = ev.target;
-      var del = t && t.getAttribute && t.getAttribute("data-delete-flag-rule");
+      var menuBtn = null;
+      if (t && t.closest) menuBtn = t.closest("[data-rule-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-rule-menu")) menuBtn = t;
+      if (menuBtn) {
+        var wrap = menuBtn.parentNode;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".rule-menu") : null;
+        if (menu) {
+          var willOpen = menu.hidden;
+          closeRuleMenus();
+          menu.hidden = !willOpen;
+          menuBtn.setAttribute("aria-expanded", String(!!willOpen));
+        }
+        return;
+      }
+      var inMenu = t && t.closest ? t.closest(".rule-menu") : null;
+      var delBtn = t && t.closest ? t.closest("[data-delete-flag-rule]") : null;
+      var editBtn = t && t.closest ? t.closest("[data-edit-flag-rule]") : null;
+      if (!delBtn && t && t.getAttribute && t.getAttribute("data-delete-flag-rule")) delBtn = t;
+      if (!editBtn && t && t.getAttribute && t.getAttribute("data-edit-flag-rule")) editBtn = t;
+      var del = delBtn && delBtn.getAttribute ? delBtn.getAttribute("data-delete-flag-rule") : null;
       if (del) {
+        if (inMenu) closeRuleMenus();
         cwConfirm("Delete this rule?", {title: "Delete rule", okText: "Delete", danger: true}).then(function (ok) {
           if (!ok) return;
           CW.deleteRule(del).then(function () {
@@ -813,31 +846,43 @@
         });
         return;
       }
-      var rid = t && t.getAttribute && t.getAttribute("data-edit-flag-rule");
-      if (rid) {
+      var editEl = editBtn && editBtn.getAttribute ? editBtn.getAttribute("data-edit-flag-rule") : null;
+      if (editEl) {
+        if (inMenu) closeRuleMenus();
+        var rid = editEl;
         var found = null;
         var ruleList = CW.drafts ? CW.drafts.mergedRules() : CW.state.rules;
         for (var i = 0; i < ruleList.length; i++) {
           if (ruleList[i].id === rid) { found = ruleList[i]; break; }
         }
         if (!found) { CW.toast("Rule not found: " + rid); return; }
-        CW.$("flag-rules-flag-id").value = found.flag || CW.state.activeFlagRulesId || "";
-        CW.$("flag-rules-id").value = found.id;
-        CW.$("flag-rules-priority").value = found.priority == null ? 0 : found.priority;
-        try {
-          CW.$("flag-rules-condition").value = typeof found.condition === "string"
-            ? found.condition
-            : JSON.stringify(found.condition);
-        } catch (e) { CW.$("flag-rules-condition").value = "{}"; }
-        try {
-          CW.$("flag-rules-value").value = found.value === undefined
-            ? "null"
-            : JSON.stringify(found.value);
-        } catch (e2) { CW.$("flag-rules-value").value = "null"; }
-        if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
-        if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
-        CW.$("flag-rules-result").textContent = "Editing " + found.id;
+        if (CW.openRuleDialog) CW.openRuleDialog(found);
+        else {
+          CW.$("flag-rules-flag-id").value = found.flag || CW.state.activeFlagRulesId || "";
+          CW.$("flag-rules-id").value = found.id;
+          CW.$("flag-rules-priority").value = found.priority == null ? 0 : found.priority;
+          try {
+            CW.$("flag-rules-condition").value = typeof found.condition === "string"
+              ? found.condition
+              : JSON.stringify(found.condition);
+          } catch (e) { CW.$("flag-rules-condition").value = "{}"; }
+          try {
+            CW.$("flag-rules-value").value = found.value === undefined
+              ? "null"
+              : JSON.stringify(found.value);
+          } catch (e2) { CW.$("flag-rules-value").value = "null"; }
+          if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
+          if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
+          CW.$("flag-rules-result").textContent = "Editing " + found.id;
+        }
       }
+    });
+    CW.on("flag-rules-add", "click", function () {
+      if (CW.openRuleDialog) CW.openRuleDialog(null, CW.state.activeFlagRulesId || "");
+    });
+    CW.on("rule-dialog-close", "click", function () {
+      if (CW.closeRuleDialog) CW.closeRuleDialog();
+      else { var dlg = CW.$("rule-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
     CW.on("flag-rules-form", "submit", function (ev) {
       ev.preventDefault();
@@ -848,7 +893,6 @@
       if (CW.markFormClean) CW.markFormClean("flag-rules-form");
     });
     CW.on("flag-rules-close", "click", function () {
-      if (CW.resetFlagRuleForm) CW.resetFlagRuleForm();
       if (CW.closeFlagRulesDialog) CW.closeFlagRulesDialog();
       else { var dlg = CW.$("flag-rules-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
@@ -1080,6 +1124,9 @@
     get saveFlagRule() { return CW.saveFlagRule; },
     get resetFlagRuleForm() { return CW.resetFlagRuleForm; },
     get closeFlagRulesDialog() { return CW.closeFlagRulesDialog; },
+    get openRuleDialog() { return CW.openRuleDialog; },
+    get closeRuleDialog() { return CW.closeRuleDialog; },
+    get fillRuleForm() { return CW.fillRuleForm; },
     get conditionHTML() { return CW.conditionHTML; }, get valueHTML() { return CW.valueHTML; },
     get publish() { return CW.publish; }, get rollback() { return CW.rollback; },
     get markUnpublished() { return CW.markUnpublished; }, get markPublished() { return CW.markPublished; },

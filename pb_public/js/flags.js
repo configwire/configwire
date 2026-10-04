@@ -413,15 +413,20 @@
       var rbadge = rdeleted
         ? ' <span class="badge deleted">Deleted</span>'
         : (runpub ? ' <span class="badge unpublished">Unpublished</span>' : "");
+      var svgOpen = '<svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+      var editIcon = svgOpen + '<path d="M11 2.5l2.5 2.5L5 13.5l-3.2 1 1-3.2z"/></svg>';
+      var deleteIcon = svgOpen + '<path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4"/><path d="M6.5 7v4"/><path d="M9.5 7v4"/></svg>';
       return '<li class="rule-item' + rclass + '">' +
         '<span class="rule-prio">P' + CW.esc(r.priority) + "</span>" + rbadge +
         dialogConditionHTML(r.condition) +
         '<span class="rule-arrow" aria-hidden="true">→</span>' +
         dialogValueHTML(r.value) +
-        '<span class="rule-actions">' +
-        '<button type="button" data-edit-flag-rule="' + CW.esc(r.id) + '">edit</button>' +
-        '<button type="button" data-delete-flag-rule="' + CW.esc(r.id) + '">delete</button>' +
-        "</span></li>";
+        '<span class="rule-menu-wrap">' +
+        '<button type="button" class="rule-menu-btn" data-rule-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for rule P' + CW.esc(r.priority) + '">&#8942;</button>' +
+        '<div class="rule-menu" role="menu" hidden>' +
+        '<button type="button" role="menuitem" data-edit-flag-rule="' + CW.esc(r.id) + '">' + editIcon + "<span>edit</span></button>" +
+        '<button type="button" role="menuitem" data-delete-flag-rule="' + CW.esc(r.id) + '">' + deleteIcon + "<span>delete</span></button>" +
+        "</div></span></li>";
     }).join("");
   }
 
@@ -446,17 +451,12 @@
 
   function openFlagRulesDialog(flagId) {
     CW.state.activeFlagRulesId = flagId || "";
-    var hidden = CW.$("flag-rules-flag-id");
-    if (hidden) hidden.value = CW.state.activeFlagRulesId;
     var title = CW.$("flag-rules-title");
     if (title) {
       var key = CW.flagKeyById ? CW.flagKeyById(flagId) : "";
       title.textContent = key ? "Rules for " + key : "Rules for flag";
     }
-    resetFlagRuleForm();
-    if (hidden) hidden.value = CW.state.activeFlagRulesId;
     renderFlagRulesList();
-    updateFlagRuleHints();
     var dlg = CW.$("flag-rules-dialog");
     if (!dlg) return;
     if (dlg.showModal) {
@@ -468,6 +468,63 @@
     var dlg = CW.$("flag-rules-dialog");
     if (dlg && dlg.open) dlg.close();
     CW.state.activeFlagRulesId = null;
+  }
+
+  function ruleDialogTitle(prefix, rule) {
+    var key = "";
+    try { key = CW.flagKeyById ? (CW.flagKeyById(CW.state.activeFlagRulesId) || "") : ""; }
+    catch (e) { key = ""; }
+    var head = prefix + " rule";
+    if (rule && rule.priority !== undefined && rule.priority !== null) head += " P" + rule.priority;
+    return key ? head + " for " + key : head;
+  }
+
+  function fillRuleForm(rule) {
+    CW.$("flag-rules-flag-id").value = rule.flag || CW.state.activeFlagRulesId || "";
+    CW.$("flag-rules-id").value = rule.id;
+    CW.$("flag-rules-priority").value = rule.priority == null ? 0 : rule.priority;
+    try {
+      CW.$("flag-rules-condition").value = typeof rule.condition === "string"
+        ? rule.condition
+        : JSON.stringify(rule.condition);
+    } catch (e) { CW.$("flag-rules-condition").value = "{}"; }
+    try {
+      CW.$("flag-rules-value").value = rule.value === undefined
+        ? "null"
+        : JSON.stringify(rule.value);
+    } catch (e2) { CW.$("flag-rules-value").value = "null"; }
+    if (CW.updateFlagRuleHints) CW.updateFlagRuleHints();
+    if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
+    CW.$("flag-rules-result").textContent = "Editing " + rule.id;
+  }
+
+  function openRuleDialog(rule, presetFlagId) {
+    var title = CW.$("rule-dialog-title");
+    if (!rule) {
+      resetFlagRuleForm();
+      var fid = presetFlagId || CW.state.activeFlagRulesId || "";
+      var hidden = CW.$("flag-rules-flag-id");
+      if (hidden) hidden.value = fid;
+      if (title) title.textContent = ruleDialogTitle("Add");
+    } else {
+      if (rule.flag) {
+        CW.state.activeFlagRulesId = rule.flag;
+        var hid = CW.$("flag-rules-flag-id");
+        if (hid) hid.value = rule.flag;
+      }
+      fillRuleForm(rule);
+      if (title) title.textContent = ruleDialogTitle("Edit", rule);
+    }
+    var dlg = CW.$("rule-dialog");
+    if (!dlg) return;
+    if (dlg.showModal) {
+      try { if (!dlg.open) dlg.showModal(); } catch (e) { /* already open */ }
+    }
+  }
+
+  function closeRuleDialog() {
+    var dlg = CW.$("rule-dialog");
+    if (dlg && dlg.open) dlg.close();
   }
 
   function saveFlagRule(ev) {
@@ -504,6 +561,10 @@
     CW.state.activeFlagRulesId = flagId;
     if (CW.markFormClean) CW.markFormClean("flag-rules-form");
     CW.toast((id && stagedRule == null ? "No changes." : "Draft saved: " + ruleLabel), true);
+    var resEl = CW.$("flag-rules-result");
+    if (resEl) resEl.textContent = "";
+    closeRuleDialog();
+    renderFlagRulesList();
     CW.drafts.refreshDraftChrome();
     return Promise.resolve({ status: 200, data: {} });
   }
@@ -646,6 +707,9 @@
   CW.saveFlagRule = saveFlagRule;
   CW.resetFlagRuleForm = resetFlagRuleForm;
   CW.closeFlagRulesDialog = closeFlagRulesDialog;
+  CW.openRuleDialog = openRuleDialog;
+  CW.closeRuleDialog = closeRuleDialog;
+  CW.fillRuleForm = fillRuleForm;
   CW.updateFlagRuleHints = updateFlagRuleHints;
   CW.renderFlagSelects = renderFlagSelects;
   CW.renderGroups = renderGroups;

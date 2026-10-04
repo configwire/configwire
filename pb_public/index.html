@@ -510,7 +510,18 @@
           <ul id="flag-rules-list" aria-label="Flag rules">
             <li>Loading…</li>
           </ul>
-          <h4>Rule</h4>
+          <div class="form-actions">
+            <button type="button" id="flag-rules-add" class="btn primary">Add rule</button>
+          </div>
+        </dialog>
+        <dialog id="rule-dialog" aria-labelledby="rule-dialog-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="rule-dialog-title">Add rule</h3>
+            </div>
+            <button type="button" id="rule-dialog-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
           <form id="flag-rules-form" aria-label="Flag rule create or edit">
             <input id="flag-rules-flag-id" type="hidden" value="">
             <input id="flag-rules-id" type="hidden" value="">
