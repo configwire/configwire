@@ -697,17 +697,50 @@
 
   // Per-form dirty gating (publish-global CW.state.unpublishedChanges is
   // separate: one form's save must not clear another form's dirty, and only
-  // publish-success clears the publish-global flag). armDirtyForm disables
-  // the form's primary submit until the first input/change bubbles from a
-  // child field; markFormClean returns it to disabled after a save or Clear.
+  // publish-success clears the publish-global flag). Submit is disabled
+  // unless dirty OR (create-mode AND form.checkValidity()): edit dialogs
+  // (hidden id filled) start disabled until input/change, while create
+  // dialogs with prefilled valid defaults (e.g. new rule) start enabled.
   // Programmatic pre-fills (dialog edit, form.reset()) fire no input/change
   // events, so opening a dialog never counts as dirty by itself.
+  function isCreateForm(formId) {
+    try {
+      if (formId === "project-dialog-form" || formId === "account-create-form") return true;
+      if (formId === "key-limits-form" || formId === "limits-form" || formId === "settings-admin-form") return false;
+      var map = { "flag-form": "flag-id", "flag-rules-form": "flag-rules-id", "experiment-form": "exp-id" };
+      var hid = map[formId];
+      if (!hid) return false;
+      var el = CW.$(hid);
+      if (!el) return false;
+      return String(el.value == null ? "" : el.value).trim() === "";
+    } catch (e) { return false; }
+  }
+
+  function refreshFormSubmit(formId) {
+    try {
+      if (!CW.state.dirtyForms) CW.state.dirtyForms = {};
+      var form = null;
+      try { form = CW.$(formId); } catch (e) { form = null; }
+      var btn = null;
+      try { btn = form ? form.querySelector('button[type="submit"]') : null; } catch (e2) { btn = null; }
+      if (!btn) return;
+      if (!!CW.state.dirtyForms[formId]) { btn.disabled = false; return; }
+      var create = false;
+      try { create = isCreateForm(formId); } catch (e3) { create = false; }
+      if (!create) { btn.disabled = true; return; }
+      var valid = false;
+      try {
+        if (form && typeof form.checkValidity === "function") valid = !!form.checkValidity();
+        else valid = false;
+      } catch (e4) { valid = false; }
+      btn.disabled = !valid;
+    } catch (e) { /* best-effort */ }
+  }
+
   function setFormDirty(formId, dirty) {
     if (!CW.state.dirtyForms) CW.state.dirtyForms = {};
     CW.state.dirtyForms[formId] = !!dirty;
-    var form = CW.$(formId);
-    var btn = form ? form.querySelector('button[type="submit"]') : null;
-    if (btn) btn.disabled = !dirty;
+    refreshFormSubmit(formId);
   }
 
   function markFormDirty(formId) {
@@ -1110,4 +1143,7 @@
   CW.armDirtyForm = armDirtyForm;
   CW.markFormDirty = markFormDirty;
   CW.markFormClean = markFormClean;
+  CW.isCreateForm = isCreateForm;
+  CW.refreshFormSubmit = refreshFormSubmit;
+  CW.syncFormSubmit = refreshFormSubmit;
 })();

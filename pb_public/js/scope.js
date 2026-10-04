@@ -108,6 +108,8 @@
     if (d.env && !String(d.env.value || "").trim()) d.env.value = "production";
     if (d.result) d.result.textContent = "";
     if (d.legacyResult) d.legacyResult.textContent = "";
+    if (CW.markFormClean) { try { CW.markFormClean("project-dialog-form"); } catch (e) { /* noop */ } }
+    else if (CW.refreshFormSubmit) { try { CW.refreshFormSubmit("project-dialog-form"); } catch (e2) { /* noop */ } }
     if (d.dlg && typeof d.dlg.showModal === "function" && !d.dlg.open) {
       try { d.dlg.showModal(); } catch (e) { /* harness stub */ }
     } else if (d.dlg && d.dlg.setAttribute) {
@@ -175,6 +177,9 @@
         if (legacy) legacy.value = "";
         if (CW.markFormClean) {
           try { CW.markFormClean("project-dialog-form"); } catch (e) { /* noop */ }
+        }
+        if (CW.refreshFormSubmit) {
+          try { CW.refreshFormSubmit("project-dialog-form"); } catch (e2) { /* noop */ }
         }
         closeProjectDialog();
         loadProjects().then(function () {

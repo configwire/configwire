@@ -710,6 +710,8 @@
     if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
     var res = CW.$("experiment-result");
     if (res) res.textContent = "";
+    if (CW.markFormClean) CW.markFormClean("experiment-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("experiment-form");
   }
 
   function fillExperimentForm(found) {
@@ -758,6 +760,8 @@
       fillExperimentForm(exp);
       if (title) title.textContent = experimentTitle("Edit", exp.name || exp.id || "", exp.flag);
     }
+    if (CW.markFormClean) CW.markFormClean("experiment-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("experiment-form");
     var dlg = CW.$("experiment-dialog");
     if (!dlg) return;
     if (dlg.showModal) {

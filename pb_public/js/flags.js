@@ -447,6 +447,8 @@
     updateFlagRuleHints();
     var res = CW.$("flag-rules-result");
     if (res) res.textContent = "";
+    if (CW.markFormClean) CW.markFormClean("flag-rules-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("flag-rules-form");
   }
 
   function openFlagRulesDialog(flagId) {
@@ -515,6 +517,8 @@
       fillRuleForm(rule);
       if (title) title.textContent = ruleDialogTitle("Edit", rule);
     }
+    if (CW.markFormClean) CW.markFormClean("flag-rules-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("flag-rules-form");
     var dlg = CW.$("rule-dialog");
     if (!dlg) return;
     if (dlg.showModal) {
@@ -666,6 +670,8 @@
     syncFlagDefaultForType({ reset: true });
     var res = CW.$("flag-result");
     if (res) res.textContent = "";
+    if (CW.markFormClean) CW.markFormClean("flag-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("flag-form");
   }
 
   function openFlagDialog(flag) {
@@ -688,6 +694,8 @@
       if (res) res.textContent = "Editing " + (flag.key || flag.id || "");
       if (title) title.textContent = flag.key ? "Edit " + flag.key : "Edit flag";
     }
+    if (CW.markFormClean) CW.markFormClean("flag-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("flag-form");
     var dlg = CW.$("flag-dialog");
     if (!dlg) return;
     if (dlg.showModal) {

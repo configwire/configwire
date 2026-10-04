@@ -146,6 +146,7 @@
     var res = CW.$("key-limits-result");
     if (res) res.textContent = "";
     if (CW.markFormClean) CW.markFormClean("key-limits-form");
+    if (CW.refreshFormSubmit) CW.refreshFormSubmit("key-limits-form");
     var dlg = CW.$("key-limits-dialog");
     if (!dlg) return;
     if (dlg.showModal) {

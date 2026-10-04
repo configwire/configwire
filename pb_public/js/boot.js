@@ -268,6 +268,7 @@
         CW.updateFlagDefaultHint();
       }
       if (CW.markFormClean) CW.markFormClean("flag-form");
+      if (CW.refreshFormSubmit) CW.refreshFormSubmit("flag-form");
     });
     CW.on("flag-add-btn", "click", function () {
       if (CW.openFlagDialog) CW.openFlagDialog(null);
@@ -507,6 +508,7 @@
         CW.$("experiment-result").textContent = "";
       }
       if (CW.markFormClean) CW.markFormClean("experiment-form");
+      if (CW.refreshFormSubmit) CW.refreshFormSubmit("experiment-form");
     });
     CW.on("experiment-dialog-close", "click", function () {
       if (CW.closeExperimentDialog) CW.closeExperimentDialog();
@@ -891,6 +893,7 @@
     CW.on("flag-rules-reset", "click", function () {
       if (CW.resetFlagRuleForm) CW.resetFlagRuleForm();
       if (CW.markFormClean) CW.markFormClean("flag-rules-form");
+      if (CW.refreshFormSubmit) CW.refreshFormSubmit("flag-rules-form");
     });
     CW.on("flag-rules-close", "click", function () {
       if (CW.closeFlagRulesDialog) CW.closeFlagRulesDialog();
