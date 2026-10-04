@@ -435,13 +435,35 @@
     CW.updateJsonHint("flag-rules-value");
   }
 
-  function resetFlagRuleForm() {
+  function flagById(id) {
+    if (!id) return null;
+    var list = (CW.drafts && typeof CW.drafts.mergedFlags === "function")
+      ? CW.drafts.mergedFlags()
+      : CW.state.flags;
+    if (!Array.isArray(list)) return null;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === id) return list[i];
+    }
+    return null;
+  }
+
+  function resetFlagRuleForm(presetFlagId) {
     var idEl = CW.$("flag-rules-id");
     if (idEl) idEl.value = "";
+    var hiddenEl = CW.$("flag-rules-flag-id");
+    var resolvedId = presetFlagId || (hiddenEl && hiddenEl.value) || CW.state.activeFlagRulesId || "";
     var form = CW.$("flag-rules-form");
     if (form) form.reset();
     var prio = CW.$("flag-rules-priority");
     if (prio && !prio.value) prio.value = "0";
+    var flag = resolvedId ? flagById(resolvedId) : null;
+    if (flag && Object.prototype.hasOwnProperty.call(flag, "defaultValue")) {
+      var valEl = CW.$("flag-rules-value");
+      if (valEl) {
+        try { valEl.value = JSON.stringify(flag.defaultValue); }
+        catch (e) { valEl.value = "null"; }
+      }
+    }
     if (CW.resetRuleBuilder) CW.resetRuleBuilder();
     if (CW.syncRuleBuilderFromCondition) CW.syncRuleBuilderFromCondition();
     updateFlagRuleHints();
@@ -503,7 +525,7 @@
   function openRuleDialog(rule, presetFlagId) {
     var title = CW.$("rule-dialog-title");
     if (!rule) {
-      resetFlagRuleForm();
+      resetFlagRuleForm(presetFlagId);
       var fid = presetFlagId || CW.state.activeFlagRulesId || "";
       var hidden = CW.$("flag-rules-flag-id");
       if (hidden) hidden.value = fid;
@@ -732,6 +754,7 @@
   CW.addFlagToGroup = addFlagToGroup;
   CW.moveFlag = moveFlag;
   CW.flagKeyById = flagKeyById;
+  CW.flagById = flagById;
   CW.updateFlagDefaultHint = updateFlagDefaultHint;
   CW.syncFlagDefaultForType = syncFlagDefaultForType;
   CW.resetFlagForm = resetFlagForm;

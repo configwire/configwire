@@ -615,12 +615,13 @@
     return true;
   }
 
-  function resetVariantsBuilder() {
+  function resetVariantsBuilder(flagKey, flagDefault) {
     var wrap = CW.$("exp-variants-builder-rows");
     if (!wrap) return false;
     wrap.innerHTML = "";
-    addVariantRow("control", 50, "");
-    addVariantRow("treatment", 50, "");
+    var prefill = prefillValuesText(flagKey, flagDefault);
+    addVariantRow("control", 50, prefill);
+    addVariantRow("treatment", 50, prefill);
     recalcLastVariantWeight();
     clearVariantFieldMarks();
     CW.setJsonHint(CW.$("exp-variants-hint"), null, true, "");
@@ -698,14 +699,69 @@
     return "";
   }
 
+  function prefillValuesText(flagKey, flagDefault) {
+    if (!flagKey || flagDefault === undefined) return "";
+    var obj = {};
+    obj[flagKey] = flagDefault;
+    try {
+      var s = JSON.stringify(obj);
+      return typeof s === "string" ? s : "";
+    } catch (e) { return ""; }
+  }
+
+  // Resolve {key, defaultValue} for a new-experiment target flag id.
+  // Priority: explicit presetFlagId, then #exp-flag-select value, then the
+  // active flag-experiments scope. Returns null when the key is unresolvable
+  // (callers keep the current empty-string defaults).
+  function resolveTargetFlag(presetFlagId) {
+    var flagId = presetFlagId || "";
+    if (!flagId) {
+      var sel = CW.$("exp-flag-select");
+      if (sel && sel.value) flagId = sel.value;
+    }
+    if (!flagId && CW.state && CW.state.activeFlagExperimentsId) {
+      flagId = CW.state.activeFlagExperimentsId;
+    }
+    if (!flagId) return null;
+    var key = flagKeyOf(flagId);
+    if (!key) return null;
+    var flagList = null;
+    try {
+      flagList = (CW.drafts && typeof CW.drafts.mergedFlags === "function")
+        ? CW.drafts.mergedFlags()
+        : (CW.state && CW.state.flags);
+    } catch (e) {
+      flagList = CW.state && CW.state.flags;
+    }
+    if (!Array.isArray(flagList)) return null;
+    var i, f;
+    for (i = 0; i < flagList.length; i++) {
+      f = flagList[i];
+      if (f && f.id === flagId) {
+        if (f.defaultValue === undefined) return null;
+        return { key: f.key || key, defaultValue: f.defaultValue };
+      }
+    }
+    return null;
+  }
+
   function resetExperimentForm() {
     var idEl = CW.$("exp-id");
     if (idEl) idEl.value = "";
+    var selKeep = "";
+    var selPre = CW.$("exp-flag-select");
+    if (selPre && selPre.value) selKeep = selPre.value;
     var form = CW.$("experiment-form");
     if (form && typeof form.reset === "function") form.reset();
+    var selPost = CW.$("exp-flag-select");
+    if (selPost && selKeep) selPost.value = selKeep;
     var seedEl = CW.$("exp-seed");
     if (seedEl && !seedEl.value) seedEl.value = generateExperimentSeed();
-    if (CW.resetVariantsBuilder) CW.resetVariantsBuilder();
+    var target = resolveTargetFlag(null);
+    if (CW.resetVariantsBuilder) {
+      if (target) CW.resetVariantsBuilder(target.key, target.defaultValue);
+      else CW.resetVariantsBuilder();
+    }
     if (CW.updateVariantPlaceholders) CW.updateVariantPlaceholders();
     if (CW.updateExpVariantsHint) CW.updateExpVariantsHint();
     var res = CW.$("experiment-result");
@@ -746,6 +802,10 @@
   function openExperimentDialog(exp, presetFlagId) {
     var title = CW.$("experiment-dialog-title");
     if (!exp) {
+      if (presetFlagId) {
+        var preSel = CW.$("exp-flag-select");
+        if (preSel) preSel.value = presetFlagId;
+      }
       resetExperimentForm();
       var freshSeed = CW.$("exp-seed");
       if (freshSeed) freshSeed.value = generateExperimentSeed();
