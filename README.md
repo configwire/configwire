@@ -1,436 +1,93 @@
 ![ConfigWire — Real-Time Remote Configuration](pb_public/img/banner.png)
 
-# ConfigWire
+# ConfigWire — server
 
-**ConfigWire** is a self-hosted, single-binary remote config server built on [PocketBase](https://pocketbase.io). It lets you publish immutable flag releases, evaluate them per-request, stream updates over SSE, and track fetch/exposure events — all with an included Admin UI.
+Single-binary remote config & feature flags: publish immutable releases,
+evaluate flags per SDK fetch, stream updates over SSE, and ingest
+fetch/exposure events with 90-day rollups. Embedded SQLite (WAL), no
+external DB. Admin UI ships as static files.
 
-> [!NOTE]
-> Dart/Flutter client: [`configwire`](https://pub.dev/packages/configwire) on pub.dev ([source](https://github.com/configwire/dart)) — pure-Dart, bring-your-own `CacheStore` for persistence.
+> **Website is the source of truth:** product overview, comparisons, and
+> full guides live at **https://configwire.com** — start with
+> [Guides & Docs](https://configwire.com/guide.html).
+> This README covers only running and developing this binary.
 
----
+- Docs: [https://configwire.com/guide.html](https://configwire.com/guide.html)
+- Wire contract: [`docs/CONTRACT.md`](docs/CONTRACT.md) · Security/ops: [`docs/SECURITY.md`](docs/SECURITY.md) · Key rotation: [`docs/ROTATION.md`](docs/ROTATION.md)
+- Dart client: [`configwire`](https://pub.dev/packages/configwire) on pub.dev (pure-Dart, runs on Flutter; source at [github.com/configwire/dart](https://github.com/configwire/dart))
 
-## Table of Contents
-
-- [ConfigWire](#configwire)
-  - [Table of Contents](#table-of-contents)
-  - [Prerequisites](#prerequisites)
-  - [Run Locally](#run-locally)
-  - [Docker](#docker)
-    - [Option A — Docker Compose (recommended)](#option-a--docker-compose-recommended)
-    - [Option B — `docker run`](#option-b--docker-run)
-    - [Build from source](#build-from-source)
-  - [Quickstart (end-to-end curl)](#quickstart-end-to-end-curl)
-  - [SDK API Reference](#sdk-api-reference)
-    - [Fetch config](#fetch-config)
-    - [Ingest events](#ingest-events)
-    - [Real-time updates (SSE)](#real-time-updates-sse)
-  - [Admin API Reference](#admin-api-reference)
-    - [Publish](#publish)
-    - [Stats](#stats)
-  - [Dart / Flutter Integration](#dart--flutter-integration)
-  - [Retention \& Scale Defaults](#retention--scale-defaults)
-  - [Make Targets](#make-targets)
-    - [Port reference](#port-reference)
-  - [CI](#ci)
-  - [Further Reading](#further-reading)
-  - [License](#license)
-
----
-
-## Prerequisites
-
-| Tool                              | Notes                 |
-| --------------------------------- | --------------------- |
-| Go                                | version per `go.mod`  |
-| `make`, `bash`, `curl`, `python3` | standard Unix tooling |
-| Node `>= 20`                      | `js_tests` only       |
-
----
-
-## Run Locally
-
-> [!IMPORTANT]
-> Always start the server from the `configwire/` directory (or use `make serve`) so that `./pb_public` resolves correctly. Starting from a different directory causes `/` to return 404 while `/healthz` still returns 200.
+## Run with Docker
 
 ```bash
-# Default: http://127.0.0.1:8090, data in ./pb_data
+docker run -d \
+  --name configwire \
+  --restart unless-stopped \
+  -p 8090:8090 \
+  -v cw-data:/app/pb_data \
+  ghcr.io/configwire/configwire:latest
+
+curl -s http://localhost:8090/healthz
+# -> {"status":"ok"}
+```
+
+Or via Compose (see [`compose.yml`](compose.yml)):
+
+```bash
+curl -O https://raw.githubusercontent.com/configwire/configwire/main/compose.yml
+docker compose pull && docker compose up -d
+```
+
+Then open **http://localhost:8090** — a fresh instance shows a native
+superuser setup screen (no need to visit PocketBase's `/_/` installer).
+
+## Run locally
+
+Prereqs: Go (floor per `go.mod`), `make`, `bash`, `curl`, `python3`.
+Node `>= 20` for `js_tests` only.
+
+> [!IMPORTANT]
+> Serve MUST run from this directory so `./pb_public` resolves. From anywhere
+> else `/` returns 404 while `/healthz` stays 200.
+
+```bash
+# Default http://127.0.0.1:8090, data in ./pb_data
 make serve
 
-# Custom port / data directory (pass flags directly to go run, not make)
+# Custom port / data dir
 go run . serve --http 127.0.0.1:8109 --dir /tmp/cw-pbdata
 ```
 
----
-
-## Docker
-
-The image is published to GitHub Container Registry on every version tag.
-
-```
-ghcr.io/configwire/configwire:latest     # latest stable
-ghcr.io/configwire/configwire:v1.2.3    # pinned version (recommended for production)
-```
-
-### Option A — Docker Compose (recommended)
+Minimal SDK check (after creating a project/env/flag + SDK key in the Admin UI):
 
 ```bash
-# 1. Download the compose file (no source needed)
-curl -O https://raw.githubusercontent.com/configwire/configwire/main/compose.yml
-
-# 2. Pull and start
-docker compose pull
-docker compose up -d
-
-# 3. Verify
-curl -s http://localhost:8090/healthz
+curl -s http://127.0.0.1:8090/api/v1/env/dev/config \
+  -H "X-ConfigWire-Key: <sdk-key>"
 ```
 
-4. Open **http://localhost:8090** in your browser to create the first superuser account.
-
-The compose file mounts a named volume (`cw-data`) at `/app/pb_data`, so your data survives container restarts.
-
-### Option B — `docker run`
-
-```bash
-docker pull ghcr.io/configwire/configwire:latest
-
-docker run -d \
-  --name configwire \
-  -p 8090:8090 \
-  -v cw-data:/app/pb_data \
-  --restart unless-stopped \
-  ghcr.io/configwire/configwire:latest
-```
-
-Open **http://localhost:8090** in your browser to create the first superuser account.
-
-### Build from source
-
-```bash
-# Build context must be configwire/ so ./pb_public resolves
-docker build -t ghcr.io/configwire/configwire:latest .
-docker compose up -d
-
-# From monorepo root
-docker build -t ghcr.io/configwire/configwire:latest ./configwire
-docker compose -f configwire/compose.yml up -d
-```
-
----
-
-## Quickstart (end-to-end curl)
-
-This is a full self-contained proof on port **8109** — copy-paste verbatim.
-
-**1. Start the server**
-
-```bash
-mkdir -p /tmp/cw-qs
-go run . superuser upsert admin@example.com password123 --dir /tmp/cw-qs/pbdata
-(go run . serve --http 127.0.0.1:8109 --dir /tmp/cw-qs/pbdata > /tmp/cw-qs/serve.log 2>&1 &)
-sleep 12
-curl -s http://127.0.0.1:8109/healthz
-```
-
-**2. Authenticate**
-
-```bash
-TOKEN=$(curl -s -X POST http://127.0.0.1:8109/api/collections/_superusers/auth-with-password \
-  -H 'Content-Type: application/json' \
-  -d '{"identity":"admin@example.com","password":"password123"}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-```
-
-**3. Create project, environment and a flag**
-
-```bash
-PROJ=$(curl -s -X POST http://127.0.0.1:8109/api/collections/projects/records \
-  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"demo"}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-
-ENV=$(curl -s -X POST http://127.0.0.1:8109/api/collections/environments/records \
-  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"project\":\"$PROJ\",\"slug\":\"dev\"}" \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-
-curl -s -X POST http://127.0.0.1:8109/api/collections/flags/records \
-  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"project\":\"$PROJ\",\"key\":\"launch_flag\",\"type\":\"bool\",\"defaultValue\":false}"
-```
-
-**4. Create an SDK key** (server-minted; the full key is returned once)
-
-```bash
-MINT=$(curl -s -X POST http://127.0.0.1:8109/api/v1/admin/keys \
-  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"env\":\"$ENV\",\"fetchRps\":1667,\"ingestRps\":1667}")
-
-KEY=$(echo "$MINT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')
-```
-
-> The server generates the key and stores only its bcrypt verifier.
-> Client-supplied key material is ignored by design.
-
-**5. Publish, fetch, ingest events, and query stats**
-
-```bash
-# Publish release
-curl -s -X POST http://127.0.0.1:8109/api/v1/admin/env/dev/publish \
-  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"note":"first release","baseVersion":0}'
-# Expected: {"version":1,...}
-
-# Fetch config as SDK
-curl -s http://127.0.0.1:8109/api/v1/env/dev/config \
-  -H "X-ConfigWire-Key: $KEY"
-# Expected: {"version":1,...,"values":{"launch_flag":false},...}
-
-# Send fetch + exposure events
-curl -s -X POST http://127.0.0.1:8109/api/v1/env/dev/events \
-  -H "X-ConfigWire-Key: $KEY" -H 'Content-Type: application/json' \
-  -d '{"events":[{"kind":"fetch"},{"kind":"exposure","variant":"control","userHash":"abc123"}]}'
-# Expected: {"accepted":2,...}
-
-# Query stats (after ~3s for ingest to flush)
-sleep 3
-curl -s "http://127.0.0.1:8109/api/v1/admin/env/dev/stats?since=7d" \
-  -H "Authorization: $TOKEN"
-# Expected: {"fetches":1,"exposures":1,...,"total":2,...}
-```
-
-**6. Cleanup**
-
-```bash
-kill $(lsof -ti:8109)
-rm -rf /tmp/cw-qs
-```
-
-Full response shapes are in [`docs/CONTRACT.md`](docs/CONTRACT.md).
-
----
-
-## SDK API Reference
-
-### Fetch config
-
-```
-GET /api/v1/env/{env}/config
-X-ConfigWire-Key: <sdk-key>
-```
-
-| Query param  | Description                  |
-| ------------ | ---------------------------- |
-| `uid`        | User / device identifier     |
-| `platform`   | e.g. `ios`, `android`, `web` |
-| `appVersion` | Semver string                |
-| `locale`     | e.g. `en-US`                 |
-| `country`    | ISO 3166-1 alpha-2           |
-| `attrs`      | JSON object, max 8192 bytes  |
-| `exp`        | Status override              |
-
-**200 response:** 
-
-```json
-{
-  "version": 1,
-  "etag": "b41b62605c0df712",
-  "values": {"launch_flag": true},
-  "variants": {"launch_flag": "treatment"},
-  "fetchAt": "2026-09-22T00:00:00.000000000Z"
-}
-```
-
-**Conditional refresh (304):** send `If-None-Match: <etag>` — unchanged config returns `304` with an empty body.
-
-### Ingest events
-
-```
-POST /api/v1/env/{env}/events
-X-ConfigWire-Key: <sdk-key>
-Content-Type: application/json
-```
-
-```json
-{
-  "events": [
-    {"kind": "fetch"},
-    {"kind": "exposure", "variant": "control", "userHash": "abc123"}
-  ]
-}
-```
-
-**Response:** `{"accepted": 2, ...}`
-
-Rate limits (per-second): global 200 rps per IP + burst 400, fetch 100 rps per key, ingest 50 rps per key (1s window), plus the admin IP allowlist (empty = allow all; denied admin IPs get `403`, no admin req/s limiting). Per-key `sdk_keys.fetchRps`/`sdk_keys.ingestRps` overrides (optional, empty/0 = global fetch 100/s / ingest 50/s; set via Admin UI Keys card Edit limits or `PATCH /api/collections/sdk_keys/records/:id`; effective = per-key when `1..10000` else global). Over-limit returns `429` with `Retry-After: 1`. Tune via `CONFIGWIRE_GLOBAL_RPS` / `CONFIGWIRE_BURST` / `CONFIGWIRE_FETCH_RPS` / `CONFIGWIRE_INGEST_RPS` / `CONFIGWIRE_ADMIN_ALLOWED_IPS` (comma-separated IPs/CIDRs) or Admin UI Limits card (`GET/PUT /api/v1/admin/limits`, shows your current IP). Buffer cap: 2048; full buffer returns `503` — never silent drop.
-
-### Real-time updates (SSE)
-
-```
-GET /api/v1/env/{env}/stream
-X-ConfigWire-Key: <sdk-key>
-Accept: text/event-stream
-```
-
-`200` held open as `text/event-stream` (same `401 → 404 → 401` auth
-order as fetch). Each release publish for the env pushes one frame:
-
-```
-event: config_update
-data: {"version":2,"etag":"5dadac695eb4c603","env":"<envId>"}
-
-```
-
-Keepalive `: ping` comment every 20s; server closes at 10min (client
-reconnects with backoff). Max 5 concurrent streams per SDK key (over
-cap → `429 {"message":"Too many concurrent streams.","status":429}`).
-Push is best-effort; the client poll fallback still bounds staleness.
-
----
-
-## Admin API Reference
-
-All admin paths require a superuser token: `Authorization: <token>` (bare or `Bearer`-prefixed).
-
-| Method | Path                                                  | Description                                                |
-| ------ | ----------------------------------------------------- | ---------------------------------------------------------- |
-| `POST` | `/api/v1/admin/env/{env}/publish`                     | Publish a new immutable release                            |
-| `POST` | `/api/v1/admin/env/{env}/releases/{version}/rollback` | Roll back to a previous release (republishes as a new row) |
-| `POST` | `/api/v1/admin/env/{env}/promote`                     | Promote a release snapshot from another env (new row, fresh etag) |
-| `GET`  | `/api/v1/admin/env/{env}/stats`                       | Query env stats                                            |
-| `POST` | `/api/v1/admin/maintenance/purge`                     | Trigger event purge (`?dry=1` for dry run)                 |
-| `GET`  | `/api/v1/admin/limits`                                | Read per-second rate limits (superuser-only)               |
-| `PUT`  | `/api/v1/admin/limits`                                | Update per-second rate limits (superuser-only)             |
-
-### Publish 
-
-```bash
-curl -X POST http://127.0.0.1:8090/api/v1/admin/env/dev/publish \
-  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"note":"my release","baseVersion":1}'
-```
-
-Promote a release snapshot from another env (same project only;
-`destBaseVersion` must equal the dest env's current max):
-
-```bash
-curl -X POST http://127.0.0.1:8090/api/v1/admin/env/staging/promote \
-  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"srcEnv":"dev","srcVersion":2,"note":"promote dev v2","destBaseVersion":1}'
-```
-
-> [!IMPORTANT]
-> Releases are **immutable**. Direct writes to the `releases` collection via the data API are rejected. Always use the publish/rollback endpoints.
-
-### Stats
-
-```
-GET /api/v1/admin/env/{env}/stats?since=<window>
-```
-
-`since` accepts: `7d`, `30d`, `90d`, or an ISO timestamp.
-
-Stats for windows beyond 30 days merge `event_daily` rollup buckets and return `"approximate": true`. Events-only windows (≤ 30 days) return `"approximate": false`.
-
----
-
-## Dart / Flutter Integration
-
-Install: [`configwire`](https://pub.dev/packages/configwire) on pub.dev.
-
-```dart
-import 'package:configwire/configwire.dart';
-
-final cw = ConfigWire(
-  apiKey: 'YOUR_SDK_KEY', // sent as X-ConfigWire-Key, never logged
-  env: 'dev',
-  baseUrl: 'http://127.0.0.1:8090',
-  defaults: {'launch_flag': false},
-  // Omit store: for session-only memory cache,
-  // or pass your own CacheStore for disk persistence.
-);
-
-await cw.ensureInitialized();
-await cw.fetchAndActivate();
-
-final on = cw.getBool('launch_flag');
-print(on); // false (or true if published flag differs from default)
-
-await cw.dispose();
-```
-
-**Real-time updates:**
-
-```dart
-cw.connectRealtime(); // opens SSE + 15-min poll fallback
-```
-
-Freshness guarantee: at most `pollInterval` plus one fetch on every path.
-
-Full client docs: [github.com/configwire/dart](https://github.com/configwire/dart)
-
----
-
-## Retention & Scale Defaults
-
-| Setting                        | Default                                    |
-| ------------------------------ | ------------------------------------------ |
-| Raw `events` retention         | 30 days, then rolled into `event_daily`    |
-| `event_daily` rollup retention | 90 days                                    |
-| Stats window max               | 90 days (`approximate: true` past 30d)     |
-| Rate limits (per-second) | global 200 rps per IP + burst 400, fetch 100, ingest 50 (1s window) + admin IP allowlist (empty = allow all, `CONFIGWIRE_ADMIN_ALLOWED_IPS`, Admin UI Limits card `GET/PUT /api/v1/admin/limits`, every `429` carries `Retry-After: 1`); per-key `sdk_keys.fetchRps`/`sdk_keys.ingestRps` overrides in req/sec (empty/0 = global, effective when `1..10000`) |
-| Ingest lag bound               | ~1s + write time (max 2s); buffer cap 2048 |
-
-**Load test baseline** (`scripts/k6-fetch.js`, 60s at 100 rps fetch + 50 rps exposure):
-- Fetch p95: 0.78 ms (budget: 200 ms)
-- Failed: 0.00% (budget: < 1%)
-
-See [`docs/SECURITY.md`](docs/SECURITY.md) §9 for full load test details.
-
----
-
-## Make Targets
-
-| Target                   | Command                                           | Description                      |
-| ------------------------ | ------------------------------------------------- | -------------------------------- |
-| `make serve`             | `go run . serve`                                  | Start server on `127.0.0.1:8090` |
-| `make migrate ARGS="up"` | `go run . migrate <args>`                         | Run migrations                   |
-| `make test`              | `go build ./... && go vet ./... && go test ./...` + `dart analyze`+`dart test` + node `js_tests` suite | Build, vet, and test (Go + Dart + node) |
-| `make lint`              | `gofmt` check + `go vet`                          | Lint check                       |
-| `make e2e`               | `bash scripts/e2e.sh`                             | End-to-end tests (port 8108)     |
-
-### Port reference
-
-| Use                    | Port |
-| ---------------------- | ---- |
-| `make serve` (default) | 8090 |
-| README quickstart      | 8109 |
-| `make e2e`             | 8108 |
-
----
-
-## CI
-
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push and PR:
-- `go build ./...`
-- `go vet ./...`
-- `make lint`
-- `make test`
-
-First run requires network for `go mod download`. Subsequent runs need only the module cache.
-
----
-
-## Further Reading
-
-| Document                               | Contents                                      |
-| -------------------------------------- | --------------------------------------------- |
-| [`docs/CONTRACT.md`](docs/CONTRACT.md) | Full wire API shapes and response codes       |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | Operator security notes and load test details |
-| [`docs/ROTATION.md`](docs/ROTATION.md) | SDK key rotation guide                        |
-
----
+Conditional refresh: `If-None-Match: <etag>` → `304` when unchanged.
+Realtime: `GET /api/v1/env/{env}/stream` (SSE `config_update` frames).
+Dart usage: see the [Dart & Flutter guide](https://configwire.com/guide.html#dart-sdk)
+and the [example](https://github.com/configwire/dart/tree/main/example).
+
+## Develop
+
+| Command                  | Runs                              |
+| ------------------------ | --------------------------------- |
+| `make serve`             | `go run . serve`                  |
+| `make migrate ARGS="up"` | `go run . migrate <args>`         |
+| `make test`              | `go build` + `go vet` + `go test` |
+| `make lint`              | `gofmt` check + `go vet`          |
+| `make e2e`               | `bash scripts/e2e.sh`             |
+
+Ports: `8090` default serve · `8108` e2e (`scripts/e2e.sh`, do not reuse).
+CI (`.github/workflows/ci.yml`) runs build/vet/test + `make lint` on push/PR.
+ 
+Defaults worth knowing: raw `events` 30d → rolled into `event_daily` (90d);
+stats past 30d answer `approximate:true`. Rate limits: global 200 rps/IP +
+burst 400, fetch 100 / ingest 50 rps per key (`429` carries `Retry-After: 1`).
+Details in [`docs/CONTRACT.md`](docs/CONTRACT.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
 
 ## License
 
-MIT — Copyright © 2026 Lam Thanh Nhan. See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
+ 
