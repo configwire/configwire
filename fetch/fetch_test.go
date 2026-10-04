@@ -203,3 +203,29 @@ func TestCorsOriginSingleRead(t *testing.T) {
 		t.Fatalf("unset: corsOrigin = %q, want dev default", got)
 	}
 }
+
+func TestEvaluateSnapshotMultiConditionAND(t *testing.T) {
+	snap := releases.Snapshot{
+		Flags: []releases.SnapshotFlag{
+			{
+				Key: "greet", Type: "string", Default: "hello",
+				Rules: []releases.SnapshotRule{
+					{Priority: 1,
+						Condition: []any{
+							map[string]any{"field": "platform", "op": "==", "value": "android"},
+							map[string]any{"field": "country", "op": "==", "value": "US"},
+						},
+						Value: "hello-us-android"},
+				},
+			},
+		},
+	}
+	values, _ := EvaluateSnapshot(snap, eval.Context{Platform: "android", Country: "US"}, "")
+	if values["greet"] != "hello-us-android" {
+		t.Errorf("both conditions hold: got %v, want hello-us-android", values["greet"])
+	}
+	values, _ = EvaluateSnapshot(snap, eval.Context{Platform: "android", Country: "FR"}, "")
+	if values["greet"] != "hello" {
+		t.Errorf("one condition fails: got %v, want default hello", values["greet"])
+	}
+}

@@ -195,9 +195,13 @@ func EvaluateSnapshot(snap releases.Snapshot, ctx eval.Context, statusOverride s
 }
 
 // decodeRule converts one stored snapshot rule to an eval.Rule. The stored
-// condition is a single object; it is wrapped as one eval.Condition. An
-// undecodable/null condition decodes to zero conditions, which vacuously
-// matches — the same fallthrough eval applies to any invalid input.
+// condition is either a single object (wrapped as one eval.Condition,
+// backward compat) or a non-empty array of objects (decoded as N
+// eval.Conditions, ANDed by eval.ruleMatches). An undecodable/null
+// condition decodes to zero conditions, which vacuously matches — the same
+// fallthrough eval applies to any invalid input. Publish-time validation
+// keeps such corrupt shapes fail-closed so they never reach a snapshot;
+// the vacuous match here is only the fail-open fallback for legacy rows.
 func decodeRule(sr releases.SnapshotRule, i int) eval.Rule {
 	r := eval.Rule{ID: fmt.Sprintf("rule-%d", i)}
 	if sr.Condition == nil {
@@ -205,6 +209,12 @@ func decodeRule(sr releases.SnapshotRule, i int) eval.Rule {
 	}
 	raw, err := json.Marshal(sr.Condition)
 	if err != nil {
+		return r
+	}
+	var arr []eval.Condition
+	if err := json.Unmarshal(raw, &arr); err == nil && len(arr) >= 1 {
+		r.Conditions = arr
+		r.Value = sr.Value
 		return r
 	}
 	var c eval.Condition

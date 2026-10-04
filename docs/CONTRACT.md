@@ -108,6 +108,11 @@ sorted by key/priority/id):
 {"flags": [{"key": "launch_flag", "type": "bool", "default": false, "group": "", "rules": [{"priority": 0, "condition": {"field": "platform", "op": "==", "value": "ios"}, "value": true}]}], "experiments": [{"id": "abc123", "flag": "launch_flag", "seed": "exp-seed-1", "variants": [{"name": "control"}, {"name": "treatment"}], "status": "running"}]}
 ```
 
+Rule condition is either one `{field, op, value[, seed]}` object or a
+non-empty array (max 10) of such objects, AND-ed at eval
+(`platform=ios AND custom.tier<=3`); the dialog writes a single object
+for one row and an array for 2+ rows.
+
 Ref: `configwire/releases/snapshot.go:77-106` (shapes), `:187-269` (builder).
 
 ETag rule: `etag = hex(sha256(version + ":" + snapshot))[:16]` over the
@@ -130,7 +135,8 @@ Publish validation failures then `400`: empty project
 1-128 chars), over 1000 flags/project, bad flag type (must be
 `number|string|bool|json`), default or rule value not coercible to the
 flag type, bad rule condition shape (unknown field/op, missing value
-key, bare `custom`), bad experiment weights (must sum to exactly 10000
+key, bare `custom`, empty or over-10 condition array, non-object array
+entry), bad experiment weights (must sum to exactly 10000
 bps). Ref: `configwire/releases/snapshot.go:396-436`.
 
 ## 2a. Key minting — `POST /api/v1/admin/keys`

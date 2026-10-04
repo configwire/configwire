@@ -352,23 +352,15 @@ var (
 	}
 )
 
-// validateCondition rejects rule conditions that eval would silently treat
-// as false (unknown field/op, non-object shape, missing value key).
-// Without this, a corrupt condition decodes to zero conditions downstream
-// and vacuously MATCHES — fail-open. Publish-time rejection keeps corrupt
-// conditions fail-closed: they never reach a snapshot. The value key must
-// EXIST (any JSON including null counts); a missing value key is rejected.
-func validateCondition(flagKey string, ruleIndex int, cond any) error {
+// maxConditionsPerRule bounds the array condition form so one rule cannot
+// force unbounded eval cost (ruleMatches ANDs every entry).
+const maxConditionsPerRule = 10
+
+// validateSingleCondition checks one {field,op,value[,seed]} object with the
+// frozen field/op allowlists. m is the already-decoded object shape.
+func validateSingleCondition(flagKey string, ruleIndex int, m map[string]json.RawMessage) error {
 	bad := func(format string, args ...any) error {
 		return fmt.Errorf("flag %q: rule %d has invalid condition: "+format, append([]any{flagKey, ruleIndex}, args...)...)
-	}
-	raw, err := json.Marshal(cond)
-	if err != nil {
-		return bad("must be a JSON object with field/op/value")
-	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return bad("must be a JSON object with field/op/value")
 	}
 	var field, op string
 	if f, ok := m["field"]; !ok || json.Unmarshal(f, &field) != nil || field == "" {
@@ -400,6 +392,57 @@ func validateCondition(flagKey string, ruleIndex int, cond any) error {
 		return bad("op %q not allowed for field %q", op, field)
 	}
 	return nil
+}
+
+// validateCondition accepts either a single {field,op,value[,seed]} object
+// (backward compat) or a non-empty array of such objects (AND semantics
+// downstream in eval.ruleMatches). It rejects rule conditions that eval
+// would silently treat as false (unknown field/op, non-object shape,
+// missing value key, empty array, non-object array elements).
+// Without this, a corrupt condition decodes to zero conditions downstream
+// and vacuously MATCHES — fail-open. Publish-time rejection keeps corrupt
+// conditions (single or inside arrays) fail-closed: they never reach a
+// snapshot. The value key must EXIST (any JSON including null counts);
+// a missing value key is rejected.
+func validateCondition(flagKey string, ruleIndex int, cond any) error {
+	bad := func(format string, args ...any) error {
+		return fmt.Errorf("flag %q: rule %d has invalid condition: "+format, append([]any{flagKey, ruleIndex}, args...)...)
+	}
+	if cond == nil {
+		return bad("must be a JSON object with field/op/value")
+	}
+	raw, err := json.Marshal(cond)
+	if err != nil {
+		return bad("must be a JSON object with field/op/value")
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if strings.HasPrefix(trimmed, "[") {
+		var arr []json.RawMessage
+		if err := json.Unmarshal(raw, &arr); err != nil {
+			return bad("must be a JSON object with field/op/value")
+		}
+		if len(arr) == 0 {
+			return bad("condition array must not be empty")
+		}
+		if len(arr) > maxConditionsPerRule {
+			return bad("condition array must have at most %d entries", maxConditionsPerRule)
+		}
+		for i, elem := range arr {
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(elem, &m); err != nil || m == nil {
+				return bad("condition index %d must be a JSON object with field/op/value", i)
+			}
+			if err := validateSingleCondition(flagKey, ruleIndex, m); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
+		return bad("must be a JSON object with field/op/value")
+	}
+	return validateSingleCondition(flagKey, ruleIndex, m)
 }
 
 // ValidateSnapshot runs the publish dry-assemble checks (no writes).

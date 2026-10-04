@@ -3291,6 +3291,156 @@ section[aria-labelledby="stats"] form.inline-form button {
   display: none;
 }
 
+/* Compact inline condition rows (scoped: flag-rules dialog only). Each
+ * .rule-cond-row is one horizontal flex line: Field + Operator + Value
+ * (+ conditional Min/Max/Custom/Seed, wrapping below on narrow widths)
+ * + remove button. Column names live in a single header above the rows;
+ * per-row label text is visually hidden (controls keep aria-labels). */
+dialog#flag-rules-dialog #flag-rules-form .rule-builder {
+  display: block;
+}
+
+dialog#flag-rules-dialog .rule-cond-header {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 2px;
+  padding-right: 36px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+dialog#flag-rules-dialog .rule-cond-header span:nth-child(1) {
+  flex: 0 1 150px;
+  min-width: 0;
+}
+
+dialog#flag-rules-dialog .rule-cond-header span:nth-child(2) {
+  flex: 0 1 110px;
+  min-width: 0;
+}
+
+dialog#flag-rules-dialog .rule-cond-header span:nth-child(3) {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+dialog#flag-rules-dialog #flag-rules-conditions {
+  display: flex;
+  flex-direction: column;
+}
+
+dialog#flag-rules-dialog .rule-cond-row {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+dialog#flag-rules-dialog .rule-cond-row + .rule-cond-row {
+  margin-top: 24px;
+}
+
+dialog#flag-rules-dialog .rule-cond-row + .rule-cond-row::before {
+  content: "AND";
+  position: absolute;
+  top: -19px;
+  left: 0;
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+dialog#flag-rules-dialog .rule-cond-and {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 2px 0 8px;
+}
+
+dialog#flag-rules-dialog .rule-cond-row label {
+  margin: 0;
+  min-width: 0;
+}
+
+dialog#flag-rules-dialog .rule-cond-label-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+dialog#flag-rules-dialog .rule-cond-field-wrap {
+  flex: 0 1 150px;
+  order: 0;
+}
+
+dialog#flag-rules-dialog .rule-cond-op-wrap {
+  flex: 0 1 110px;
+  order: 2;
+}
+
+dialog#flag-rules-dialog .rule-cond-value-wrap {
+  flex: 1 1 140px;
+  min-width: 140px;
+  order: 3;
+}
+
+/* Custom attr name sits inline right after the Field select (same flex
+ * line), not wrapped below: DOM order puts it 6th, so pull it forward
+ * with order and keep it narrow enough to fit beside Field + Operator. */
+dialog#flag-rules-dialog .rule-cond-custom-wrap {
+  flex: 0 1 140px;
+  min-width: 120px;
+  order: 1;
+}
+
+dialog#flag-rules-dialog .rule-cond-lo-wrap,
+dialog#flag-rules-dialog .rule-cond-hi-wrap,
+dialog#flag-rules-dialog .rule-cond-seed-wrap {
+  flex: 1 1 120px;
+  min-width: 120px;
+  order: 4;
+}
+
+dialog#flag-rules-dialog .rule-cond-row .rule-cond-remove {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  align-self: center;
+  order: 10;
+}
+
+dialog#flag-rules-dialog .rule-builder-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+dialog#flag-rules-dialog .rule-cond-add {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  line-height: 1;
+  font-size: 16px;
+}
+
 #flag-rules-form .json-field-label,
 #flag-rules-form .form-actions {
   grid-column: 1 / -1;

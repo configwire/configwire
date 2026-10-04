@@ -516,39 +516,48 @@
             <input id="flag-rules-id" type="hidden" value="">
             <label>Priority <input id="flag-rules-priority" type="number" value="0" required></label>
             <div class="rule-builder" aria-label="Condition builder">
-              <label>Field
-                <select id="flag-rules-field" aria-label="Condition field">
-                  <option value="platform">platform</option>
-                  <option value="appVersion">appVersion</option>
-                  <option value="locale">locale</option>
-                  <option value="country">country</option>
-                  <option value="percentile">percentile</option>
-                  <option value="custom.">custom.*</option>
-                </select>
-              </label>
-              <label>Operator
-                <select id="flag-rules-op" aria-label="Condition operator"></select>
-              </label>
-              <label id="flag-rules-cond-value-wrap">Value
-                <input id="flag-rules-cond-value" type="text" value="ios" spellcheck="false" placeholder="ios"
-                  aria-label="Condition value">
-              </label>
-              <label id="flag-rules-cond-lo-wrap" hidden>Min
-                <input id="flag-rules-cond-lo" type="number" value="0" min="0" max="9999"
-                  aria-label="Condition range min">
-              </label>
-              <label id="flag-rules-cond-hi-wrap" hidden>Max
-                <input id="flag-rules-cond-hi" type="number" value="9999" min="0" max="9999"
-                  aria-label="Condition range max">
-              </label>
-              <label id="flag-rules-custom-wrap" hidden>Custom attr
-                <input id="flag-rules-custom" type="text" spellcheck="false" placeholder="tier"
-                  aria-label="Custom attribute name">
-              </label>
-              <label id="flag-rules-seed-wrap" hidden>Seed
-                <input id="flag-rules-seed" type="text" spellcheck="false" placeholder="rollout-1"
-                  aria-label="Percentile seed">
-              </label>
+              <div class="rule-cond-header" aria-hidden="true"><span>Field</span><span>Operator</span><span>Value</span></div>
+              <div id="flag-rules-conditions">
+                <div class="rule-cond-row" data-cond-row>
+                  <label class="rule-cond-field-wrap"><span class="rule-cond-label-text" aria-hidden="true">Field</span>
+                    <select id="flag-rules-field" class="rule-cond-field" data-c-field aria-label="Condition field">
+                      <option value="platform">platform</option>
+                      <option value="appVersion">appVersion</option>
+                      <option value="locale">locale</option>
+                      <option value="country">country</option>
+                      <option value="percentile">percentile</option>
+                      <option value="custom.">custom.*</option>
+                    </select>
+                  </label>
+                  <label class="rule-cond-op-wrap"><span class="rule-cond-label-text" aria-hidden="true">Operator</span>
+                    <select id="flag-rules-op" class="rule-cond-op" data-c-op aria-label="Condition operator"></select>
+                  </label>
+                  <label id="flag-rules-cond-value-wrap" class="rule-cond-value-wrap" data-c-value-wrap><span class="rule-cond-label-text" aria-hidden="true">Value</span>
+                    <input id="flag-rules-cond-value" class="rule-cond-value" data-c-value type="text" value="ios" spellcheck="false" placeholder="ios"
+                      aria-label="Condition value">
+                  </label>
+                  <label id="flag-rules-cond-lo-wrap" class="rule-cond-lo-wrap" data-c-lo-wrap hidden><span class="rule-cond-label-text" aria-hidden="true">Min</span>
+                    <input id="flag-rules-cond-lo" class="rule-cond-lo" data-c-lo type="number" value="0" min="0" max="9999"
+                      aria-label="Condition range min">
+                  </label>
+                  <label id="flag-rules-cond-hi-wrap" class="rule-cond-hi-wrap" data-c-hi-wrap hidden><span class="rule-cond-label-text" aria-hidden="true">Max</span>
+                    <input id="flag-rules-cond-hi" class="rule-cond-hi" data-c-hi type="number" value="9999" min="0" max="9999"
+                      aria-label="Condition range max">
+                  </label>
+                  <label id="flag-rules-custom-wrap" class="rule-cond-custom-wrap" data-c-custom-wrap hidden><span class="rule-cond-label-text" aria-hidden="true">Custom attr</span>
+                    <input id="flag-rules-custom" class="rule-cond-custom" data-c-custom type="text" spellcheck="false" placeholder="tier"
+                      aria-label="Custom attribute name">
+                  </label>
+                  <label id="flag-rules-seed-wrap" class="rule-cond-seed-wrap" data-c-seed-wrap hidden><span class="rule-cond-label-text" aria-hidden="true">Seed</span>
+                    <input id="flag-rules-seed" class="rule-cond-seed" data-c-seed type="text" spellcheck="false" placeholder="rollout-1"
+                      aria-label="Percentile seed">
+                  </label>
+                  <button type="button" class="btn ghost rule-cond-remove" data-cond-remove aria-label="Remove condition" hidden>×</button>
+                </div>
+              </div>
+              <div class="rule-builder-actions" style="margin-top:6px;">
+                <button type="button" id="flag-rules-add-cond" class="btn secondary rule-cond-add" aria-label="Add condition" title="Add condition">+</button>
+              </div>
             </div>
             <label class="json-field-label">Condition (JSON)
               <span class="json-row">

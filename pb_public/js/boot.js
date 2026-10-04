@@ -8,6 +8,39 @@
     return CW.confirmDialog(m, o);
   }
 
+  function condRowOf(t) {
+    if (!t) return null;
+    if (t.closest) {
+      try { return t.closest("[data-cond-row]"); } catch (e) { return null; }
+    }
+    return null;
+  }
+
+  function condRowKind(t) {
+    if (!t || !t.getAttribute) return "other";
+    if (t.getAttribute("data-cond-remove") != null) return "remove";
+    if (t.getAttribute("data-c-field") != null || t.id === "flag-rules-field") return "field";
+    if (t.getAttribute("data-c-op") != null || t.id === "flag-rules-op") return "op";
+    if (t.getAttribute("data-c-value") != null || t.getAttribute("data-c-lo") != null ||
+      t.getAttribute("data-c-hi") != null || t.getAttribute("data-c-custom") != null ||
+      t.getAttribute("data-c-seed") != null || t.id === "flag-rules-cond-value" ||
+      t.id === "flag-rules-cond-lo" || t.id === "flag-rules-cond-hi" ||
+      t.id === "flag-rules-custom" || t.id === "flag-rules-seed") return "value";
+    return "other";
+  }
+
+  function condRowEvent(ev) {
+    var t = ev && ev.target ? ev.target : null;
+    var kind = condRowKind(t);
+    if (kind === "remove" || kind === "other") return;
+    var row = condRowOf(t);
+    if (CW.refreshCondRow) {
+      if (kind === "field") CW.refreshCondRow(row, "field");
+      else if (kind === "op") CW.refreshCondRow(row, "op");
+    }
+    if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+  }
+
   // ---- wiring ----
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -150,6 +183,29 @@
     CW.on("flag-rules-seed", "input", function () {
       if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
     });
+    CW.on("flag-rules-add-cond", "click", function () {
+      if (CW.addConditionRow) CW.addConditionRow();
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-conditions", "click", function (ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var rm = null;
+      if (t) {
+        if (t.closest) {
+          try { rm = t.closest("[data-cond-remove]"); } catch (e) { rm = null; }
+        } else if (t.getAttribute && t.getAttribute("data-cond-remove") != null) rm = t;
+      }
+      if (!rm) return;
+      var row = null;
+      if (rm.closest) {
+        try { row = rm.closest("[data-cond-row]"); } catch (e2) { row = null; }
+      }
+      if (!row && rm.parentNode) row = rm.parentNode;
+      if (CW.removeConditionRow) CW.removeConditionRow(row);
+      if (CW.applyRuleBuilderToCondition) CW.applyRuleBuilderToCondition();
+    });
+    CW.on("flag-rules-conditions", "change", condRowEvent);
+    CW.on("flag-rules-conditions", "input", condRowEvent);
     CW.on("flag-rules-value", "input", CW.updateFlagRuleHints);
     CW.on("exp-variant-add", "click", function () {
       if (CW.addVariantRow) CW.addVariantRow("", 0, "");
@@ -1048,6 +1104,10 @@
     get applyRuleBuilderToCondition() { return CW.applyRuleBuilderToCondition; },
     get updateRuleBuilderVisibility() { return CW.updateRuleBuilderVisibility; },
     get resetRuleBuilder() { return CW.resetRuleBuilder; },
+    get addConditionRow() { return CW.addConditionRow; },
+    get removeConditionRow() { return CW.removeConditionRow; },
+    get condRows() { return CW.condRows; },
+    get refreshCondRow() { return CW.refreshCondRow; },
     get applyVariantsBuilderToVariants() { return CW.applyVariantsBuilderToVariants; },
     get syncVariantsBuilderFromInput() { return CW.syncVariantsBuilderFromInput; },
     get updateVariantPlaceholders() { return CW.updateVariantPlaceholders; },

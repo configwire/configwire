@@ -581,6 +581,37 @@ test("rule builder: sync round-trips condition, apply writes JSON", function () 
   assert.equal(cond.value, "android");
 });
 
+test("rule builder: multi-condition rows write array JSON, single writes object", function () {
+  reset();
+  var box = el("flag-rules-conditions");
+  box.children = [];
+  setVal("flag-rules-condition", '{"field":"platform","op":"==","value":"ios"}');
+  assert.equal(h.CW.syncRuleBuilderFromCondition(), true);
+  h.CW.addConditionRow({ field: "country", op: "==", value: "US" });
+  assert.equal(h.CW.applyRuleBuilderToCondition(), true);
+  var cond = JSON.parse(el("flag-rules-condition").value);
+  assert.ok(Array.isArray(cond));
+  assert.equal(cond.length, 2);
+  assert.equal(cond[0].field, "platform");
+  assert.equal(cond[1].field, "country");
+  setVal("flag-rules-condition", JSON.stringify([
+    { field: "platform", op: "!=", value: "android" },
+    { field: "locale", op: "contains", value: "en" },
+  ]));
+  assert.equal(h.CW.syncRuleBuilderFromCondition(), true);
+  assert.equal(h.CW.applyRuleBuilderToCondition(), true);
+  cond = JSON.parse(el("flag-rules-condition").value);
+  assert.ok(Array.isArray(cond));
+  assert.equal(cond.length, 2);
+  assert.equal(cond[0].value, "android");
+  assert.equal(cond[1].field, "locale");
+  setVal("flag-rules-condition", '{"field":"platform","op":"==","value":"ios"}');
+  assert.equal(h.CW.syncRuleBuilderFromCondition(), true);
+  assert.equal(box.children.length, 0);
+  assert.equal(h.CW.applyRuleBuilderToCondition(), true);
+  assert.ok(!Array.isArray(JSON.parse(el("flag-rules-condition").value)));
+  box.children = [];
+});
 test("rule builder: visibility toggles + reset defaults", function () {
   reset();
   h.CW.updateRuleBuilderVisibility("percentile", "between"); // rules.js:254-282

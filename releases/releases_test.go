@@ -308,3 +308,37 @@ func TestRollbackPickEnvScopedMissingVersion(t *testing.T) {
 		t.Fatalf("expected ErrReleaseNotFound for version absent in this env, got %v", err)
 	}
 }
+
+func TestValidateSnapshotAcceptsArrayConditions(t *testing.T) {
+	snap := goodSnapshot()
+	snap.Flags[0].Rules = []SnapshotRule{{Priority: 1, Condition: []any{
+		map[string]any{"field": "platform", "op": "==", "value": "android"},
+		map[string]any{"field": "country", "op": "==", "value": "US"},
+	}, Value: "green"}}
+	if err := ValidateSnapshot(snap); err != nil {
+		t.Fatalf("valid 2-condition array rejected: %v", err)
+	}
+}
+
+func TestValidateSnapshotRejectsBadArrayConditions(t *testing.T) {
+	good := map[string]any{"field": "platform", "op": "==", "value": "android"}
+	bad := map[string]any{"field": "platform"}
+	many := make([]any, 11)
+	for i := range many {
+		many[i] = map[string]any{"field": "platform", "op": "==", "value": "x"}
+	}
+	for name, cond := range map[string]any{
+		"empty-array":   []any{},
+		"over-cap":      many,
+		"bad-element":   []any{good, bad},
+		"nonobject":     []any{good, "platform==android"},
+		"single-bad-op": []any{map[string]any{"field": "platform", "op": ">", "value": "x"}},
+	} {
+		snap := goodSnapshot()
+		snap.Flags[0].Rules = []SnapshotRule{{Priority: 1, Condition: cond, Value: "green"}}
+		err := ValidateSnapshot(snap)
+		if err == nil || !strings.Contains(err.Error(), "invalid condition") {
+			t.Errorf("%s: must be rejected with 'invalid condition', got %v", name, err)
+		}
+	}
+}
