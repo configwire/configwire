@@ -198,6 +198,77 @@ Success `200` (source snapshot bytes copied verbatim into a new row,
 - Non-integer version then `400`. Releases rows are immutable
   (updates denied on every path).
 
+## 3a. Promote — `POST /api/v1/admin/env/{dest}/promote`
+
+Ref: `configwire/releases/handler.go` (`postPromoteEnv`, `promoteToNewRow`).
+
+Superuser-only; SDK-key-only or unauth then `401`. The dest env
+comes from the path; the source env comes from the body.
+Qualifier split: `?project=<projectId>` disambiguates the DEST
+path slug, while body `srcProject` disambiguates the SRC body
+slug; unambiguous slugs work without either. Ref:
+`configwire/envresolve/resolve.go`.
+
+Request (`srcEnv` + `srcVersion` + `destBaseVersion` required,
+`srcProject` only disambiguates a src slug shared by several
+projects, `note` is free text):
+
+```json
+{"srcEnv": "dev", "srcProject": "<optional projectId>", "srcVersion": 2, "note": "...", "destBaseVersion": 1}
+```
+
+Empty body or malformed JSON then `400`. A `srcVersion` or
+`destBaseVersion` sent as a JSON string fails decoding then
+`400`. Ref: `configwire/releases/handler.go:114-134`.
+
+`destBaseVersion` must equal the dest env's current max, `0` on
+first promote to an empty dest.
+
+Success `200` (source snapshot bytes copied verbatim into a new
+row in the DEST env, `version = max(dest)+1`, fresh etag):
+
+```json
+{"version": 3, "etag": "1f75363af9defec2"}
+```
+
+Self-promote (src and dest resolve to the same env) is allowed
+as a normal clone with no special case.
+
+ETag rule: fresh on dest, `EtagFor(newVersion, srcBytes)` over
+the copied bytes, so a promoted row gets a new etag even with a
+byte-identical snapshot. Ref:
+`configwire/releases/snapshot.go:110-113`.
+
+- Unknown dest slug then `404` (`Unknown env.`); unknown src
+  version in the src env then `404` (`Unknown release version.`).
+- `400` on: empty or malformed body; wrong JSON types;
+  `srcVersion<1`
+  (`invalid version: must be a positive integer.`); ambiguous
+  dest or src slug without its qualifier
+  (`ambiguous env slug…: it exists in N projects; specify ?project=<projectId>`);
+  cross-project (`promotion across projects is not allowed: source and destination must share one project.`);
+  snapshot validation (verbatim `ValidateSnapshot` errors, or
+  `releases: source snapshot is corrupt` on a corrupt source row).
+- Same-project-only is a hard rule: source and destination must
+  share one project, else `400` with the cross-project message
+  above. No cross-project rebuild exists.
+- Stale `destBaseVersion` then `409` with no write:
+
+```json
+{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": 2}
+```
+
+Ref: `postPromoteEnv` (guard order 401, then 400 body, then
+404/400 dest, then 404/400 src, then 400 `srcVersion<1`, then
+404 src-version / 400 ambiguous+cross-project, then 409
+dest-stale, then 400 validation, then 200).
+
+Audit/SSE parity: the new row stores `author` from the caller,
+the server logs one `releases: promoted…` line, and the
+existing `RegisterHook` (`OnRecordAfterCreateSuccess` on
+`releases`) emits one `config_update` frame to the DEST env's
+subscribers. Ref: `configwire/stream/stream.go:RegisterHook`.
+
 ## 4. Events ingest — `POST /api/v1/env/{env}/events`
 
 Ref: `configwire/ingest/handler.go:111-171` (order), `configwire/ingest/ingest.go:101-130` (body).
@@ -426,6 +497,7 @@ Success `200` (both verbs, same shape):
 | Code | Meaning                                                                               | Body                                                                                                                   | Ref                                                                                               |
 | ---- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | 200  | fetch config / publish / rollback / stats / purge                                     | shapes in sections 1, 2, 3, 5, 7                                                                                       | fetch `:340-346`, releases `:148,257`, stats `:168-173`, purge `:320-335`                         |
+| 200/400/401/404/409 | promote a release snapshot across envs (new row, fresh etag)                   | shapes in section 3a                                                                                                    | releases handler `postPromoteEnv`, `promoteToNewRow`                                              |
 | 202  | events accepted                                                                       | `{"accepted": N, "status": 202}`                                                                                       | ingest handler `:170`                                                                             |
 | 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:93-101`                                                                                   |
 | 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:326-328`                                                                                  |

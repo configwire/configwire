@@ -3578,6 +3578,7 @@ dialog#project-dialog,
 dialog#key-limits-dialog,
 dialog#experiment-dialog,
 dialog#release-dialog,
+dialog#promote-dialog,
 dialog#transfer-export-dialog,
 dialog#transfer-import-dialog,
 dialog#transfer-diff-dialog {
@@ -3722,6 +3723,7 @@ dialog#project-dialog::backdrop,
 dialog#key-limits-dialog::backdrop,
 dialog#experiment-dialog::backdrop,
 dialog#release-dialog::backdrop,
+dialog#promote-dialog::backdrop,
 dialog#transfer-export-dialog::backdrop,
 dialog#transfer-import-dialog::backdrop,
 dialog#transfer-diff-dialog::backdrop {
@@ -3737,6 +3739,7 @@ dialog#project-dialog h3,
 dialog#key-limits-dialog h3,
 dialog#experiment-dialog h3,
 dialog#release-dialog h3,
+dialog#promote-dialog h3,
 dialog#transfer-export-dialog h3,
 dialog#transfer-import-dialog h3,
 dialog#transfer-diff-dialog h3 {
@@ -4104,7 +4107,8 @@ dialog#json-editor-dialog .muted {
   dialog#project-dialog,
   dialog#key-limits-dialog,
   dialog#experiment-dialog,
-  dialog#release-dialog {
+  dialog#release-dialog,
+  dialog#promote-dialog {
     padding: var(--space-4);
   }
 }
@@ -4456,4 +4460,48 @@ dialog#transfer-diff-dialog .muted {
   color: var(--danger);
   border-color: rgba(248, 113, 113, 0.45);
   background: rgba(248, 113, 113, 0.08);
+}
+
+/* Promote dialog — mirrors release dialog (task 11). The dialog is built
+ * lazily by ensurePromoteDialog in js/releases.js (no static markup in
+ * index.html); every value below copies the release/key-limits dialog rules
+ * above (same spacing scale, borders, button treatment via the generic
+ * .btn/.dialog-actions rules, muted text tones). Buttons need no per-ID
+ * rule: #promote-cancel/.btn.ghost + #promote-submit/.btn.primary reuse the
+ * generic treatments exactly like #release-dialog-ok does. No
+ * prefers-color-scheme / [data-theme] variant exists (single dark theme). */
+dialog#promote-dialog {
+  width: min(560px, 92vw);
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+#promote-src-summary {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 var(--space-3);
+  overflow-wrap: anywhere;
+}
+
+#promote-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+#promote-form label {
+  min-width: 0;
+}
+
+#promote-dest-env,
+#promote-note,
+#promote-dest-base {
+  width: 100%;
+}
+
+#promote-result {
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
+  min-height: 1em;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }

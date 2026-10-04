@@ -296,6 +296,7 @@ All admin paths require a superuser token: `Authorization: <token>` (bare or `Be
 | ------ | ----------------------------------------------------- | ---------------------------------------------------------- |
 | `POST` | `/api/v1/admin/env/{env}/publish`                     | Publish a new immutable release                            |
 | `POST` | `/api/v1/admin/env/{env}/releases/{version}/rollback` | Roll back to a previous release (republishes as a new row) |
+| `POST` | `/api/v1/admin/env/{env}/promote`                     | Promote a release snapshot from another env (new row, fresh etag) |
 | `GET`  | `/api/v1/admin/env/{env}/stats`                       | Query env stats                                            |
 | `POST` | `/api/v1/admin/maintenance/purge`                     | Trigger event purge (`?dry=1` for dry run)                 |
 | `GET`  | `/api/v1/admin/limits`                                | Read per-second rate limits (superuser-only)               |
@@ -307,6 +308,15 @@ All admin paths require a superuser token: `Authorization: <token>` (bare or `Be
 curl -X POST http://127.0.0.1:8090/api/v1/admin/env/dev/publish \
   -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
   -d '{"note":"my release","baseVersion":1}'
+```
+
+Promote a release snapshot from another env (same project only;
+`destBaseVersion` must equal the dest env's current max):
+
+```bash
+curl -X POST http://127.0.0.1:8090/api/v1/admin/env/staging/promote \
+  -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"srcEnv":"dev","srcVersion":2,"note":"promote dev v2","destBaseVersion":1}'
 ```
 
 > [!IMPORTANT]

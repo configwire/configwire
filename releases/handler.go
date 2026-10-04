@@ -68,6 +68,7 @@ func internalSave(app core.App, rec *core.Record) error {
 func Register(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/env/{env}/publish", postPublish).Bind(apis.RequireSuperuserAuth())
 	se.Router.POST("/api/v1/admin/env/{env}/releases/{version}/rollback", postRollbackEnv).Bind(apis.RequireSuperuserAuth())
+	se.Router.POST("/api/v1/admin/env/{dest}/promote", postPromoteEnv).Bind(apis.RequireSuperuserAuth())
 }
 
 // baseVersion is required and must equal the env's current max version
@@ -80,6 +81,19 @@ type publishRequest struct {
 
 type rollbackRequest struct {
 	Note string `json:"note"`
+}
+
+// promoteRequest is the POST /api/v1/admin/env/:dest/promote body.
+// srcEnv + srcVersion + destBaseVersion are required (srcProject only
+// disambiguates a src slug shared by several projects; note is free
+// text). Wrong JSON types (e.g. a string-typed srcVersion) fail strict
+// decodeBody -> 400.
+type promoteRequest struct {
+	SrcEnv          string `json:"srcEnv"`
+	SrcProject      string `json:"srcProject,omitempty"`
+	SrcVersion      int    `json:"srcVersion"`
+	Note            string `json:"note"`
+	DestBaseVersion int    `json:"destBaseVersion"`
 }
 
 func callerAuthor(re *core.RequestEvent) string {
@@ -314,6 +328,62 @@ func rollbackToNewRow(app core.App, src *core.Record, note, author string, fromV
 	return version, etag, nil
 }
 
+// promoteToNewRow copies src's snapshot bytes verbatim into a NEW row in
+// destEnvID with version=max(dest)+1 and a fresh etag (EtagFor over the
+// canonical src bytes). Dest parameterization is pure: the write target
+// always comes from the destEnvID param — src.GetString("env") is only
+// read for the audit log, never as the write target. The snapshot is
+// re-validated (json.Valid, then json.Unmarshal into Snapshot +
+// ValidateSnapshot) so a corrupt source row fails here instead of
+// cloning bad bytes; ValidateSnapshot errors propagate verbatim for the
+// caller to map to 400. Persists via internalSave so the main.go
+// publish-only guard passes. Single-binary scope: the caller holds
+// writeMu; this helper does NOT lock. Log fields use env IDs (not
+// slugs) to avoid extra resolves — no slug params needed.
+func promoteToNewRow(app core.App, src *core.Record, destEnvID, note, author string, fromVersion int) (int, string, error) {
+	snapBytes, err := rawSnapshotBytes(src.GetRaw("snapshot"))
+	if err != nil {
+		return 0, "", err
+	}
+	if !json.Valid(snapBytes) {
+		return 0, "", errors.New("releases: source snapshot is corrupt")
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(snapBytes, &snap); err != nil {
+		return 0, "", errors.New("releases: source snapshot is corrupt")
+	}
+	if err := ValidateSnapshot(snap); err != nil {
+		return 0, "", err
+	}
+
+	currentMax, err := MaxVersionForEnv(app, destEnvID)
+	if err != nil {
+		return 0, "", err
+	}
+	version := NextVersion(currentMax)
+	etag := EtagFor(version, snapBytes)
+
+	collection, err := app.FindCollectionByNameOrId("releases")
+	if err != nil {
+		return 0, "", err
+	}
+	rec := core.NewRecord(collection)
+	rec.Set("version", version)
+	rec.Set("etag", etag)
+	rec.Set("snapshot", string(snapBytes))
+	rec.Set("author", author)
+	rec.Set("note", note)
+	rec.Set("env", destEnvID)
+	if err := internalSave(app, rec); err != nil {
+		return 0, "", err
+	}
+
+	log.Printf("releases: promoted srcEnv=%s srcVersion=%d destEnv=%s version=%d etag=%s author=%s note=%q",
+		src.GetString("env"), fromVersion, destEnvID, version, etag, author, note)
+
+	return version, etag, nil
+}
+
 // decodeRollbackNote reads the optional {note} body shared by both
 // rollback routes: an empty body means "no note"; only malformed
 // (non-empty, non-JSON) bodies are 400.
@@ -375,6 +445,81 @@ func postRollbackEnv(re *core.RequestEvent) error {
 	version, etag, err := rollbackToNewRow(re.App, recs[idx], req.Note, callerAuthor(re), n)
 	if err != nil {
 		return err
+	}
+
+	return re.JSON(http.StatusOK, map[string]any{"version": version, "etag": etag})
+}
+
+// postPromoteEnv handles POST /api/v1/admin/env/:dest/promote.
+// It clones the src release row's snapshot bytes verbatim into a NEW row
+// in the dest env with version=max(dest)+1 and a fresh etag.
+// Self-promote (src and dest resolve to the same env) is allowed as a
+// normal clone with no special case — it reads and writes the same env
+// like any other promote.
+// Order: 401 (superuser, via middleware) -> 400 (empty/malformed body,
+// strict decodeBody) -> 404/400 (unknown/ambiguous dest slug via
+// ?project=) -> 404/400 (unknown/ambiguous srcEnv + srcProject) ->
+// 400 (srcVersion < 1) -> 404 (unknown src release version in the src
+// env) / 400 (ambiguous duplicate rows, cross-project promote) ->
+// 409 (stale destBaseVersion, NO write) -> 400 (snapshot validation,
+// verbatim) -> 200.
+func postPromoteEnv(re *core.RequestEvent) error {
+	security.SetHeaders(re)
+	var req promoteRequest
+	if err := decodeBody(re, &req); err != nil {
+		return err
+	}
+	destSlug := re.Request.PathValue("dest")
+	// ?project= disambiguates a dest slug shared by several projects;
+	// unambiguous slugs keep working without it.
+	destEnvRec, err := envresolve.Resolve(re.App, destSlug, re.Request.URL.Query().Get("project"))
+	if err != nil {
+		return envresolve.ToRequestError(re, err)
+	}
+	// The src env resolves through the body's srcEnv (+ optional
+	// srcProject qualifier for shared slugs), mirroring the dest path.
+	srcEnvRec, err := envresolve.Resolve(re.App, req.SrcEnv, req.SrcProject)
+	if err != nil {
+		return envresolve.ToRequestError(re, err)
+	}
+	if req.SrcVersion < 1 {
+		return re.BadRequestError("invalid version: must be a positive integer.", nil)
+	}
+
+	// One lock across the src lookup + dest-max re-read + insert, so a
+	// concurrent publish/promote cannot interleave a stale dest max.
+	writeMu.Lock()
+	defer writeMu.Unlock()
+
+	recs, err := re.App.FindAllRecords("releases")
+	if err != nil {
+		return err
+	}
+	idx, rerr := RollbackPick(releaseRows(recs), req.SrcVersion, srcEnvRec.Id)
+	if rerr != nil {
+		if errors.Is(rerr, ErrReleaseAmbiguous) {
+			return re.BadRequestError("ambiguous version: duplicate rows for this version in this env.", nil)
+		}
+		return re.NotFoundError("Unknown release version.", nil)
+	}
+	if srcEnvRec.GetString("project") != destEnvRec.GetString("project") {
+		return re.BadRequestError("promotion across projects is not allowed: source and destination must share one project.", nil)
+	}
+	destMax, err := MaxVersionForEnv(re.App, destEnvRec.Id)
+	if err != nil {
+		return err
+	}
+	if !CheckBaseVersion(req.DestBaseVersion, destMax) {
+		return re.JSON(http.StatusConflict, map[string]any{
+			"message":        "Stale baseVersion: a newer release exists.",
+			"status":         http.StatusConflict,
+			"currentVersion": destMax,
+		})
+	}
+
+	version, etag, err := promoteToNewRow(re.App, recs[idx], destEnvRec.Id, req.Note, callerAuthor(re), req.SrcVersion)
+	if err != nil {
+		return re.BadRequestError(err.Error(), nil)
 	}
 
 	return re.JSON(http.StatusOK, map[string]any{"version": version, "etag": etag})

@@ -4,6 +4,10 @@
 
   var CW = window.CW;
 
+  // Hover-note source of truth for the single-environment guard (menu
+  // title + dialog note + submit guard below all read this one string).
+  var NO_DEST_NOTE = "Only one environment exists — create another environment to promote to";
+
   function renderReleases() {
     var list = CW.$("release-list");
     if (!list) return;
@@ -12,17 +16,26 @@
     var expanded = !!CW.state.releasesExpanded;
     var visible = expanded ? CW.state.releases : CW.state.releases.slice(0, 3);
     var html = visible.map(function (r, idx) {
+      // Single-environment guard: destEnvs() is the same helper the dialog
+      // uses (single source of truth); with zero destinations the menu item
+      // renders disabled with a hover note (native title, no tooltip).
+      var noDest = !destEnvs().length;
+      var noDestAttr = noDest
+        ? ' disabled title="' + NO_DEST_NOTE + '" data-promote-nodest="1"'
+        : "";
       var label = "v" + CW.esc(r.version) + " etag " + CW.esc(r.etag) +
         (r.note ? " — " + CW.esc(r.note) : "");
       var svgOpen = '<svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
       var viewIcon = svgOpen + '<path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
       var exportIcon = svgOpen + '<path d="M8 2v9"/><path d="M4.5 7.5 8 11l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg>';
       var rollbackIcon = svgOpen + '<path d="M2.5 6.5h7a3 3 0 0 1 0 6H5"/><path d="M5.5 3.5 2.5 6.5l3 3"/></svg>';
+      var promoteIcon = svgOpen + '<path d="M8 13V3"/><path d="M4.5 6.5 8 3l3.5 3.5"/><path d="M2.5 13h11"/></svg>';
       var menu = '<span class="release-menu-wrap">' +
         '<button type="button" class="release-menu-btn" data-release-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for release v' + CW.esc(r.version) + '">&#8943;</button>' +
         '<div class="release-menu" role="menu" hidden>' +
         '<button type="button" role="menuitem" data-view-release="' + CW.esc(r.id) + '">' + viewIcon + "<span>view</span></button>" +
         '<button type="button" role="menuitem" data-export-release="' + CW.esc(r.id) + '">' + exportIcon + "<span>export</span></button>" +
+        '<button type="button" role="menuitem" data-promote-version="' + CW.esc(r.version) + '"' + noDestAttr + '>' + promoteIcon + "<span>Promote to…</span></button>" +
         (idx === 0 ? "" :
           '<button type="button" role="menuitem" data-rollback-version="' + CW.esc(r.version) + '">' + rollbackIcon + "<span>Rollback to v" +
           CW.esc(r.version) + "</span></button>") +
@@ -360,10 +373,16 @@
     var discard = CW.$("discard-unpublished");
     if (discard) discard.disabled = dis ? true : !CW.state.unpublishedChanges;
     var rb = null;
-    try { rb = document.querySelectorAll('button[data-rollback-version]'); } catch (e) { rb = null; }
+    try { rb = document.querySelectorAll('button[data-rollback-version],button[data-promote-version]'); } catch (e) { rb = null; }
     if (rb) {
       for (var i = 0; i < rb.length; i++) {
-        try { rb[i].disabled = dis; } catch (e2) { /* best-effort */ }
+        try {
+          var el = rb[i];
+          // Guard-disabled (no destination) buttons stay disabled: a plain
+          // setApplying(false) pass must never re-enable them.
+          if (el && el.getAttribute && el.getAttribute("data-promote-nodest")) { el.disabled = true; continue; }
+          el.disabled = dis;
+        } catch (e2) { /* best-effort */ }
       }
     }
   }
@@ -711,8 +730,14 @@
 
   function loadReleases() {
     // Fetch all then filter client-side by selected env relation; sort -version.
+    // allReleases-vs-second-fetch choice: keep the unfiltered full list in
+    // CW.state.allReleases (one fetch, no extra round-trip); CW.state.releases
+    // stays dest-filtered so the release list + publish-base keep their
+    // current-env semantics, while the promote dialog sources the fixed
+    // source release and each dest env's max version from allReleases.
     return CW.apiAll("/api/collections/releases/records?perPage=200&sort=-version").then(function (items) {
       items = items || [];
+      CW.state.allReleases = items.slice().sort(function (a, b) { return b.version - a.version; });
       if (CW.state.envId) items = items.filter(function (r) { return r.env === CW.state.envId; });
       CW.state.releases = items.slice().sort(function (a, b) { return b.version - a.version; });
       renderReleases();
@@ -738,6 +763,310 @@
     });
   }
 
+  function promote(srcEnv, srcVersion, destBaseVersion, note, srcProject, destSlug) {
+    var dest = destSlug || CW.envSlug();
+    var url = "/api/v1/admin/env/" + encodeURIComponent(dest) + "/promote";
+    if (CW.state.projectId) url += "?project=" + encodeURIComponent(CW.state.projectId);
+    var body = { srcEnv: srcEnv, srcVersion: srcVersion, note: note || "", destBaseVersion: destBaseVersion };
+    if (srcProject) body.srcProject = srcProject;
+    return fetch(url, {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, CW.authHeaders()),
+      body: JSON.stringify(body),
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        return { status: res.status, data: data };
+      });
+    });
+  }
+
+  // Control-surface choice (A, promote-to direction): release-menu item
+  // "Promote to…" opens a dialog with the SOURCE fixed to the current env
+  // at the row's version (summary line only, no src dropdowns) and a
+  // DESTINATION env dropdown (same-project envs minus the current env,
+  // dest-base auto-filled from the dest env's max version in allReleases).
+  // No index.html/CSS change was needed: outcome text reuses the existing
+  // publish-result/publish-base IDs, and the dialog below is built lazily
+  // in JS so no new static markup was required.
+  function promoteDefaultNote(srcEnv, srcVersion) {
+    return "promoted from environment " + srcEnv + "@v" + srcVersion;
+  }
+
+  function resolveEnvId(slug) {
+    var envs = (CW.state && Array.isArray(CW.state.envs)) ? CW.state.envs : [];
+    for (var i = 0; i < envs.length; i++) {
+      if (envs[i] && String(envs[i].slug) === String(slug)) return envs[i].id;
+    }
+    return null;
+  }
+
+  function destEnvs() {
+    var cur = "";
+    try { cur = CW.envSlug(); } catch (e) { cur = ""; }
+    var pid = (CW.state && CW.state.projectId) || null;
+    var envs = (CW.state && Array.isArray(CW.state.envs)) ? CW.state.envs : [];
+    var out = [];
+    for (var i = 0; i < envs.length; i++) {
+      if (!envs[i] || !envs[i].slug) continue;
+      if (String(envs[i].slug) === String(cur)) continue;
+      if (pid && String(envs[i].project) !== String(pid)) continue;
+      out.push(String(envs[i].slug));
+    }
+    return out;
+  }
+
+  // Pure over CW.state.allReleases + CW.state.envs: the dest env's max
+  // version (by env id via slug→id resolution, slug fallback when the id
+  // is unknown), 0 when the dest has no releases. Unit-tested in
+  // js_tests/test-promote.js via CW.destLatestVersion.
+  function destLatestVersion(destSlug) {
+    var id = resolveEnvId(destSlug);
+    var all = (CW.state && Array.isArray(CW.state.allReleases)) ? CW.state.allReleases : [];
+    var m = 0;
+    for (var i = 0; i < all.length; i++) {
+      var r = all[i];
+      if (!r) continue;
+      if (id ? String(r.env) === String(id) : String(r.env) === String(destSlug)) {
+        if (r.version > m) m = r.version;
+      }
+    }
+    return m;
+  }
+
+  function findSourceRelease(srcEnv, srcVersion) {
+    var all = (CW.state && Array.isArray(CW.state.allReleases)) ? CW.state.allReleases : [];
+    var id = resolveEnvId(srcEnv);
+    for (var i = 0; i < all.length; i++) {
+      var r = all[i];
+      if (!r) continue;
+      if (String(r.version) !== String(srcVersion)) continue;
+      if (id ? String(r.env) === String(id) : String(r.env) === String(srcEnv)) return r;
+    }
+    return null;
+  }
+
+  // Source-fixed promote-to state: the row version captured by
+  // openPromoteDialog (the source is always the current env).
+  var pendingPromoteSrcVersion = null;
+
+  function ensurePromoteDialog() {
+    var dlg = null;
+    try { dlg = document.getElementById("promote-dialog"); } catch (e) { dlg = null; }
+    if (dlg) return dlg;
+    dlg = document.createElement("dialog");
+    dlg.id = "promote-dialog";
+    dlg.setAttribute("aria-labelledby", "promote-dialog-title");
+    dlg.innerHTML =
+      '<h3 id="promote-dialog-title">Promote to…</h3>' +
+      '<p id="promote-src-summary" role="status"></p>' +
+      '<form id="promote-form" method="dialog">' +
+      '<label>Destination environment <select id="promote-dest-env"></select></label>' +
+      '<label>Note (optional) <input id="promote-note" type="text" maxlength="500"></label>' +
+      '<label>Destination base version <input id="promote-dest-base" type="number" min="0" required></label>' +
+      '<div class="dialog-actions">' +
+      '<span class="dialog-spacer"></span>' +
+      '<button type="button" id="promote-cancel" class="btn ghost">Cancel</button>' +
+      '<button type="submit" id="promote-submit" class="btn primary">Promote</button>' +
+      "</div></form>" +
+      '<p id="promote-result" role="status"></p>';
+    if (document.body && document.body.appendChild) document.body.appendChild(dlg);
+    function close() {
+      try {
+        if (dlg.open) dlg.close();
+        else if (dlg.removeAttribute) dlg.removeAttribute("open");
+      } catch (e) { /* already closed */ }
+    }
+    var cancel = null;
+    try { cancel = dlg.querySelector ? dlg.querySelector("#promote-cancel") : document.getElementById("promote-cancel"); } catch (e) { cancel = null; }
+    if (cancel && cancel.addEventListener) cancel.addEventListener("click", close);
+    var form = null;
+    try { form = dlg.querySelector ? dlg.querySelector("#promote-form") : document.getElementById("promote-form"); } catch (e) { form = null; }
+    function onChange() { refreshPromoteDialog(); }
+    var destEnv = null;
+    try {
+      destEnv = dlg.querySelector ? dlg.querySelector("#promote-dest-env") : document.getElementById("promote-dest-env");
+    } catch (e) { destEnv = null; }
+    if (destEnv && destEnv.addEventListener) destEnv.addEventListener("change", onChange);
+    if (form && form.addEventListener) form.addEventListener("submit", function (ev) {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      submitPromote();
+    });
+    return dlg;
+  }
+
+  function setSelectOptions(sel, values, current) {
+    if (!sel) return;
+    sel.innerHTML = values.map(function (v) {
+      return '<option value="' + CW.esc(v) + '"' +
+        (String(v) === String(current) ? " selected" : "") + ">" + CW.esc(v) + "</option>";
+    }).join("");
+    try { sel.value = current; } catch (e) { /* stub DOM */ }
+  }
+
+  function currentPromoteSel() {
+    var srcEnv = "";
+    try { srcEnv = CW.envSlug(); } catch (e) { srcEnv = ""; }
+    var srcVersion = pendingPromoteSrcVersion;
+    var destSlug = "", note = "", destBase = null;
+    try {
+      var de = document.getElementById("promote-dest-env");
+      if (de && de.value != null && String(de.value) !== "") destSlug = String(de.value);
+      var nt = document.getElementById("promote-note");
+      if (nt && nt.value != null) note = String(nt.value);
+      var db = document.getElementById("promote-dest-base");
+      if (db && db.value != null && String(db.value) !== "") destBase = parseInt(db.value, 10);
+    } catch (e) { /* stub DOM */ }
+    if (!destSlug) {
+      var ds = destEnvs();
+      if (ds.length) destSlug = ds[0];
+    }
+    return { srcEnv: srcEnv, srcVersion: srcVersion, destSlug: destSlug, note: note, destBase: destBase };
+  }
+
+  function refreshPromoteDialog() {
+    var sel = currentPromoteSel();
+    var dests = destEnvs();
+    setSelectOptions(document.getElementById("promote-dest-env"), dests, sel.destSlug);
+    var rec = (sel.srcVersion != null && sel.srcVersion !== "")
+      ? findSourceRelease(sel.srcEnv, sel.srcVersion)
+      : null;
+    var sum = null;
+    try { sum = document.getElementById("promote-src-summary"); } catch (e) { sum = null; }
+    if (sum) {
+      sum.textContent = rec
+        ? "Source environment " + sel.srcEnv + " · v" + rec.version + " · etag " + rec.etag + (rec.note ? " \u2014 " + rec.note : "")
+        : "No matching source release in environment " + sel.srcEnv + " at v" + sel.srcVersion + ".";
+    }
+    try {
+      var nt = document.getElementById("promote-note");
+      if (nt) nt.placeholder = promoteDefaultNote(sel.srcEnv, (sel.srcVersion != null && sel.srcVersion !== "") ? sel.srcVersion : "?");
+      var db = document.getElementById("promote-dest-base");
+      if (db) db.value = destLatestVersion(sel.destSlug);
+    } catch (e) { /* stub DOM */ }
+    // Empty-destination guard (defensive: state may have changed since the
+    // menu rendered): explain in the result line and keep submit disabled
+    // until a destination exists. Non-empty leaves any in-flight result
+    // text alone (success/error messages are written by submitPromote).
+    try {
+      var res = document.getElementById("promote-result");
+      var sub = document.getElementById("promote-submit");
+      if (!dests.length) {
+        if (res) res.textContent = NO_DEST_NOTE;
+        if (sub) sub.disabled = true;
+      } else if (sub) {
+        sub.disabled = false;
+      }
+    } catch (e2) { /* stub DOM */ }
+  }
+
+  function openPromoteDialog(presetVersion) {
+    var dlg = ensurePromoteDialog();
+    pendingPromoteSrcVersion = (presetVersion != null && presetVersion !== "") ? String(presetVersion) : null;
+    if (pendingPromoteSrcVersion == null) {
+      var lv = latestVersion();
+      pendingPromoteSrcVersion = lv ? String(lv) : null;
+    }
+    var dests = destEnvs();
+    setSelectOptions(document.getElementById("promote-dest-env"), dests, dests.length ? dests[0] : "");
+    try {
+      var nt = document.getElementById("promote-note");
+      if (nt) nt.value = "";
+      var pr = document.getElementById("promote-result");
+      if (pr) pr.textContent = "";
+    } catch (e) { /* stub DOM */ }
+    refreshPromoteDialog();
+    try {
+      if (dlg.open) return dlg;
+      if (typeof dlg.showModal === "function") dlg.showModal();
+      else if (dlg.setAttribute) dlg.setAttribute("open", "");
+    } catch (e) { /* already open */ }
+    return dlg;
+  }
+
+  function submitPromote() {
+    if (CW.state.applying) return Promise.resolve(null);
+    var sel = currentPromoteSel();
+    var srcVersion = (sel.srcVersion == null || sel.srcVersion === "") ? 0 : parseInt(sel.srcVersion, 10);
+    var note = sel.note || promoteDefaultNote(sel.srcEnv, sel.srcVersion);
+    var destBase = sel.destBase;
+    if (destBase == null || isNaN(destBase)) destBase = destLatestVersion(sel.destSlug);
+    var srcProject = (CW.state && CW.state.projectId) ? String(CW.state.projectId) : "";
+    var resultEl = null;
+    try { resultEl = document.getElementById("promote-result") || CW.$("publish-result"); }
+    catch (e) { resultEl = null; }
+    function say(msg) {
+      if (resultEl) resultEl.textContent = msg;
+      var pub = null;
+      try { pub = CW.$("publish-result"); } catch (e2) { pub = null; }
+      if (pub && pub !== resultEl) pub.textContent = msg;
+    }
+    // Empty-destination guard: never submit a promote with no dest selection
+    // (the menu disables the entry, and the dialog keeps submit disabled;
+    // this covers a state change between dialog open and submit).
+    if (!sel.destSlug) {
+      say(NO_DEST_NOTE);
+      return Promise.resolve(null);
+    }
+    setApplying(true);
+    return promote(sel.srcEnv, srcVersion, destBase, note, srcProject, sel.destSlug).then(function (out) {
+      setApplying(false);
+      if (out.status === 200) {
+        var nv = (out.data && out.data.version != null) ? out.data.version : "?";
+        say("Promoted to environment " + sel.destSlug + " as v" + nv + ".");
+        return loadReleases().then(function () {
+          refreshPromoteDialog();
+        }, function () {});
+      }
+      if (out.status === 409) {
+        return loadReleases().then(function () {
+          var cur = (out.data && out.data.currentVersion != null) ? out.data.currentVersion : destLatestVersion(sel.destSlug);
+          try {
+            var db = document.getElementById("promote-dest-base");
+            if (db) db.value = destLatestVersion(sel.destSlug);
+          } catch (e) { /* stub DOM */ }
+          // Wording choice: keep our "Stale baseVersion:" prefix verbatim
+          // (it quotes the server message/field name; rewording it would
+          // bury the server detail) and spell out only our own tail as
+          // "current destination version".
+          say("Stale baseVersion: " + CW.serverMessage(out.data) + " (current destination version: " + cur + ")");
+        }, function () {
+          say("Stale baseVersion: " + CW.serverMessage(out.data));
+        });
+      }
+      say("Promote failed (" + out.status + "): " + CW.serverMessage(out.data));
+      return null;
+    }, function (e) {
+      setApplying(false);
+      say("Promote failed: " + ((e && e.message) || e));
+      return null;
+    });
+  }
+
+  function armPromoteMenuClicks() {
+    if (armPromoteMenuClicks.armed) return;
+    armPromoteMenuClicks.armed = true;
+    function handler(ev) {
+      var t = ev && ev.target ? ev.target : null;
+      var btn = null;
+      if (t) {
+        if (t.closest) btn = t.closest("[data-promote-version]");
+        else if (t.getAttribute && t.getAttribute("data-promote-version")) btn = t;
+      }
+      if (!btn || !btn.getAttribute) return;
+      if (CW.state.applying) return;
+      if (btn.disabled) return;
+      var v = btn.getAttribute("data-promote-version");
+      var menu = t.closest ? t.closest(".release-menu") : null;
+      if (menu) menu.hidden = true;
+      openPromoteDialog(v);
+    }
+    try {
+      if (document.addEventListener) document.addEventListener("click", handler);
+    } catch (e) { /* non-DOM */ }
+  }
+
+  armPromoteMenuClicks();
+
   function rollback(version, note) {
     var url = "/api/v1/admin/env/" + encodeURIComponent(CW.envSlug()) +
       "/releases/" + encodeURIComponent(version) + "/rollback";
@@ -760,6 +1089,12 @@
   CW.loadReleases = loadReleases;
   CW.publish = publish;
   CW.rollback = rollback;
+  CW.promote = promote;
+  CW.openPromoteDialog = openPromoteDialog;
+  CW.submitPromote = submitPromote;
+  CW.promoteDefaultNote = promoteDefaultNote;
+  CW.destEnvs = destEnvs;
+  CW.destLatestVersion = destLatestVersion;
   CW.latestVersion = latestVersion;
   CW.markUnpublished = markUnpublished;
   CW.markPublished = markPublished;
