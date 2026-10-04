@@ -1,7 +1,49 @@
 # Changelog
 
 All notable changes to the ConfigWire server (`configwire/`, image
-`ghcr.io/configwire/configwire`) are documented in this file.s
+`ghcr.io/configwire/configwire`) are documented in this file.
+
+## v0.1.4 — 2026-10-05
+
+### Added
+
+- Env promotion `POST /api/v1/admin/env/{dest}/promote`
+  (`releases/handler.go`): copies a source release snapshot verbatim
+  into the dest env as `max(dest)+1` with a fresh etag.
+  Same-project-only (cross-project `400`), `destBaseVersion` must
+  equal dest max (`0` on first promote, stale `409` with
+  `currentVersion` and no write), `?project=` / `srcProject` slug
+  qualifiers, audit author + `releases: promoted…` log line + one
+  `config_update` SSE frame to dest subscribers. Admin UI Releases
+  card gains the promote flow (`pb_public/js/releases.js`,
+  `js_tests/test-promote.js`).
+- Multiple ANDed rule conditions: a rule `condition` is either one
+  `{field, op, value[, seed]}` object (backward compat) or a
+  non-empty array (max 10) AND-ed at eval (`fetch/fetch.go`,
+  `releases/snapshot.go` with fail-closed publish validation).
+  The dialog writes a single object for one row and an array for 2+
+  rows (`pb_public/js/rules.js`, `boot.js`).
+- Experiment seed workflow (`pb_public/js/experiments.js`, `boot.js`,
+  `styles.css`): auto-generated seed required on save, regenerate
+  button, inside-field info tooltip.
+- Rule and experiment create forms prefill defaults from the flag
+  default; project delete requires typing the project name to
+  confirm.
+
+### Changed
+
+- Admin UI menu consolidation: flags header collapses into an
+  overflow menu with leading icons, per-card refresh moves into
+  overflow menus, single-icon refresh plus horizontal header menus;
+  rule editor moves into a dedicated dialog with its own overflow
+  menu; dialog CSS simplified to generic selectors.
+
+### Fixed
+
+- Create dialogs stayed disabled on valid input until another change;
+  submit now enables via `refreshFormSubmit`.
+- Selected environment reset to default on reload; now cached in
+  `pb_public/js/scope.js`.
 
 ## v0.1.3 — 2026-10-03
 
