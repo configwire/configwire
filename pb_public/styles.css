@@ -3631,24 +3631,10 @@ textarea.valid {
 }
 
 /* ---- Dialogs ----
- * Base look is generic (`dialog`, `dialog::backdrop`, `dialog h3`): any
- * future <dialog> is styled automatically. Per-ID rules below only tune
- * width/scroll for known dialogs. When adding a dialog, no CSS change is
- * needed unless it wants a non-default width. */
-dialog,
-dialog#cw-dialog,
-dialog#json-editor-dialog,
-dialog#flag-rules-dialog,
-dialog#flag-experiments-dialog,
-dialog#flag-dialog,
-dialog#project-dialog,
-dialog#key-limits-dialog,
-dialog#experiment-dialog,
-dialog#release-dialog,
-dialog#promote-dialog,
-dialog#transfer-export-dialog,
-dialog#transfer-import-dialog,
-dialog#transfer-diff-dialog {
+ * Base look is generic: any current or future <dialog> is styled
+ * automatically, no per-ID opt-in. Per-ID rules below only tune
+ * width/scroll for dialogs that want a non-default width. */
+dialog {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -3787,37 +3773,12 @@ dialog#cw-dialog {
   width: min(440px, 92vw);
 }
 
-dialog::backdrop,
-dialog#cw-dialog::backdrop,
-dialog#json-editor-dialog::backdrop,
-dialog#flag-rules-dialog::backdrop,
-dialog#flag-experiments-dialog::backdrop,
-dialog#flag-dialog::backdrop,
-dialog#project-dialog::backdrop,
-dialog#key-limits-dialog::backdrop,
-dialog#experiment-dialog::backdrop,
-dialog#release-dialog::backdrop,
-dialog#promote-dialog::backdrop,
-dialog#transfer-export-dialog::backdrop,
-dialog#transfer-import-dialog::backdrop,
-dialog#transfer-diff-dialog::backdrop {
+dialog::backdrop {
   background: rgba(8, 11, 18, 0.75);
   backdrop-filter: blur(4px);
 }
 
-dialog h3,
-dialog#cw-dialog h3,
-dialog#flag-rules-dialog h3,
-dialog#flag-experiments-dialog h3,
-dialog#flag-dialog h3,
-dialog#project-dialog h3,
-dialog#key-limits-dialog h3,
-dialog#experiment-dialog h3,
-dialog#release-dialog h3,
-dialog#promote-dialog h3,
-dialog#transfer-export-dialog h3,
-dialog#transfer-import-dialog h3,
-dialog#transfer-diff-dialog h3 {
+dialog h3 {
   margin: 0 0 var(--space-1);
   font-size: 17px;
   color: var(--text);
@@ -3825,8 +3786,7 @@ dialog#transfer-diff-dialog h3 {
   letter-spacing: -0.01em;
 }
 
-dialog#flag-dialog .muted,
-dialog#experiment-dialog .muted {
+dialog .muted {
   font-size: 13px;
   color: var(--muted);
   margin-bottom: var(--space-3);
@@ -3913,12 +3873,6 @@ dialog#json-editor-dialog h3 {
   font-size: 16px;
   color: var(--text);
   font-weight: 700;
-}
-
-dialog#json-editor-dialog .muted {
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: var(--space-3);
 }
 
 #json-editor-text {
@@ -4165,17 +4119,7 @@ dialog#json-editor-dialog .muted {
     width: 100%;
   }
 
-  dialog,
-  dialog#cw-dialog,
-  dialog#json-editor-dialog,
-  dialog#flag-rules-dialog,
-  dialog#flag-experiments-dialog,
-  dialog#flag-dialog,
-  dialog#project-dialog,
-  dialog#key-limits-dialog,
-  dialog#experiment-dialog,
-  dialog#release-dialog,
-  dialog#promote-dialog {
+  dialog {
     padding: var(--space-4);
   }
 }
@@ -4282,14 +4226,6 @@ section.card.has-unpublished {
 }
 
 /* ---- Transfer dialogs (flag import/export + draft snapshot) ---- */
-dialog#transfer-export-dialog .muted,
-dialog#transfer-import-dialog .muted,
-dialog#transfer-diff-dialog .muted {
-  font-size: 13px;
-  color: var(--muted);
-  margin-bottom: var(--space-3);
-}
-
 #transfer-export-text,
 #transfer-import-text {
   width: 100%;
