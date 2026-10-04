@@ -18,7 +18,14 @@
     else if (CW.state.envs.length) {
       es.value = defaultEnvId();
       CW.state.envId = es.value;
-    } else CW.state.envId = null;
+    } else {
+      // No env rows (yet): keep the persisted envId for the pending
+      // loadEnvs() validation instead of wiping it — otherwise every
+      // reload resets the selection to the default env. loadEnvs()
+      // clears truly-stale ids after fetch, and the no-project branch
+      // already nulled envId before rendering.
+      es.value = ecur || "";
+    }
     var sel = CW.selectedEnv();
     if (sel && sel.slug) CW.state.envSlug = sel.slug;
     try {
