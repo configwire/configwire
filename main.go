@@ -290,6 +290,13 @@ func main() {
 	ingest.EnableWAL(app)
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
+		// Disable PocketBase's default installer: it auto-opens
+		// /_/#/pbinstall/<token> in the browser via osutils.LaunchURL
+		// on fresh DBs. ConfigWire has its own first-run setup at /
+		// (GET/POST /api/v1/admin/setup), so the PocketBase installer
+		// affordance is redundant.
+		se.InstallerFunc = nil
+
 		if os.Getenv("CONFIGWIRE_CORS_ORIGIN") == "" {
 			log.Printf("configwire: CONFIGWIRE_CORS_ORIGIN is unset, fetch CORS defaults to \"*\"; set CONFIGWIRE_CORS_ORIGIN=https://app.example.com in production")
 		}
