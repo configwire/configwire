@@ -5,6 +5,13 @@ All notable changes to the ConfigWire server (`configwire/`, image
 
 ## v0.1.5 — 2026-10-05
 
+### Added
+
+- Tapping the app logo navigates home: the sidebar brand is now a
+  `#brand-home-btn` link (`index.html`) that clears scope and calls
+  `showHome()` (`pb_public/js/boot.js`), with link-reset styling
+  (`pb_public/styles.css`).
+
 ### Fixed
 
 - Disable PocketBase's default installer auto-open (`main.go`:
@@ -13,6 +20,17 @@ All notable changes to the ConfigWire server (`configwire/`, image
   `/` via `GET/POST /api/v1/admin/setup`.
 - Widen the gap between flag groups (`pb_public/styles.css`:
   `#flag-folders` `var(--space-2)` → `var(--space-4)`).
+- Hide the sidebar nav (Flags, Releases, Publish, SDK keys, Stats,
+  Settings) and the bottom Settings / Log out buttons when logged
+  out (`pb_public/js/core.js` `setLoggedIn`,
+  `pb_public/js/router.js` `syncSidebar` token guard,
+  `pb_public/js/boot.js` logged-out init, `pb_public/js/auth.js`
+  `logout()`).
+- Force-hide sidebar chrome on `hidden` despite flex display
+  (`pb_public/styles.css`: `#sidebar-nav[hidden]`,
+  `#settings-nav-link[hidden]`, `#logout-btn[hidden]` →
+  `display: none` — author `flex`/`inline-flex` otherwise overrides
+  the UA `[hidden]` rule and left the bottom buttons visible).
 
 ## v0.1.4 — 2026-10-05
 
