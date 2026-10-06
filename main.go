@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"regexp"
@@ -274,8 +275,37 @@ func registerConfigwireHooks(app core.App) {
 	})
 }
 
+// printStartBanner logs the server URLs with the ConfigWire admin
+// dashboard at / (replacing PocketBase's hidden banner).
+// addr is the listener address (se.Server.Addr, i.e. mainAddr).
+func printStartBanner(app *pocketbase.PocketBase, addr string) {
+	scheme := "http"
+	if cmd, _, err := app.RootCmd.Find(os.Args[1:]); err == nil && cmd != nil {
+		if v, err := cmd.Flags().GetString("https"); err == nil && v != "" {
+			scheme = "https"
+		}
+	}
+	if strings.HasSuffix(addr, ":443") {
+		scheme = "https"
+	}
+	host := addr
+	if host == "" {
+		host = "127.0.0.1:8090"
+	}
+	base := scheme + "://" + host
+	fmt.Printf("ConfigWire Server started at %s\n", base)
+	fmt.Printf("├─ REST API:  %s\n", base+"/api/")
+	fmt.Printf("└─ Dashboard: %s\n", base+"/")
+}
+
 func main() {
-	app := pocketbase.New()
+	// HideStartBanner: PocketBase's own banner prints
+	// "Dashboard: <base>/_/" (its admin UI), but the ConfigWire
+	// admin dashboard is served at / — printStartBanner below
+	// prints the corrected URLs instead.
+	app := pocketbase.NewWithConfig(pocketbase.Config{
+		HideStartBanner: true,
+	})
 
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
 		Automigrate: true,
@@ -365,7 +395,11 @@ func main() {
 		// configwire/ so ./pb_public resolves (cwd=configwire required).
 		se.Router.GET("/{path...}", apis.Static(os.DirFS("./pb_public"), true))
 
-		return se.Next()
+		if err := se.Next(); err != nil {
+			return err
+		}
+		printStartBanner(app, se.Server.Addr)
+		return nil
 	})
 
 	if err := app.Start(); err != nil {
