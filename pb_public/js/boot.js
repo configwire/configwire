@@ -108,6 +108,16 @@
       if (window.location.hash !== "#/") window.location.hash = "#/";
       CW.showHome();
     });
+    CW.on("brand-home-btn", "click", function (ev) {
+      if (!CW.state.token) { if (ev) ev.preventDefault(); return; }
+      CW.state.projectId = null;
+      CW.state.envId = null;
+      CW.state.envs = [];
+      CW.persistScope();
+      if (CW.renderProjectEnv) CW.renderProjectEnv();
+      if (window.location.hash !== "#/") window.location.hash = "#/";
+      CW.showHome();
+    });
     CW.on("env-select", "change", function () {
       CW.state.envId = CW.$("env-select").value || null;
       var sel = CW.selectedEnv();

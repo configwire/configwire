@@ -194,6 +194,18 @@ code {
   border-bottom: 1px solid var(--border-soft);
 }
 
+a.brand {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+a.brand:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--radius-sm);
+}
+
 .brand-mark {
   display: inline-flex;
   align-items: center;
