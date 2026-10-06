@@ -3,6 +3,15 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.5 — 2026-10-05
+
+### Fixed
+
+- Disable PocketBase's default installer auto-open (`main.go`:
+  `se.InstallerFunc = nil`): fresh DBs no longer launch
+  `/_/#/pbinstall/<token>` in the browser. First-run setup stays at
+  `/` via `GET/POST /api/v1/admin/setup`.
+
 ## v0.1.4 — 2026-10-05
 
 ### Added
