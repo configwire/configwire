@@ -11,6 +11,8 @@ All notable changes to the ConfigWire server (`configwire/`, image
   `se.InstallerFunc = nil`): fresh DBs no longer launch
   `/_/#/pbinstall/<token>` in the browser. First-run setup stays at
   `/` via `GET/POST /api/v1/admin/setup`.
+- Widen the gap between flag groups (`pb_public/styles.css`:
+  `#flag-folders` `var(--space-2)` → `var(--space-4)`).
 
 ## v0.1.4 — 2026-10-05
 
