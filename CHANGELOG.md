@@ -3,7 +3,7 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
-## v0.1.5 — 2026-10-05
+## v0.1.5 — 2026-10-06
 
 ### Added
 
@@ -31,6 +31,10 @@ All notable changes to the ConfigWire server (`configwire/`, image
   `#settings-nav-link[hidden]`, `#logout-btn[hidden]` →
   `display: none` — author `flex`/`inline-flex` otherwise overrides
   the UA `[hidden]` rule and left the bottom buttons visible).
+- Startup banner prints the ConfigWire dashboard at `/` (`main.go`:
+  PocketBase's banner is hidden via `HideStartBanner` and replaced
+  with `printStartBanner`, because its `Dashboard: <base>/_/` points
+  at the PocketBase admin instead of the ConfigWire admin at `/`).
 
 ## v0.1.4 — 2026-10-05
 
