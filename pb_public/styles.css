@@ -420,6 +420,14 @@ code {
   display: none;
 }
 
+/* Author display:flex/inline-flex overrides UA [hidden]; force-hide sidebar
+ * chrome (nav + bottom Settings/Log out) when JS sets hidden on logout. */
+#sidebar-nav[hidden],
+#settings-nav-link[hidden],
+#logout-btn[hidden] {
+  display: none;
+}
+
 .status-pill {
   border: 1px solid var(--border);
   border-radius: 999px;
