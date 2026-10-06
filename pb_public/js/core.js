@@ -88,9 +88,26 @@
     if ($("login-section")) $("login-section").hidden = on;
     if ($("setup-section")) $("setup-section").hidden = on ? true : $("setup-section").hidden;
     if ($("admin-section")) $("admin-section").hidden = !on;
-    if ($("logout-btn")) $("logout-btn").hidden = !on;
+    var lb = $("logout-btn");
+    if (lb) { lb.hidden = !on; lb.style.display = on ? "" : "none"; }
     var ts = $("sidebar-scope");
     if (ts) ts.hidden = !on;
+    var snl = $("settings-nav-link");
+    if (snl) { snl.hidden = !on; snl.style.display = on ? "" : "none"; }
+    var nav = $("sidebar-nav");
+    if (on === false) {
+      if (nav) {
+        nav.setAttribute("aria-hidden", "true");
+        nav.style.display = "none";
+      }
+    } else if (on === true) {
+      if (typeof CW.syncSidebar === "function") {
+        CW.syncSidebar();
+      } else if (nav) {
+        nav.removeAttribute("aria-hidden");
+        nav.style.display = "";
+      }
+    }
   }
 
   function selectedEnv() {

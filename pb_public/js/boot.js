@@ -48,7 +48,11 @@
     try { CW.state.token = localStorage.getItem(CW.LS_KEY); } catch (e) { CW.state.token = null; }
     CW.loadPersistedScope();
     if (CW.state.token) { CW.setLoggedIn(true); CW.refreshAll(); }
-    else if (CW.checkSetup) { CW.checkSetup().catch(function () {}); }
+    else {
+      CW.setLoggedIn(false);
+      if (CW.syncSidebar) CW.syncSidebar();
+      if (CW.checkSetup) CW.checkSetup().catch(function () {});
+    }
 
     CW.on("login-form", "submit", function (ev) {
       ev.preventDefault();

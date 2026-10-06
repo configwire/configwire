@@ -52,10 +52,28 @@
     var links = nav.querySelectorAll("a");
     var mods = ["flags", "releases", "publish", "keys", "stats", "project-settings"];
     var settingsLink = CW.$("settings-nav-link");
+    var logoutBtn = CW.$("logout-btn");
+    if (!CW.state.token) {
+      nav.setAttribute("aria-hidden", "true");
+      for (var k = 0; k < links.length; k++) {
+        links[k].setAttribute("tabindex", "-1");
+        links[k].setAttribute("aria-disabled", "true");
+      }
+      nav.style.display = "none";
+      if (settingsLink) { settingsLink.hidden = true; settingsLink.style.display = "none"; }
+      if (logoutBtn) { logoutBtn.hidden = true; logoutBtn.style.display = "none"; }
+      return;
+    }
     if (settingsLink) {
+      settingsLink.hidden = false;
+      settingsLink.style.display = "";
       var active = CW.state.view === "settings" || CW.state.view === "account";
       if (active) settingsLink.setAttribute("aria-current", "page");
       else if (settingsLink.removeAttribute) settingsLink.removeAttribute("aria-current");
+    }
+    if (logoutBtn) {
+      logoutBtn.hidden = false;
+      logoutBtn.style.display = "";
     }
     var showNav = !!CW.state.projectId && (CW.state.view === "detail" || CW.state.view === "settings" || CW.state.view === "account");
     if (!showNav) {

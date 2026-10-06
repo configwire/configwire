@@ -33,6 +33,7 @@
     CW.state.token = null;
     try { localStorage.removeItem(CW.LS_KEY); } catch (e) { /* private mode */ }
     CW.setLoggedIn(false);
+    if (CW.syncSidebar) CW.syncSidebar();
   }
 
   CW.login = login;
