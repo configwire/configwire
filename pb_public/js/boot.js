@@ -45,14 +45,18 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     // Restore session (localStorage copy; memory-first once loaded).
-    try { CW.state.token = localStorage.getItem(CW.LS_KEY); } catch (e) { CW.state.token = null; }
-    CW.loadPersistedScope();
-    if (CW.state.token) { CW.setLoggedIn(true); CW.refreshAll(); }
-    else {
-      CW.setLoggedIn(false);
-      if (CW.syncSidebar) CW.syncSidebar();
-      if (CW.checkSetup) CW.checkSetup().catch(function () {});
+    function normalBoot() {
+      // Restore session (localStorage copy; memory-first once loaded).
+      try { CW.state.token = localStorage.getItem(CW.LS_KEY); } catch (e) { CW.state.token = null; }
+      CW.loadPersistedScope();
+      if (CW.state.token) { CW.setLoggedIn(true); CW.refreshAll(); }
+      else {
+        CW.setLoggedIn(false);
+        if (CW.syncSidebar) CW.syncSidebar();
+        if (CW.checkSetup) CW.checkSetup().catch(function () {});
+      }
     }
+    normalBoot();
 
     CW.on("login-form", "submit", function (ev) {
       ev.preventDefault();
