@@ -52,10 +52,12 @@ package eval
 
 import (
 	"encoding/json"
+	"fmt"
 	"hash/fnv"
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Flag value types enforced by coerce: numbers accept any Go numeric,
@@ -513,6 +515,72 @@ func toNumberPair(v any) (float64, float64, bool) {
 	return lo, hi, true
 }
 
+// MaxRegexPatternLength bounds condition regex patterns (in bytes) so a
+// stored rule cannot force an arbitrarily expensive compile at fetch.
+// Write-time and publish-time validation reject longer patterns.
+const MaxRegexPatternLength = 256
+
+// regexCacheCap bounds the process-local compiled-pattern cache. The
+// pattern space is admin-authored rules (bounded by the per-project
+// flag/rule caps), so 512 entries is generous; on overflow half the
+// entries are evicted (Go map iteration order = arbitrary victims).
+const regexCacheCap = 512
+
+var (
+	regexCacheMu sync.Mutex
+	regexCache   = map[string]regexCacheEntry{}
+	// regexCompiles counts real regexp.Compile calls (cache misses) so
+	// tests can assert a repeated pattern compiles exactly once.
+	regexCompiles int64
+)
+
+type regexCacheEntry struct {
+	re  *regexp.Regexp
+	err error
+}
+
+// compileRegex returns the compiled pattern, caching successes AND
+// failures so fetch-time eval never compiles the same pattern twice.
+// *regexp.Regexp is safe for concurrent use, so cached values are
+// shared across goroutines without copying.
+func compileRegex(pattern string) (*regexp.Regexp, error) {
+	if len(pattern) > MaxRegexPatternLength {
+		return nil, fmt.Errorf("regex pattern exceeds %d bytes", MaxRegexPatternLength)
+	}
+	regexCacheMu.Lock()
+	if e, ok := regexCache[pattern]; ok {
+		regexCacheMu.Unlock()
+		return e.re, e.err
+	}
+	regexCacheMu.Unlock()
+
+	re, err := regexp.Compile(pattern)
+
+	regexCacheMu.Lock()
+	regexCompiles++
+	if len(regexCache) >= regexCacheCap {
+		n := 0
+		for k := range regexCache {
+			delete(regexCache, k)
+			if n++; n >= regexCacheCap/2 {
+				break
+			}
+		}
+	}
+	regexCache[pattern] = regexCacheEntry{re: re, err: err}
+	regexCacheMu.Unlock()
+	return re, err
+}
+
+// ValidateRegexPattern reports whether pattern is usable in a rule
+// condition (within the length cap and compilable). Write-time and
+// publish-time validation call it so bad patterns are rejected with a
+// 400 instead of silently never matching at fetch.
+func ValidateRegexPattern(pattern string) error {
+	_, err := compileRegex(pattern)
+	return err
+}
+
 // matchRegex reports whether pattern matches anywhere in s. An invalid
 // pattern never panics and never errors: it is simply false.
 func matchRegex(s, pattern string) (matched bool) {
@@ -521,7 +589,7 @@ func matchRegex(s, pattern string) (matched bool) {
 			matched = false
 		}
 	}()
-	re, err := regexp.Compile(pattern)
+	re, err := compileRegex(pattern)
 	if err != nil {
 		return false
 	}

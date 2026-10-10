@@ -245,6 +245,11 @@ func TestValidateSnapshotRejectsBadConditions(t *testing.T) {
 		"missing-op":    map[string]any{"field": "platform", "value": "x"},
 		"missing-field": map[string]any{"op": "==", "value": "x"},
 		"nonstring-op":  map[string]any{"field": "platform", "op": float64(1), "value": "x"},
+		"bad-regex":     map[string]any{"field": "platform", "op": "regex", "value": "([invalid"},
+		"oversize-regex": map[string]any{
+			"field": "platform", "op": "regex",
+			"value": strings.Repeat("a", eval.MaxRegexPatternLength+1),
+		},
 	} {
 		snap := goodSnapshot()
 		snap.Flags[0].Rules = []SnapshotRule{{Priority: 1, Condition: cond, Value: "green"}}

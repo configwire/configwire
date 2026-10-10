@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/configwire/configwire/account"
 	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/fetch"
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/limits"
@@ -130,6 +132,46 @@ func checkFlagKey(key string) error {
 	return nil
 }
 
+// checkRuleRegexConditions validates regex conditions at rule write time
+// (data API, dashboard, server-side saves) so an un-compilable or
+// oversized pattern is rejected with a 400 at save. Without it the bad
+// pattern would persist and silently never match at fetch (eval treats an
+// invalid regex as false), wasting one compile per fetch until the next
+// publish. The condition is either a single object or an array of
+// objects; releases.validateCondition re-checks compilability at publish
+// for rows predating this hook.
+func checkRuleRegexConditions(cond any) error {
+	if cond == nil {
+		return nil
+	}
+	raw, err := json.Marshal(cond)
+	if err != nil {
+		return apis.NewBadRequestError("rule condition must be a JSON object or array of objects", nil)
+	}
+	var objs []map[string]any
+	if err := json.Unmarshal(raw, &objs); err != nil {
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil || m == nil {
+			return apis.NewBadRequestError("rule condition must be a JSON object or array of objects", nil)
+		}
+		objs = []map[string]any{m}
+	}
+	for _, m := range objs {
+		op, _ := m["op"].(string)
+		if op != "regex" {
+			continue
+		}
+		pattern, ok := m["value"].(string)
+		if !ok {
+			continue
+		}
+		if err := eval.ValidateRegexPattern(pattern); err != nil {
+			return apis.NewBadRequestError("invalid regex condition: "+err.Error(), nil)
+		}
+	}
+	return nil
+}
+
 // envDeleteMu serializes environment deletes so two concurrent deletes
 // of a project's last two environments cannot both pass the count check.
 var envDeleteMu sync.Mutex
@@ -193,6 +235,18 @@ func registerConfigwireHooks(app core.App) {
 	})
 	app.OnRecordUpdate("flags").BindFunc(func(e *core.RecordEvent) error {
 		if err := checkFlagKey(e.Record.GetString("key")); err != nil {
+			return err
+		}
+		return e.Next()
+	})
+	app.OnRecordCreate("rules").BindFunc(func(e *core.RecordEvent) error {
+		if err := checkRuleRegexConditions(e.Record.Get("condition")); err != nil {
+			return err
+		}
+		return e.Next()
+	})
+	app.OnRecordUpdate("rules").BindFunc(func(e *core.RecordEvent) error {
+		if err := checkRuleRegexConditions(e.Record.Get("condition")); err != nil {
 			return err
 		}
 		return e.Next()

@@ -391,6 +391,14 @@ func validateSingleCondition(flagKey string, ruleIndex int, m map[string]json.Ra
 	if !allowed[op] {
 		return bad("op %q not allowed for field %q", op, field)
 	}
+	if op == "regex" {
+		var value string
+		if err := json.Unmarshal(m["value"], &value); err == nil {
+			if err := eval.ValidateRegexPattern(value); err != nil {
+				return bad("invalid regex: %v", err)
+			}
+		}
+	}
 	return nil
 }
 

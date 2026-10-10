@@ -133,3 +133,77 @@ func TestProjectDeleteCascadesDespiteLastEnvGuard(t *testing.T) {
 		t.Fatalf("after project delete: %d envs, want 0 (cascaded)", n)
 	}
 }
+
+func TestCheckRuleRegexConditions(t *testing.T) {
+	if err := checkRuleRegexConditions(nil); err != nil {
+		t.Fatalf("nil condition should pass (shape is publish's gate): %v", err)
+	}
+	valid := map[string]any{"field": "platform", "op": "regex", "value": "^and"}
+	if err := checkRuleRegexConditions(valid); err != nil {
+		t.Fatalf("valid regex condition rejected: %v", err)
+	}
+	validArr := []any{
+		map[string]any{"field": "platform", "op": "==", "value": "android"},
+		map[string]any{"field": "country", "op": "regex", "value": "US$"},
+	}
+	if err := checkRuleRegexConditions(validArr); err != nil {
+		t.Fatalf("valid regex array rejected: %v", err)
+	}
+	notRegexOp := map[string]any{"field": "platform", "op": "==", "value": "([not-a-regex"}
+	if err := checkRuleRegexConditions(notRegexOp); err != nil {
+		t.Fatalf("non-regex op must not validate the value as regex: %v", err)
+	}
+	bad := map[string]any{"field": "platform", "op": "regex", "value": "([bad"}
+	if err := checkRuleRegexConditions(bad); err == nil {
+		t.Fatal("uncompilable regex condition should be rejected")
+	} else if lowered := strings.ToLower(err.Error()); !strings.Contains(lowered, "invalid regex") {
+		t.Fatalf("error = %q, want it to mention invalid regex", err)
+	}
+	big := map[string]any{"field": "platform", "op": "regex", "value": strings.Repeat("a", 300)}
+	if err := checkRuleRegexConditions(big); err == nil {
+		t.Fatal("oversized regex condition should be rejected")
+	}
+	if err := checkRuleRegexConditions("platform==android"); err == nil {
+		t.Fatal("non-object condition should be rejected")
+	}
+}
+
+func TestRuleSaveBadRegexRejectedByHook(t *testing.T) {
+	app := envGuardTestApp(t)
+	pid := seedProject(t, app, "rules-guard")
+	flagCol, err := app.FindCollectionByNameOrId("flags")
+	if err != nil {
+		t.Fatalf("find flags: %v", err)
+	}
+	frec := core.NewRecord(flagCol)
+	frec.Set("project", pid)
+	frec.Set("key", "launch_flag")
+	frec.Set("type", "bool")
+	if err := app.Save(frec); err != nil {
+		t.Fatalf("save flag: %v", err)
+	}
+	ruleCol, err := app.FindCollectionByNameOrId("rules")
+	if err != nil {
+		t.Fatalf("find rules: %v", err)
+	}
+	bad := core.NewRecord(ruleCol)
+	bad.Set("flag", frec.Id)
+	bad.Set("condition", map[string]any{"field": "platform", "op": "regex", "value": "([bad"})
+	bad.Set("value", true)
+	if err := app.Save(bad); err == nil {
+		t.Fatal("rule with uncompilable regex saved, want hook refusal")
+	} else if lowered := strings.ToLower(err.Error()); !strings.Contains(lowered, "invalid regex") {
+		t.Fatalf("save error = %q, want it to mention invalid regex", err)
+	}
+	good := core.NewRecord(ruleCol)
+	good.Set("flag", frec.Id)
+	good.Set("condition", map[string]any{"field": "platform", "op": "==", "value": "android"})
+	good.Set("value", true)
+	if err := app.Save(good); err != nil {
+		t.Fatalf("valid rule should save: %v", err)
+	}
+	good.Set("condition", map[string]any{"field": "platform", "op": "regex", "value": "([bad"})
+	if err := app.Save(good); err == nil {
+		t.Fatal("rule update to uncompilable regex saved, want hook refusal")
+	}
+}
