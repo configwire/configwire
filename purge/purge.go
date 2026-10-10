@@ -29,7 +29,9 @@ package purge
 
 import (
 	"log"
+	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -333,20 +335,44 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 // the ticker legitimately owns, same discipline as ingest.Batcher).
 func Register(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/maintenance/purge", postPurge).Bind(apis.RequireSuperuserAuth())
-	go dailyTicker(se.App)
+	stop := make(chan struct{})
+	var once sync.Once
+	se.App.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		once.Do(func() { close(stop) })
+		return e.Next()
+	})
+	go dailyTicker(se.App, stop)
 }
 
-func dailyTicker(app core.App) {
-	t := time.NewTicker(24 * time.Hour)
-	defer t.Stop()
-	for range t.C {
+// purgeInterval spaces daily runs 23-25h apart so restarts don't
+// phase-lock the run time.
+func purgeInterval() time.Duration {
+	return 23*time.Hour + time.Duration(rand.Int63n(int64(2*time.Hour)))
+}
+
+func dailyTicker(app core.App, stop <-chan struct{}) {
+	run := func(tag string) {
 		cutoff := time.Now().UTC().AddDate(0, 0, -RawRetentionDays)
 		n, err := PurgeOlderThan(app, cutoff)
 		if err != nil {
-			log.Printf("purge: daily run failed: %v", err)
-			continue
+			log.Printf("purge: %s run failed: %v", tag, err)
+			return
 		}
-		log.Printf("purge: daily run deleted %d rows (cutoff %s)", n, cutoff.Format(time.RFC3339))
+		log.Printf("purge: %s run deleted %d rows (cutoff %s)", tag, n, cutoff.Format(time.RFC3339))
+	}
+	// Boot run first: upgraded DBs with >30d backlog converge immediately
+	// instead of waiting a day (manual route stays the alternative).
+	run("boot")
+	t := time.NewTicker(purgeInterval())
+	defer t.Stop()
+	// Sequential: a slow run delays (never overlaps) the next tick.
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			run("daily")
+		}
 	}
 }
 
