@@ -166,6 +166,43 @@ func TestStreamAuthOrder(t *testing.T) {
 	}
 }
 
+// TestStreamCORSAcrossResponses pins fetch parity: stream responses
+// carry Access-Control-Allow-Origin on both the 401 and 200 paths,
+// default "*" and honoring CONFIGWIRE_CORS_ORIGIN like fetch.
+func TestStreamCORSAcrossResponses(t *testing.T) {
+	app := streamTestApp(t)
+	envA := seedEnv(t, app, "dev")
+	const goodKey = "cw-stream-cors-0001"
+	seedLegacyKey(t, app, goodKey, envA)
+
+	if code, rec := callStream(app, nil, "dev", ""); code != http.StatusUnauthorized {
+		t.Fatalf("no key: status = %d, want 401", code)
+	} else if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("401 ACAO = %q, want dev default *", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, rec := callStream(app, ctx, "dev", goodKey)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("200 ACAO = %q, want dev default *", got)
+	}
+
+	t.Setenv("CONFIGWIRE_CORS_ORIGIN", "https://app.example.com")
+	_, rec = callStream(app, nil, "dev", "")
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Fatalf("configured ACAO = %q, want the configured origin", got)
+	}
+}
+
+// TestStreamAllowHeadersIsKey pins the preflight contract: the stream
+// OPTIONS response must permit the SDK key header.
+func TestStreamAllowHeadersIsKey(t *testing.T) {
+	if streamAllowHeaders != "X-ConfigWire-Key" {
+		t.Fatalf("streamAllowHeaders = %q, want %q", streamAllowHeaders, "X-ConfigWire-Key")
+	}
+}
+
 func TestStreamValidHeadersAndCleanup(t *testing.T) {
 	app := streamTestApp(t)
 	envA := seedEnv(t, app, "dev")

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -34,6 +35,34 @@ var (
 // BEFORE the catch-all /{path...} static route so /api/* keeps precedence.
 func Register(se *core.ServeEvent) {
 	se.Router.GET("/api/v1/env/{env}/stream", getStream)
+	se.Router.OPTIONS("/api/v1/env/{env}/stream", optionsStream)
+}
+
+// streamAllowHeaders mirrors fetch: browser streaming via fetch() sends
+// the SDK key as a header, so the preflight must permit it.
+const streamAllowHeaders = "X-ConfigWire-Key"
+
+func corsOrigin() string {
+	if v := os.Getenv("CONFIGWIRE_CORS_ORIGIN"); v != "" {
+		return v
+	}
+	return "*"
+}
+
+func setCORS(re *core.RequestEvent) {
+	re.Response.Header().Set("Access-Control-Allow-Origin", corsOrigin())
+}
+
+// optionsStream answers the CORS preflight for the stream (no auth:
+// preflights carry no credentials by spec).
+func optionsStream(re *core.RequestEvent) error {
+	security.SetHeaders(re)
+	h := re.Response.Header()
+	h.Set("Access-Control-Allow-Origin", corsOrigin())
+	h.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	h.Set("Access-Control-Allow-Headers", streamAllowHeaders)
+	h.Set("Access-Control-Max-Age", "86400")
+	return re.NoContent(http.StatusNoContent)
 }
 
 // RegisterHook fans publish/rollback release creates out to connected
@@ -82,6 +111,7 @@ func formatUpdate(u Update) string {
 // every return path ends the handler, so nothing leaks after close.
 func getStream(re *core.RequestEvent) error {
 	security.SetHeaders(re)
+	setCORS(re)
 	key, err := ingest.RequireSDKKey(re)
 	if errors.Is(err, ingest.ErrKeyResponded) {
 		return nil // saturation/storage response already written
