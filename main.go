@@ -287,16 +287,24 @@ func registerConfigwireHooks(app core.App) {
 		return e.Next()
 	})
 	app.OnRecordDelete("flags").BindFunc(func(e *core.RecordEvent) error {
-		records, err := e.App.FindAllRecords("rules")
+		// Indexed child lookup (idx_rules_flag) instead of a full-table
+		// scan, and one transaction for all child deletes: a mid-loop
+		// failure rolls everything back and aborts the parent delete, so
+		// a retry converges instead of leaving partial progress. The
+		// 0006 cascade handles the remaining child relations.
+		records, err := e.App.FindRecordsByFilter("rules", "flag = {:flag}", "", 0, 0, dbx.Params{"flag": e.Record.Id})
 		if err != nil {
 			return err
 		}
-		for _, r := range records {
-			if r.GetString("flag") == e.Record.Id {
-				if err := e.App.Delete(r); err != nil {
+		if err := e.App.RunInTransaction(func(txApp core.App) error {
+			for _, r := range records {
+				if err := txApp.Delete(r); err != nil {
 					return err
 				}
 			}
+			return nil
+		}); err != nil {
+			return err
 		}
 		return e.Next()
 	})
