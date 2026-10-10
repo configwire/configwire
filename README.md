@@ -30,10 +30,10 @@ curl -s http://localhost:8090/healthz
 # -> {"status":"ok"}
 ```
 
-Or via Compose (see [`compose.yml`](compose.yml)):
+Or via Compose (see [`docker-compose.yml`](docker-compose.yml)):
 
 ```bash
-curl -O https://raw.githubusercontent.com/configwire/configwire/main/compose.yml
+curl -O https://raw.githubusercontent.com/configwire/configwire/main/configwire/docker-compose.yml
 docker compose pull && docker compose up -d
 ```
 

@@ -1,16 +1,15 @@
+# Release: download-and-run (prebuilt ghcr.io image, no build, no source needed).
 # Pull-only usage (no source needed, just this file):
-#   curl -O https://raw.githubusercontent.com/configwire/configwire/main/compose.yml
+#   curl -O https://raw.githubusercontent.com/configwire/configwire/main/configwire/docker-compose.yml
 #   docker compose pull && docker compose up -d
 #   curl -s http://localhost:8090/healthz
 #   curl -s http://localhost:8090/healthz | grep -q '"status":"ok"'
-# Local build (run from this dir, needs Dockerfile + source):
-#   docker build -t ghcr.io/configwire/configwire:latest .
-#   docker compose up -d
+# Local dev (build from this checkout, run from this dir):
+#   docker compose -f docker-compose-dev.yml up -d --build
 # First superuser (same flags as README quickstart):
 #   docker compose exec configwire ./configwire superuser upsert admin@example.com password123 --dir /app/pb_data
 # Monorepo usage (run from repo root):
-#   docker build -t ghcr.io/configwire/configwire:latest ./configwire
-#   docker compose -f configwire/compose.yml up -d
+#   docker compose -f configwire/docker-compose.yml up -d
 name: configwire
 services:
   configwire:

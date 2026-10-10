@@ -1,0 +1,27 @@
+# Local dev: docker compose -f docker-compose-dev.yml up -d --build (run from this dir)
+# Same topology as the docker-compose.yml release file, but builds a :local
+# image from this checkout instead of pulling the prebuilt ghcr.io image.
+# Volume NAME must stay identical in both files (cw-data).
+name: configwire
+
+services:
+  configwire:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: configwire:local
+    container_name: configwire
+    ports:
+      - "8090:8090"
+    volumes:
+      - cw-data:/app/pb_data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  cw-data:
