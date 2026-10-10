@@ -67,11 +67,17 @@ func subscribe(envID string) (chan Update, func()) {
 
 // Notify pushes u to every subscriber of envID. The send is non-blocking
 // (full or uncollected channels are skipped), so Notify always returns
-// immediately no matter how slow or dead the subscribers are.
+// immediately no matter how slow or dead the subscribers are. The
+// subscriber set is copied under lock so subscribe/unsub never wait on
+// a publish.
 func Notify(envID string, u Update) {
 	hub.Lock()
-	defer hub.Unlock()
+	subs := make([]chan Update, 0, len(hub.subs[envID]))
 	for ch := range hub.subs[envID] {
+		subs = append(subs, ch)
+	}
+	hub.Unlock()
+	for _, ch := range subs {
 		select {
 		case ch <- u:
 		default:

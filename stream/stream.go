@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/configwire/configwire/envresolve"
@@ -19,12 +20,18 @@ import (
 // key.Id — v2 rows store hash="", so the stored hash cannot key this).
 const maxStreamsPerKey = 5
 
-// keepaliveInterval and maxStreamDuration are vars (not consts) so tests
-// can shorten them; production values are the documented 20s / 10min.
+// keepaliveInterval and maxStreamDuration are atomic so tests can
+// shorten them without racing a running handler; production values are
+// the documented 20s / 10min.
 var (
-	keepaliveInterval = 20 * time.Second
-	maxStreamDuration = 10 * time.Minute
+	keepaliveInterval atomic.Int64
+	maxStreamDuration atomic.Int64
 )
+
+func init() {
+	keepaliveInterval.Store(int64(20 * time.Second))
+	maxStreamDuration.Store(int64(10 * time.Minute))
+}
 
 var (
 	streamMu     sync.Mutex
@@ -149,11 +156,13 @@ func getStream(re *core.RequestEvent) error {
 	h.Set("Vary", "X-ConfigWire-Key")
 	h.Set("X-Accel-Buffering", "no")
 	if err := re.Flush(); err != nil {
-		return err
+		// Client gone before headers committed: a disconnect, not a
+		// server error. Returning err here would log a 500 for it.
+		return nil
 	}
-	ticker := time.NewTicker(keepaliveInterval)
+	ticker := time.NewTicker(time.Duration(keepaliveInterval.Load()))
 	defer ticker.Stop()
-	deadline := time.NewTimer(maxStreamDuration)
+	deadline := time.NewTimer(time.Duration(maxStreamDuration.Load()))
 	defer deadline.Stop()
 	ctx := re.Request.Context()
 	for {

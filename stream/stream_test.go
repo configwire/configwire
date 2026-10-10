@@ -203,6 +203,28 @@ func TestStreamAllowHeadersIsKey(t *testing.T) {
 	}
 }
 
+// TestStreamDeadlineEndsHandler pins the max-duration path with a
+// shortened timer: the handler returns on deadline instead of holding
+// the connection for the production 10min.
+func TestStreamDeadlineEndsHandler(t *testing.T) {
+	app := streamTestApp(t)
+	envA := seedEnv(t, app, "dev")
+	const goodKey = "cw-stream-deadline-0001"
+	seedLegacyKey(t, app, goodKey, envA)
+
+	old := maxStreamDuration.Load()
+	defer maxStreamDuration.Store(old)
+	maxStreamDuration.Store(int64(50 * time.Millisecond))
+
+	done := make(chan int, 1)
+	go func() { code, _ := callStream(app, nil, "dev", goodKey); done <- code }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream handler did not end at shortened deadline")
+	}
+}
+
 func TestStreamValidHeadersAndCleanup(t *testing.T) {
 	app := streamTestApp(t)
 	envA := seedEnv(t, app, "dev")
