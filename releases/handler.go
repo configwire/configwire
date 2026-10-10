@@ -399,12 +399,23 @@ func promoteToNewRow(app core.App, src *core.Record, destEnvID, note, author str
 
 // decodeRollbackNote reads the optional {note} body shared by both
 // rollback routes: an empty body means "no note"; only malformed
-// (non-empty, non-JSON) bodies are 400.
+// (non-empty, non-JSON) bodies are 400. Emptiness is judged from the
+// body bytes (ContentLength is -1 for chunked, so a length check alone
+// would misread an empty chunked body as present).
 func decodeRollbackNote(re *core.RequestEvent, req *rollbackRequest) error {
-	if re.Request.ContentLength != 0 {
-		if err := re.BindBody(req); err != nil {
-			return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-		}
+	if re.Request.ContentLength == 0 || re.Request.Body == nil {
+		return nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 1<<20+1))
+	if err != nil {
+		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
+	}
+	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	if err := re.BindBody(req); err != nil {
+		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
 	}
 	return nil
 }

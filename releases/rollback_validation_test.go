@@ -1,6 +1,8 @@
 package releases
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -48,5 +50,45 @@ func TestRollbackRejectsInvalidSnapshot(t *testing.T) {
 		t.Fatal("rollback of invalid snapshot succeeded, want refusal")
 	} else if !strings.Contains(err.Error(), "nothing to publish") {
 		t.Fatalf("rollback error = %q, want the ValidateSnapshot refusal", err)
+	}
+}
+
+// TestDecodeRollbackNoteBodyShapes pins chunked-safe note decoding: an
+// empty body means "no note" however it is framed (zero length, nil
+// body, or chunked with no bytes — the old length check 400'd the
+// chunked-empty case); only non-empty, non-JSON bodies are 400.
+func TestDecodeRollbackNoteBodyShapes(t *testing.T) {
+	mk := func(body string, contentLength int64, chunkedEmpty bool) (*core.RequestEvent, *rollbackRequest) {
+		var req *http.Request
+		if chunkedEmpty {
+			req = httptest.NewRequest(http.MethodPost, "/x", http.NoBody)
+			req.ContentLength = contentLength
+		} else if body == "" && contentLength == 0 {
+			req = httptest.NewRequest(http.MethodPost, "/x", nil)
+			req.Body = nil
+		} else {
+			req = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+		}
+		re := &core.RequestEvent{}
+		re.Request = req
+		return re, &rollbackRequest{}
+	}
+
+	re, req := mk("", 0, false)
+	if err := decodeRollbackNote(re, req); err != nil || req.Note != "" {
+		t.Fatalf("nil body: err=%v note=%q, want nil error and empty note", err, req.Note)
+	}
+	re, req = mk("", -1, true)
+	if err := decodeRollbackNote(re, req); err != nil || req.Note != "" {
+		t.Fatalf("chunked empty body: err=%v note=%q, want nil error and empty note", err, req.Note)
+	}
+	re, req = mk(`{"note":"hi"}`, 13, false)
+	if err := decodeRollbackNote(re, req); err != nil || req.Note != "hi" {
+		t.Fatalf("valid body: err=%v note=%q, want parsed note", err, req.Note)
+	}
+	re, req = mk(`{{{`, 3, false)
+	if err := decodeRollbackNote(re, req); err == nil {
+		t.Fatal("garbage body succeeded, want 400")
 	}
 }
