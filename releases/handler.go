@@ -18,6 +18,8 @@ import (
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/security"
 
+	"github.com/pocketbase/dbx"
+
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -441,7 +443,7 @@ func postRollbackEnv(re *core.RequestEvent) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
 
-	recs, err := re.App.FindAllRecords("releases")
+	recs, err := re.App.FindRecordsByFilter("releases", "env = {:env}", "", 0, 0, dbx.Params{"env": env.Id})
 	if err != nil {
 		return err
 	}
@@ -502,7 +504,7 @@ func postPromoteEnv(re *core.RequestEvent) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
 
-	recs, err := re.App.FindAllRecords("releases")
+	recs, err := re.App.FindRecordsByFilter("releases", "env = {:env}", "", 0, 0, dbx.Params{"env": srcEnvRec.Id})
 	if err != nil {
 		return err
 	}

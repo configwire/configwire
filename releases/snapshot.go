@@ -55,6 +55,8 @@ import (
 
 	"github.com/configwire/configwire/eval"
 
+	"github.com/pocketbase/dbx"
+
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -181,23 +183,26 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 	snap := Snapshot{Flags: []SnapshotFlag{}, Experiments: []SnapshotExperiment{}}
 	projectID := env.GetString("project")
 
-	flagRecs, err := app.FindAllRecords("flags")
+	flagRecs, err := app.FindRecordsByFilter("flags", "project = {:project}", "", 0, 0, dbx.Params{"project": projectID})
 	if err != nil {
 		return snap, err
 	}
 	byID := map[string]*core.Record{}
 	flagKeys := map[string]string{}
+	flagIDs := make([]string, 0, len(flagRecs))
 	for _, fr := range flagRecs {
-		if fr.GetString("project") != projectID {
-			continue
-		}
 		byID[fr.Id] = fr
 		flagKeys[fr.Id] = fr.GetString("key")
+		flagIDs = append(flagIDs, fr.Id)
 	}
 
-	ruleRecs, err := app.FindAllRecords("rules")
-	if err != nil {
-		return snap, err
+	ruleRecs := []*core.Record{}
+	if len(flagIDs) > 0 {
+		recs, ferr := app.FindRecordsByFilter("rules", "flag ?= {:flags}", "", 0, 0, dbx.Params{"flags": flagIDs})
+		if ferr != nil {
+			return snap, ferr
+		}
+		ruleRecs = recs
 	}
 	rulesByFlag := map[string][]SnapshotRule{}
 	for _, rr := range ruleRecs {
@@ -232,9 +237,13 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 		return snap.Flags[i].Key < snap.Flags[j].Key
 	})
 
-	expRecs, err := app.FindAllRecords("experiments")
-	if err != nil {
-		return snap, err
+	expRecs := []*core.Record{}
+	if len(flagIDs) > 0 {
+		recs, ferr := app.FindRecordsByFilter("experiments", "flag ?= {:flags}", "", 0, 0, dbx.Params{"flags": flagIDs})
+		if ferr != nil {
+			return snap, ferr
+		}
+		expRecs = recs
 	}
 	flagProjects := make(map[string]string, len(flagRecs))
 	for _, fr := range flagRecs {
@@ -499,20 +508,16 @@ func ValidateSnapshot(snap Snapshot) error {
 	return nil
 }
 
-// MaxVersionForEnv returns the env's current max release version, or 0 when none exists.
+// MaxVersionForEnv returns the env's current max release version, or 0
+// when none exists, via one indexed lookup (env filter + version-desc
+// top row) instead of a full-table scan.
 func MaxVersionForEnv(app core.App, envID string) (int, error) {
-	recs, err := app.FindAllRecords("releases")
+	recs, err := app.FindRecordsByFilter("releases", "env = {:env}", "-version", 1, 0, dbx.Params{"env": envID})
 	if err != nil {
 		return 0, err
 	}
-	max := 0
-	for _, r := range recs {
-		if r.GetString("env") != envID {
-			continue
-		}
-		if v := r.GetInt("version"); v > max {
-			max = v
-		}
+	if len(recs) == 0 {
+		return 0, nil
 	}
-	return max, nil
+	return recs[0].GetInt("version"), nil
 }
