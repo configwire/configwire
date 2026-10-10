@@ -185,3 +185,18 @@ binary plus operator procedure.
 - Full JSON-parsed evidence: `.omo/evidence/task-16-configwire.log`.
 - Runner: **k6** (`k6 --version` → v2.3.0; installed via brew for the
   gate). No `hey` fallback shipped — k6 was present.
+
+## 10. Destructive operations (migrations, deletes)
+
+- `migrate down` is destructive by design: past the init migration it
+  drops all 9 collections; `1790000000` down drops every `event_daily`
+  rollup (raw events already purged cannot rebuild history);
+  `1790000008` down cannot restore dropped per-flag attribution.
+  Never run `migrate down` without a backup.
+- Cascade deletes (`1790000006`, 11 relations) make one project delete
+  wipe its environments, flags, rules, experiments, releases, keys,
+  events, and 90 days of rollups with no soft-delete. Deleting a
+  project to "clean up" silently purges history.
+- Rollback/promote clone snapshots into NEW rows; releases are never
+  updated in place. Superseded releases stay readable; only events and
+  expired rollups are ever deleted, never release rows.

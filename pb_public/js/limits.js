@@ -307,4 +307,14 @@
   CW.saveLimits = saveLimits;
   CW.saveAdminLimit = saveAdminLimit;
   CW.copyCurrentIP = copyCurrentIP;
+  // Pure validators exported for js_tests (same precedent as
+  // keys.js CW.randomKey): no behavior change.
+  CW.isValidIP = isValidIP;
+  CW.ipv4CidrContains = ipv4CidrContains;
+  CW.isAllowedByList = isAllowedByList;
+  CW.stringToIPs = stringToIPs;
+  CW.ipsToString = ipsToString;
+  CW.stringToHeaders = stringToHeaders;
+  CW.headersToString = headersToString;
+  CW.renderCurrentIP = renderCurrentIP;
 })();
