@@ -289,7 +289,11 @@ func releaseRows(recs []*core.Record) []ReleaseRow {
 // rollbackToNewRow copies src's snapshot bytes verbatim into a NEW row
 // with version=max+1 in the source row's env and a fresh etag (the
 // version is part of the etag input, so identical bytes still hash
-// differently). Releases rows stay immutable: no UPDATE path exists.
+// differently). The snapshot is re-validated (json.Valid, then
+// json.Unmarshal into Snapshot + ValidateSnapshot) exactly like promote:
+// a corrupt or legacy source row fails here instead of cloning
+// fail-open bytes (e.g. a vacuously-matching condition) into a new
+// release. Releases rows stay immutable: no UPDATE path exists.
 func rollbackToNewRow(app core.App, src *core.Record, note, author string, fromVersion int) (int, string, error) {
 	snapBytes, err := rawSnapshotBytes(src.GetRaw("snapshot"))
 	if err != nil {
@@ -297,6 +301,13 @@ func rollbackToNewRow(app core.App, src *core.Record, note, author string, fromV
 	}
 	if !json.Valid(snapBytes) {
 		return 0, "", errors.New("releases: source snapshot is corrupt")
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(snapBytes, &snap); err != nil {
+		return 0, "", errors.New("releases: source snapshot is corrupt")
+	}
+	if err := ValidateSnapshot(snap); err != nil {
+		return 0, "", err
 	}
 
 	envID := src.GetString("env")
@@ -444,7 +455,7 @@ func postRollbackEnv(re *core.RequestEvent) error {
 
 	version, etag, err := rollbackToNewRow(re.App, recs[idx], req.Note, callerAuthor(re), n)
 	if err != nil {
-		return err
+		return re.BadRequestError(err.Error(), nil)
 	}
 
 	return re.JSON(http.StatusOK, map[string]any{"version": version, "etag": etag})

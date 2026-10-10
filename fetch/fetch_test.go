@@ -229,3 +229,26 @@ func TestEvaluateSnapshotMultiConditionAND(t *testing.T) {
 		t.Errorf("one condition fails: got %v, want default hello", values["greet"])
 	}
 }
+
+// TestEvaluateSnapshotCorruptRulesFailClosed pins the fail-closed
+// decode: a null, garbage, or empty-array stored condition drops the
+// rule so it matches nobody — the flag falls through to its default
+// instead of vacuously matching every user.
+func TestEvaluateSnapshotCorruptRulesFailClosed(t *testing.T) {
+	snap := releases.Snapshot{
+		Flags: []releases.SnapshotFlag{
+			{
+				Key: "risky", Type: "bool", Default: false,
+				Rules: []releases.SnapshotRule{
+					{Priority: 1, Condition: nil, Value: true},
+					{Priority: 2, Condition: "garbage", Value: true},
+					{Priority: 3, Condition: []any{}, Value: true},
+				},
+			},
+		},
+	}
+	values, _ := EvaluateSnapshot(snap, eval.Context{Platform: "android", UserID: "u1"}, "")
+	if values["risky"] != false {
+		t.Errorf("corrupt rules must match nobody (fail closed), got %v", values["risky"])
+	}
+}

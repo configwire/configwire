@@ -173,7 +173,9 @@ func EvaluateSnapshot(snap releases.Snapshot, ctx eval.Context, statusOverride s
 		flag := eval.Flag{Key: sf.Key, Type: sf.Type, Default: sf.Default}
 		rules := make([]eval.Rule, 0, len(sf.Rules))
 		for i, sr := range sf.Rules {
-			rules = append(rules, decodeRule(sr, i))
+			if r, ok := decodeRule(sr, i); ok {
+				rules = append(rules, r)
+			}
 		}
 		exps := expsForFlag(snap.Experiments, sf.Key)
 		if len(exps) == 0 {
@@ -197,33 +199,32 @@ func EvaluateSnapshot(snap releases.Snapshot, ctx eval.Context, statusOverride s
 // decodeRule converts one stored snapshot rule to an eval.Rule. The stored
 // condition is either a single object (wrapped as one eval.Condition,
 // backward compat) or a non-empty array of objects (decoded as N
-// eval.Conditions, ANDed by eval.ruleMatches). An undecodable/null
-// condition decodes to zero conditions, which vacuously matches — the same
-// fallthrough eval applies to any invalid input. Publish-time validation
-// keeps such corrupt shapes fail-closed so they never reach a snapshot;
-// the vacuous match here is only the fail-open fallback for legacy rows.
-func decodeRule(sr releases.SnapshotRule, i int) eval.Rule {
+// eval.Conditions, ANDed by eval.ruleMatches). A null or undecodable
+// condition is FAIL-CLOSED (ok=false): the rule is dropped from the eval
+// set so it matches nobody. Publish-time validation is the primary gate;
+// this is the backstop for legacy/corrupt rows.
+func decodeRule(sr releases.SnapshotRule, i int) (eval.Rule, bool) {
 	r := eval.Rule{ID: fmt.Sprintf("rule-%d", i)}
 	if sr.Condition == nil {
-		return r
+		return eval.Rule{}, false
 	}
 	raw, err := json.Marshal(sr.Condition)
 	if err != nil {
-		return r
+		return eval.Rule{}, false
 	}
 	var arr []eval.Condition
 	if err := json.Unmarshal(raw, &arr); err == nil && len(arr) >= 1 {
 		r.Conditions = arr
 		r.Value = sr.Value
-		return r
+		return r, true
 	}
 	var c eval.Condition
 	if err := json.Unmarshal(raw, &c); err != nil {
-		return r
+		return eval.Rule{}, false
 	}
 	r.Conditions = []eval.Condition{c}
 	r.Value = sr.Value
-	return r
+	return r, true
 }
 
 func expsForFlag(all []releases.SnapshotExperiment, key string) []releases.SnapshotExperiment {
