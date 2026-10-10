@@ -3,6 +3,100 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.6 — 2026-10-10
+
+### Added
+
+- Hot-path lookup indexes (`1790000015_hot_path_indexes`): auth,
+  releases, rules, and experiments hot reads run over indexed filter
+  queries instead of full scans. No API shape changes.
+- UNIQUE backstops (`1790000016_unique_backstops`): the releases and
+  flag-key name indexes upgrade to UNIQUE when the table is
+  duplicate-free, and stay non-unique (with a server-log line naming
+  the duplicate groups) while legacy duplicates remain — remove the
+  dupes and re-apply the migration to enforce. New writes are guarded
+  regardless: duplicate `(key, project)` flag creates/updates are
+  rejected `400 "flag key already exists for this project"` (same key
+  in another project stays allowed; `main.go` `checkFlagKeyTaken`),
+  and env slug writes are serialized (`envSlugMu`) so concurrent
+  creates with the same `(project, slug)` cannot both pass the
+  uniqueness check.
+- Purge lifecycle (`purge/purge.go`): a boot run converges upgraded
+  DBs with a >30d backlog immediately instead of waiting a day, a
+  shutdown hook stops the ticker cleanly, and daily runs space 23–25h
+  apart (jittered) so restarts don't phase-lock the run time.
+  `CONFIGWIRE_PURGE=off/0/false` disables the daily ticker for
+  multi-process deployments (run it on exactly one node — two tickers
+  would double-count rollups); the manual
+  `POST /api/v1/admin/maintenance/purge` route stays mounted.
+- SSE CORS (`stream/stream.go`): `OPTIONS
+  /api/v1/env/{env}/stream` answers the preflight (`204`,
+  `Access-Control-Allow-Headers: X-ConfigWire-Key`,
+  `Max-Age: 86400`) and stream responses carry the fetch-mirrored
+  `Access-Control-Allow-Origin` (`CONFIGWIRE_CORS_ORIGIN`, default
+  `*`), so browser `fetch()` streaming works cross-origin.
+- Publish-race mapping (`releases/handler.go` `mapVersionConflict`):
+  a lost publish/rollback/promote race (stored max moved to our
+  version or beyond) answers the standard stale-base `409
+  {"message","status","currentVersion"}` so losers refresh
+  `baseVersion` and retry — previously a `500`. Driver-agnostic (max
+  re-read, no UNIQUE-message sniffing).
+- SDK-key cache TTL (`ingest/ingest.go`): verified keys stay cached
+  60s, so revocation converges within one TTL instead of living until
+  eviction or restart; expired entries are swept on insert.
+- Regex hardening (`eval/eval.go`, `main.go`,
+  `releases/snapshot.go`): rule condition patterns are capped at 256
+  bytes and compiled patterns are cached process-wide (512 entries,
+  successes and failures), so fetch-time eval never compiles the same
+  pattern twice. Over-long or uncompilable patterns are rejected
+  `400` at write and publish time.
+
+### Changed
+
+- Admin IP allowlist now covers the PocketBase data API
+  (`limits/limits.go` `IsAdminPath`): `/api/collections/*` joins
+  `/api/v1/admin/*` behind the allowlist — a superuser token alone no
+  longer grants full collection read/write from a denied IP.
+  Collections requests additionally consume a global per-IP token, so
+  superuser login keeps brute-force rate limiting even when the
+  allowlist is empty. `docs/SECURITY.md` documents the boundary.
+- Fail-closed corrupt rules (`fetch/fetch.go`,
+  `releases/handler.go`): null/undecodable snapshot conditions are
+  dropped from the eval set (match nobody) instead of vacuously
+  matching everybody; rollback re-validates the source snapshot and
+  answers `400` on corrupt rows instead of cloning fail-open bytes.
+- Ingest batch admission is all-or-nothing (`ingest/`): a batch
+  larger than the free buffer is refused with nothing queued, so a
+  `503` retry resends exactly the batch with no duplicates
+  (`docs/CONTRACT.md`).
+- Ingest auth errors use the written-response contract
+  (`ingest/ingest.go` `ErrKeyResponded`): bcrypt-verifier saturation
+  writes `429` inline with `Retry-After: 1` (never `401`, so clients
+  retry instead of rotating keys; logged at most once/sec with a
+  counter) and storage lookup failures write `503` (an outage reads
+  as an outage, not mass-invalid keys). Callers return `nil` after a
+  written response instead of rendering twice.
+- Purge commits rollups and deletes atomically (`purge/purge.go`): a
+  failed run leaves no half-rolled state.
+- Release version and snapshot reads are served from indexes
+  (`releases/`); rollback note decoding is chunked-safe (body bytes,
+  not `ContentLength`); flag delete is a transactional indexed
+  cascade (`main.go`).
+- Account error bodies stay generic on the remaining paths (raw DB
+  text is server-log only) and email validation rejects spaces and
+  control characters (`account/account.go`).
+
+### Fixed
+
+- SSE disconnects are quiet (no error log on normal client close),
+  subscriber notify copies under lock, and stream timers are atomic
+  (`stream/`).
+- Admin UI: stale scope responses are dropped, `applyDrafts` is
+  guarded, and quotes are escaped (`pb_public/js/*`,
+  `js_tests/test-core.js`, `test-dom-ops.js`); `limits.js` validators
+  are exported pure for `js_tests/test-limits.js` (no behavior
+  change). `docs/SECURITY.md` gains a destructive-operations warning.
+
 ## v0.1.5 — 2026-10-06
 
 ### Added
