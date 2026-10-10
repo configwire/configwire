@@ -29,6 +29,10 @@ func TestValidateCredentials(t *testing.T) {
 		{"blank email", "   ", "password123", false},
 		{"missing at", "adminexample.com", "password123", false},
 		{"two ats", "a@b@c.com", "password123", false},
+		{"inner space", "a b@c.de", "password123", false},
+		{"tab in domain", "a@b\tc.de", "password123", false},
+		{"control char", "a@b\x7fc.de", "password123", false},
+		{"trailing newline trimmed", "admin@example.com\n", "password123", true},
 		{"empty local", "@example.com", "password123", false},
 		{"empty domain", "admin@", "password123", false},
 		{"domain without dot", "admin@localhost", "password123", false},
@@ -258,5 +262,125 @@ func TestSuperuserDeleteHookCoversDataAPI(t *testing.T) {
 	}
 	if count, err := countRealSuperusers(app); err != nil || count != 1 {
 		t.Fatalf("after data-API delete: count=%d err=%v, want exactly 1 superuser left", count, err)
+	}
+}
+
+// TestInternalErrorHidesDetail pins the error-hygiene contract: DB text
+// goes to the server log only; callers get a generic 500 body.
+func TestInternalErrorHidesDetail(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/account/list", nil)
+	rec := httptest.NewRecorder()
+	re := &core.RequestEvent{}
+	re.Request = req
+	re.Response = rec
+	// Like the inline 500 blocks (re.JSON returns nil after writing),
+	// internalError reports via the recorder, not a non-nil error.
+	if err := internalError(re, "failed to list superusers", errors.New("driver exploded: connection reset")); err != nil {
+		t.Fatalf("internalError returned %v, want nil after writing", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("recorder status = %d, want 500", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "internal error") || strings.Contains(body, "exploded") {
+		t.Fatalf("500 body = %q, want generic text without driver detail", body)
+	}
+}
+
+// TestListAccountsDBFailure500 pins that a storage failure on the list
+// path reads as an outage (generic 500), never raw DB text.
+func TestListAccountsDBFailure500(t *testing.T) {
+	app := accountTestApp(t)
+	// System collections refuse app.Delete; drop the table directly to
+	// force the storage failure (test-only fixture sabotage).
+	if _, err := app.DB().NewQuery("DROP TABLE " + superusersCollection).Execute(); err != nil {
+		t.Fatalf("drop superusers table: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/account/list", nil)
+	rec := httptest.NewRecorder()
+	re := &core.RequestEvent{App: app}
+	re.Request = req
+	re.Response = rec
+	// internalError reports via the recorder (re.JSON returns nil after
+	// writing), so a nil error with a generic 500 body is the pass shape.
+	if err := listAccounts(re); err != nil {
+		t.Fatalf("list failure returned %v, want nil after writing", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("list failure status = %d, want 500", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "internal error") || strings.Contains(body, "no such table") {
+		t.Fatalf("500 body = %q, want generic text without driver detail", body)
+	}
+}
+
+// callSetPassword invokes the setPassword handler directly, reporting
+// the HTTP status plus the ApiError message for non-2xx paths.
+func callSetPassword(app core.App, id, password string) (int, string) {
+	body := strings.NewReader(`{"password":"` + password + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/account/"+id+"/password", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	re := &core.RequestEvent{App: app}
+	re.Request = req
+	re.Response = rec
+	if err := setPassword(re); err != nil {
+		var apiErr *router.ApiError
+		if errors.As(err, &apiErr) {
+			return apiErr.Status, apiErr.Message
+		}
+		return -1, err.Error()
+	}
+	return rec.Code, ""
+}
+
+// TestSetPasswordSaveFailureGeneric pins that a storage failure on save
+// answers a generic 400 (mapSaveError phrasing), never raw DB text.
+func TestSetPasswordSaveFailureGeneric(t *testing.T) {
+	app := accountTestApp(t)
+	rec, err := createSuperuser(app, "pw-target@example.com", "password123")
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	app.OnRecordUpdate(superusersCollection).BindFunc(func(e *core.RecordEvent) error {
+		return errors.New("db exploded: connection reset")
+	})
+	code, msg := callSetPassword(app, rec.Id, "newpassword123")
+	if code != http.StatusBadRequest {
+		t.Fatalf("save failure status = %d, want 400", code)
+	}
+	// router.ApiError sentenizes ("Could not update password.").
+	if msg != "Could not update password." {
+		t.Fatalf("save failure message = %q, want the generic body", msg)
+	}
+	if strings.Contains(msg, "exploded") {
+		t.Fatalf("400 body = %q, must not leak driver text", msg)
+	}
+}
+
+// TestDeleteAccountWriteFailureGeneric pins that a storage failure on
+// delete answers a generic 400, never raw DB text.
+func TestDeleteAccountWriteFailureGeneric(t *testing.T) {
+	app := accountTestApp(t)
+	if _, err := createSuperuser(app, "doomed-a@example.com", "password123"); err != nil {
+		t.Fatalf("create admin a: %v", err)
+	}
+	victim, err := createSuperuser(app, "doomed-b@example.com", "password123")
+	if err != nil {
+		t.Fatalf("create admin b: %v", err)
+	}
+	app.OnRecordDelete(superusersCollection).BindFunc(func(e *core.RecordEvent) error {
+		return errors.New("db exploded: connection reset")
+	})
+	code, msg := callDeleteAccount(app, victim.Id)
+	if code != http.StatusBadRequest {
+		t.Fatalf("delete failure status = %d, want 400", code)
+	}
+	// router.ApiError sentenizes ("Could not delete account.").
+	if msg != "Could not delete account." {
+		t.Fatalf("delete failure message = %q, want the generic body", msg)
+	}
+	if strings.Contains(msg, "exploded") {
+		t.Fatalf("400 body = %q, must not leak driver text", msg)
 	}
 }

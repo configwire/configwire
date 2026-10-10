@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/configwire/configwire/security"
@@ -137,6 +138,9 @@ func validateEmail(email string) error {
 	if local == "" || domain == "" {
 		return errInvalidEmail("email must have non-empty local and domain parts.")
 	}
+	if strings.IndexFunc(trimmed, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return errInvalidEmail("email must not contain spaces or control characters.")
+	}
 	if !strings.Contains(domain, ".") {
 		return errInvalidEmail("email domain must contain a dot.")
 	}
@@ -228,6 +232,18 @@ func mapSaveError(re *core.RequestEvent, err error) error {
 		})
 	}
 	return re.BadRequestError("could not create account", nil)
+}
+
+// internalError logs err server-side and renders a generic 500: DB/driver
+// text never reaches the caller. Read-side failures use this; write-side
+// failures use the mapSaveError phrasing ("could not ...") via
+// BadRequestError at each site.
+func internalError(re *core.RequestEvent, msg string, err error) error {
+	log.Printf("account: %s: %v", msg, err)
+	return re.JSON(http.StatusInternalServerError, map[string]any{
+		"message": "internal error",
+		"status":  http.StatusInternalServerError,
+	})
 }
 
 // createSuperuser persists one _superusers row via the caller's
@@ -331,7 +347,7 @@ func listAccounts(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	recs, err := re.App.FindAllRecords(superusersCollection)
 	if err != nil {
-		return err
+		return internalError(re, "failed to list superusers", err)
 	}
 	items := make([]map[string]any, 0, len(recs))
 	for _, r := range recs {
@@ -391,7 +407,8 @@ func setPassword(re *core.RequestEvent) error {
 	}
 	rec.SetPassword(req.Password)
 	if err := re.App.Save(rec); err != nil {
-		return re.BadRequestError(err.Error(), nil)
+		log.Printf("account: failed to update superuser password id=%s: %v", rec.Id, err)
+		return re.BadRequestError("could not update password", nil)
 	}
 	log.Printf("account: superuser password updated id=%s", rec.Id)
 	return re.JSON(http.StatusOK, map[string]any{"id": rec.Id})
@@ -420,7 +437,7 @@ func deleteAccount(re *core.RequestEvent) error {
 	n, err := countRealSuperusers(re.App)
 	accountMu.Unlock()
 	if err != nil {
-		return err
+		return internalError(re, "failed to count superusers", err)
 	}
 	if n <= 1 {
 		return re.BadRequestError(lastSuperuserMsg, nil)
@@ -429,7 +446,8 @@ func deleteAccount(re *core.RequestEvent) error {
 		if isLastSuperuserErr(err) {
 			return re.BadRequestError(lastSuperuserMsg, nil)
 		}
-		return err
+		log.Printf("account: failed to delete superuser id=%s: %v", id, err)
+		return re.BadRequestError("could not delete account", nil)
 	}
 	log.Printf("account: superuser deleted id=%s", id)
 	return re.JSON(http.StatusOK, map[string]any{"id": id})
