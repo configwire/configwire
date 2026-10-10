@@ -15,7 +15,20 @@
 
   // Unauthenticated: does this server need a first superuser?
   // Shows setup-section (hides login) when needsSetup, else normal login.
+  // SSO guard: in sso mode there is no setup-password or login form at
+  // all, so never probe setup and never reveal either section here — the
+  // managed notice owns the pre-auth surface (prevents a login leak if a
+  // caller reaches checkSetup while the cached mode is sso).
   function checkSetup() {
+    try {
+      if (CW.isSsoMode && CW.isSsoMode()) {
+        var sLogin = CW.$("login-section");
+        if (sLogin) sLogin.hidden = true;
+        var sSetup = CW.$("setup-section");
+        if (sSetup) sSetup.hidden = true;
+        return Promise.resolve({ needsSetup: false });
+      }
+    } catch (e) { /* fall through to today's behavior */ }
     if (CW.state.token) return Promise.resolve({ needsSetup: false });
     return CW.api("/api/v1/admin/setup/status").then(function (data) {
       var needs = !!(data && data.needsSetup);
@@ -250,12 +263,29 @@
   // showSsoNotice hides the native login AND setup password forms and
   // shows the managed-by-cloud notice (with the dashboard link only when
   // the server provided a cloud URL). errMsg (redeem failure) renders in
-  // sso-error; "" clears it.
+  // sso-error; "" clears it. It also hides every other auth surface —
+  // logout control and the whole account-management card — so no password
+  // path stays reachable; CW.login/CW.logout/account helpers stay intact.
   function showSsoNotice(errMsg) {
     var login = CW.$("login-section");
     if (login) login.hidden = true;
     var setup = CW.$("setup-section");
     if (setup) setup.hidden = true;
+    var le = CW.$("login-error");
+    if (le) { le.textContent = ""; le.hidden = true; }
+    var lb = CW.$("logout-btn");
+    if (lb) { lb.hidden = true; try { lb.style.display = "none"; } catch (e) { /* stub */ } }
+    if (CW.applySsoUiGating) { try { CW.applySsoUiGating(); } catch (e2) { /* best-effort */ } }
+    else {
+      var card = CW.$("account-card");
+      if (card) card.hidden = true;
+      var al = CW.$("account-list");
+      if (al) al.hidden = true;
+      var af = CW.$("account-create-form");
+      if (af) af.hidden = true;
+      var ar = CW.$("account-result");
+      if (ar) ar.hidden = true;
+    }
     var admin = CW.$("admin-section");
     if (admin) admin.hidden = true;
     var sso = CW.$("sso-section");

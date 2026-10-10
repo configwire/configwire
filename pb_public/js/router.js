@@ -75,6 +75,14 @@
       logoutBtn.hidden = false;
       logoutBtn.style.display = "";
     }
+    // SSO mode keeps the logout control like standard (tap clears the
+    // session and routes home to the cloud dashboard); only the
+    // login/setup/account surfaces stay gated.
+    try {
+      if (CW.isSsoMode && CW.isSsoMode()) {
+        if (CW.applySsoUiGating) CW.applySsoUiGating();
+      }
+    } catch (e) { /* best-effort */ }
     var showNav = !!CW.state.projectId && (CW.state.view === "detail" || CW.state.view === "settings" || CW.state.view === "account");
     if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
@@ -274,6 +282,7 @@
   function showAccount() {
     clearStaleAllScope();
     showView("account");
+    try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
     if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
   }
@@ -281,6 +290,7 @@
   function showSettings() {
     clearStaleAllScope();
     showView("settings");
+    try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
     if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
   }

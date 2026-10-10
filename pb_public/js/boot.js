@@ -53,7 +53,23 @@
       // Restore session (localStorage copy; memory-first once loaded).
       try { CW.state.token = localStorage.getItem(CW.LS_KEY); } catch (e) { CW.state.token = null; }
       CW.loadPersistedScope();
-      if (CW.state.token) { CW.setLoggedIn(true); CW.refreshAll(); return; }
+      if (CW.state.token) {
+        CW.setLoggedIn(true);
+        CW.refreshAll();
+        // Reload-with-token in sso mode: the cached mode may be unknown on
+        // a fresh page load (mode resolves via fetch), so revalidate in the
+        // background and re-apply the sso gating if the server says sso.
+        // Standard mode is unaffected: the shell already flipped above and
+        // the gating no-ops when the mode is not sso.
+        try {
+          if (CW.getAuthMode) {
+            CW.getAuthMode().then(function (m) {
+              if (m === "sso" && CW.applySsoUiGating) CW.applySsoUiGating();
+            }, function () {});
+          }
+        } catch (e2) { /* today's behavior already applied */ }
+        return;
+      }
       // No token: resolve the auth mode, then gate. standard (or any mode
       // lookup failure) keeps today's login/setup behavior verbatim; sso
       // hides both forms behind the managed-by-cloud notice.

@@ -85,7 +85,88 @@
     el.hidden = !msg;
   }
 
+  // isSsoMode reads the cached mode signal only (CW.state.authMode set by
+  // CW.getAuthMode in account.js; any fetch failure resolves standard, so
+  // an unknown mode is never sso). No fetch here — callers already resolved.
+  function isSsoMode() {
+    try { return !!(state && state.authMode === "sso"); } catch (e) { return false; }
+  }
+
+  // applySsoUiGating hides every auth-related UI surface that must not
+  // reach the user in sso mode. Hiding (not detaching): the login/
+  // account elements stay in the DOM with hidden=true and no clickable
+  // path reaches them, while CW.login/CW.logout/account helpers stay
+  // callable as code. The logout control is NOT gated: it mirrors
+  // standard visibility (shown when logged in) so the user can tap it to
+  // clear the session and route home to the cloud dashboard. No-op
+  // unless sso (standard untouched).
+  function applySsoUiGating() {
+    if (!isSsoMode()) return false;
+    var ids = ["login-section", "setup-section",
+      "account-card", "account-list", "account-create-form", "account-result"];
+    for (var i = 0; i < ids.length; i++) {
+      try {
+        var el = $(ids[i]);
+        if (el) {
+          el.hidden = true;
+        }
+      } catch (e) { /* best-effort */ }
+    }
+    return true;
+  }
+
   function setLoggedIn(on) {
+    // Cloud SSO bridge: in sso mode there is no login dialog and no
+    // password/account UI whatsoever — entry goes through the Cloud
+    // dashboard. The logout control mirrors standard (visible when logged
+    // in); tapping it clears the session and routes home to the cloud
+    // dashboard via ssoLogoutHome. Every sso branch below is strictly
+    // behind isSsoMode() (cached CW.state.authMode from getAuthMode);
+    // standard mode runs the exact lines it always ran.
+    var sso = isSsoMode();
+    if (sso) {
+      if ($("login-section")) $("login-section").hidden = true;
+      if ($("setup-section")) $("setup-section").hidden = true;
+      if ($("login-error")) { $("login-error").textContent = ""; $("login-error").hidden = true; }
+      if ($("admin-section")) $("admin-section").hidden = !on;
+      var lb = $("logout-btn");
+      if (lb) { lb.hidden = !on; lb.style.display = on ? "" : "none"; }
+      if (on) {
+        var sn = $("sso-section");
+        if (sn) sn.hidden = true;
+      } else {
+        // Logged out (or session expired) in sso mode: never fall back to
+        // the classic login form — route through the managed notice so the
+        // shell is never stranded blank. Late-bound: account.js owns the
+        // notice (link + error plumbing); without it, reveal the section
+        // with the link hidden rather than leaking login.
+        if (typeof CW.showSsoNotice === "function") { CW.showSsoNotice(""); }
+        else {
+          var sn2 = $("sso-section");
+          if (sn2) sn2.hidden = false;
+        }
+      }
+      applySsoUiGating();
+      var ts = $("sidebar-scope");
+      if (ts) ts.hidden = !on;
+      var snl = $("settings-nav-link");
+      if (snl) { snl.hidden = !on; snl.style.display = on ? "" : "none"; }
+      var nav = $("sidebar-nav");
+      if (on === false) {
+        if (nav) {
+          nav.setAttribute("aria-hidden", "true");
+          nav.style.display = "none";
+        }
+      } else if (on === true) {
+        if (typeof CW.syncSidebar === "function") {
+          CW.syncSidebar();
+        } else if (nav) {
+          nav.removeAttribute("aria-hidden");
+          nav.style.display = "";
+        }
+      }
+      return;
+    }
     if ($("login-section")) $("login-section").hidden = on;
     if ($("setup-section")) $("setup-section").hidden = on ? true : $("setup-section").hidden;
     if ($("admin-section")) $("admin-section").hidden = !on;
@@ -239,12 +320,41 @@
     return next();
   }
 
-  function logoutRef() {
-    // Late-bound to avoid load-order coupling: auth.js registers CW.logout.
-    if (CW.logout) return CW.logout();
+  // ssoLogoutHome navigates a logged-out sso session home to the cloud
+  // dashboard instead of showing any login form. Strictly sso-only AND
+  // only when the mode endpoint provided a cloud URL (standalone/legacy
+  // tenants fall back to the managed notice). Returns true when it fired.
+  function ssoLogoutHome() {
+    try {
+      if (!isSsoMode()) return false;
+      var url = state && state.cloudUrl;
+      if (typeof url !== "string" || !url) return false;
+      if (typeof window !== "undefined" && window.location) window.location.href = url;
+      else return false;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function logoutFallback() {
     state.token = null;
     try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
     setLoggedIn(false);
+    try { ssoLogoutHome(); } catch (e2) { /* notice already shown */ }
+  }
+
+  function logoutRef() {
+    // Late-bound to avoid load-order coupling: auth.js registers CW.logout
+    // (itself mode-aware — see auth.js — so the 401/auto-logout paths via
+    // api/apiMut are covered transitively with no change at their call
+    // sites). The fallback below only runs when auth.js is absent; it keeps
+    // the same mode-aware shape over its own lines.
+    if (CW.logout) return CW.logout();
+    try {
+      if (!state.authMode && typeof CW.getAuthMode === "function") {
+        return CW.getAuthMode().then(function () { logoutFallback(); }, function () { logoutFallback(); });
+      }
+    } catch (e) { /* fall through to the sync lines */ }
+    logoutFallback();
   }
 
   function apiMut(method, path, body) {
@@ -274,6 +384,9 @@
   CW.toast = toast;
   CW.showLoginError = showLoginError;
   CW.setLoggedIn = setLoggedIn;
+  CW.isSsoMode = isSsoMode;
+  CW.applySsoUiGating = applySsoUiGating;
+  CW.ssoLogoutHome = ssoLogoutHome;
   CW.selectedEnv = selectedEnv;
   CW.envSlug = envSlug;
   CW.loadPersistedScope = loadPersistedScope;
