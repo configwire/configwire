@@ -239,18 +239,29 @@ func ResolveUserHash(userHash, userID string) string {
 
 var (
 	fastCacheMu sync.RWMutex
-	fastCache   = make(map[string]string)
+	fastCache   = make(map[string]cacheEntry)
 	slowSem     = make(chan struct{}, 4)
 	// slowVerifyCalls counts bcrypt verifications (test hook only).
 	slowVerifyCalls int
 )
+
+// fastCacheTTL bounds how long a verified key stays cached: revocation
+// (possibly on another process) converges within one TTL instead of
+// living until eviction or restart. Tests shorten it; production value
+// is 60s.
+var fastCacheTTL = 60 * time.Second
+
+type cacheEntry struct {
+	id  string
+	exp time.Time
+}
 
 const fastCacheCap = 10000
 
 // ResetKeyCache clears the process-local fast cache (tests only).
 func ResetKeyCache() {
 	fastCacheMu.Lock()
-	fastCache = make(map[string]string)
+	fastCache = make(map[string]cacheEntry)
 	slowVerifyCalls = 0
 	fastCacheMu.Unlock()
 	slowSaturated.Store(0)
@@ -266,14 +277,27 @@ func SlowVerifyCalls() int {
 
 func cacheGet(fast string) (string, bool) {
 	fastCacheMu.RLock()
-	id, ok := fastCache[fast]
+	e, ok := fastCache[fast]
 	fastCacheMu.RUnlock()
-	return id, ok
+	if !ok {
+		return "", false
+	}
+	if time.Now().After(e.exp) {
+		cacheDel(fast)
+		return "", false
+	}
+	return e.id, true
 }
 
 func cachePut(fast, id string) {
 	fastCacheMu.Lock()
 	if len(fastCache) >= fastCacheCap {
+		now := time.Now()
+		for k, e := range fastCache {
+			if now.After(e.exp) {
+				delete(fastCache, k)
+			}
+		}
 		for k := range fastCache {
 			delete(fastCache, k)
 			if len(fastCache) < fastCacheCap/2 {
@@ -281,7 +305,7 @@ func cachePut(fast, id string) {
 			}
 		}
 	}
-	fastCache[fast] = id
+	fastCache[fast] = cacheEntry{id: id, exp: time.Now().Add(fastCacheTTL)}
 	fastCacheMu.Unlock()
 }
 
@@ -300,7 +324,7 @@ func EvictKeyByID(id string) {
 	}
 	fastCacheMu.Lock()
 	for k, v := range fastCache {
-		if v == id {
+		if v.id == id {
 			delete(fastCache, k)
 		}
 	}

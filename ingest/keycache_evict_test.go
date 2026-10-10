@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"testing"
+	"time"
 )
 
 func TestEvictKeyByIDRemovesOnlyTarget(t *testing.T) {
@@ -26,6 +27,25 @@ func TestEvictKeyByIDRemovesOnlyTarget(t *testing.T) {
 	EvictKeyByID("no-such-id")
 	if id, ok := cacheGet("fast-b"); !ok || id != "id-2" {
 		t.Fatalf("empty/unknown evict must be a no-op, got id=%q ok=%v", id, ok)
+	}
+	ResetKeyCache()
+}
+
+// TestFastCacheTTLExpires pins cross-process revocation convergence: a
+// cached entry stops hitting after the TTL with no eviction hook firing
+// (hooks only reach the local process).
+func TestFastCacheTTLExpires(t *testing.T) {
+	old := fastCacheTTL
+	fastCacheTTL = 100 * time.Millisecond
+	defer func() { fastCacheTTL = old }()
+	ResetKeyCache()
+	cachePut("fast-ttl", "id-ttl")
+	if id, ok := cacheGet("fast-ttl"); !ok || id != "id-ttl" {
+		t.Fatalf("fresh entry must hit, got id=%q ok=%v", id, ok)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if _, ok := cacheGet("fast-ttl"); ok {
+		t.Fatal("expired entry must miss")
 	}
 	ResetKeyCache()
 }
