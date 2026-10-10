@@ -45,16 +45,61 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     // Restore session (localStorage copy; memory-first once loaded).
-    function normalBoot() {
+    function bootWithoutTicket() {
+      // Standard-path invariant: the SSO notice never shows here (the
+      // markup already hides it; this keeps it hidden if a prior SSO
+      // attempt revealed it before falling back).
+      try { var sn = CW.$("sso-section"); if (sn) sn.hidden = true; } catch (e) { /* best-effort */ }
       // Restore session (localStorage copy; memory-first once loaded).
       try { CW.state.token = localStorage.getItem(CW.LS_KEY); } catch (e) { CW.state.token = null; }
       CW.loadPersistedScope();
-      if (CW.state.token) { CW.setLoggedIn(true); CW.refreshAll(); }
-      else {
+      if (CW.state.token) { CW.setLoggedIn(true); CW.refreshAll(); return; }
+      // No token: resolve the auth mode, then gate. standard (or any mode
+      // lookup failure) keeps today's login/setup behavior verbatim; sso
+      // hides both forms behind the managed-by-cloud notice.
+      var modeP = null;
+      try { modeP = CW.getAuthMode ? CW.getAuthMode() : Promise.resolve("standard"); }
+      catch (e) { modeP = Promise.resolve("standard"); }
+      modeP.then(function (mode) {
+        if (mode === "sso") {
+          if (CW.showSsoNotice) CW.showSsoNotice("");
+          return;
+        }
         CW.setLoggedIn(false);
         if (CW.syncSidebar) CW.syncSidebar();
         if (CW.checkSetup) CW.checkSetup().catch(function () {});
+      }, function () {
+        CW.setLoggedIn(false);
+        if (CW.syncSidebar) CW.syncSidebar();
+        if (CW.checkSetup) CW.checkSetup().catch(function () {});
+      });
+    }
+    function normalBoot() {
+      // ?sso= present: redeem same-origin first (cloud SSO landing). On
+      // failure fall back per mode — sso shows the notice with the error,
+      // standard keeps the normal login path so a stray param never locks
+      // out a standalone deploy.
+      var ticket = "";
+      try { ticket = CW.getSsoTicket ? CW.getSsoTicket() : ""; } catch (e) { ticket = ""; }
+      if (ticket) {
+        if (CW.redeemSsoTicket) {
+          CW.redeemSsoTicket(ticket).then(null, function (err) {
+            var msg = (err && err.message) || "sso redeem failed";
+            var modeP = null;
+            try { modeP = CW.getAuthMode ? CW.getAuthMode() : Promise.resolve("standard"); }
+            catch (e) { modeP = Promise.resolve("standard"); }
+            modeP.then(function (mode) {
+              if (mode === "sso") { if (CW.showSsoNotice) CW.showSsoNotice(msg); return; }
+              bootWithoutTicket();
+              try { CW.showLoginError(msg); } catch (e2) { /* best-effort */ }
+            }, function () { bootWithoutTicket(); });
+          });
+        } else {
+          bootWithoutTicket();
+        }
+        return;
       }
+      bootWithoutTicket();
     }
     normalBoot();
 

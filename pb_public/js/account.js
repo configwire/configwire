@@ -155,7 +155,130 @@
     });
   }
 
+  // ---- Cloud SSO bridge (plan cloud-sso-bridge P1) ----
+  // No load-time side effects: these are pure helpers + fetch wrappers
+  // called from boot.js only. In standard mode (or when the backend
+  // predates the contract) every path below falls back to today's
+  // login/setup behavior.
+
+  // getSsoTicket reads ?sso=<ticket> from the current URL (href-parsed so
+  // it works without window.location.search). Percent-decoding is
+  // best-effort; "" means absent.
+  function getSsoTicket() {
+    var href = "";
+    try { href = String((window.location && window.location.href) || ""); } catch (e) { return ""; }
+    var h = href.split("#")[0];
+    var q = h.indexOf("?");
+    if (q < 0) return "";
+    var pairs = h.slice(q + 1).split("&");
+    for (var i = 0; i < pairs.length; i++) {
+      var kv = pairs[i].split("=");
+      var k = kv[0];
+      try { k = decodeURIComponent(k); } catch (e) { /* keep raw */ }
+      if (k === "sso") {
+        var v = kv.slice(1).join("=");
+        try { v = decodeURIComponent(v); } catch (e2) { /* keep raw */ }
+        return v || "";
+      }
+    }
+    return "";
+  }
+
+  // stripSsoParam returns url without the sso query param (others kept).
+  function stripSsoParam(url) {
+    var hash = "";
+    var hi = String(url).indexOf("#");
+    if (hi >= 0) { hash = String(url).slice(hi); url = String(url).slice(0, hi); }
+    else url = String(url);
+    var qi = url.indexOf("?");
+    if (qi < 0) return url + hash;
+    var base = url.slice(0, qi);
+    var kept = [];
+    var pairs = url.slice(qi + 1).split("&");
+    for (var i = 0; i < pairs.length; i++) {
+      if (pairs[i] === "") continue;
+      var k = pairs[i].split("=")[0];
+      try { k = decodeURIComponent(k); } catch (e) { /* keep raw */ }
+      if (k === "sso") continue;
+      kept.push(pairs[i]);
+    }
+    return base + (kept.length ? "?" + kept.join("&") : "") + hash;
+  }
+
+  // getAuthMode resolves the server mode once ("sso" or "standard") and
+  // caches it on CW.state. Any failure (backend predates the contract,
+  // offline) resolves "standard" so the shell keeps today's behavior.
+  function getAuthMode() {
+    if (CW.state.authMode) return Promise.resolve(CW.state.authMode);
+    return CW.api("/api/v1/admin/auth/mode").then(function (data) {
+      var m = (data && data.mode === "sso") ? "sso" : "standard";
+      CW.state.authMode = m;
+      if (data && typeof data.cloudUrl === "string" && data.cloudUrl) CW.state.cloudUrl = data.cloudUrl;
+      return m;
+    }, function () { return "standard"; });
+  }
+
+  // redeemSsoTicket redeems a ticket same-origin and stores the token
+  // exactly like CW.login success: bare token memory-first + localStorage
+  // + shell flip + refresh. On success it strips ?sso= via replaceState.
+  function redeemSsoTicket(ticket) {
+    CW.showLoginError("");
+    return fetch("/api/v1/admin/sso/redeem", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket: ticket }),
+    }).then(function (res) {
+      if (!res.ok) throw new Error("sso redeem failed: HTTP " + res.status);
+      return res.json();
+    }).then(function (data) {
+      if (!data || !data.token) throw new Error("sso redeem failed: no token");
+      CW.state.token = data.token; // bare token, memory-first
+      try { localStorage.setItem(CW.LS_KEY, data.token); } catch (e) { /* private mode */ }
+      var sso = CW.$("sso-section");
+      if (sso) sso.hidden = true;
+      CW.setLoggedIn(true);
+      if (typeof CW.refreshAll === "function") CW.refreshAll();
+      try {
+        if (window.history && window.history.replaceState && window.location && window.location.href) {
+          window.history.replaceState(null, "", stripSsoParam(window.location.href));
+        }
+      } catch (e) { /* best-effort URL cleanup */ }
+      return data;
+    });
+  }
+
+  // showSsoNotice hides the native login AND setup password forms and
+  // shows the managed-by-cloud notice (with the dashboard link only when
+  // the server provided a cloud URL). errMsg (redeem failure) renders in
+  // sso-error; "" clears it.
+  function showSsoNotice(errMsg) {
+    var login = CW.$("login-section");
+    if (login) login.hidden = true;
+    var setup = CW.$("setup-section");
+    if (setup) setup.hidden = true;
+    var admin = CW.$("admin-section");
+    if (admin) admin.hidden = true;
+    var sso = CW.$("sso-section");
+    if (sso) sso.hidden = false;
+    var link = CW.$("sso-cloud-link");
+    if (link) {
+      if (CW.state.cloudUrl) {
+        try { link.href = CW.state.cloudUrl; } catch (e) { /* stub */ }
+        link.hidden = false;
+      } else {
+        link.hidden = true;
+      }
+    }
+    var err = CW.$("sso-error");
+    if (err) { err.textContent = errMsg || ""; err.hidden = !errMsg; }
+  }
+
   CW.checkSetup = checkSetup;
+  CW.getSsoTicket = getSsoTicket;
+  CW.stripSsoParam = stripSsoParam;
+  CW.getAuthMode = getAuthMode;
+  CW.redeemSsoTicket = redeemSsoTicket;
+  CW.showSsoNotice = showSsoNotice;
   CW.createSetup = createSetup;
   CW.renderAccounts = renderAccounts;
   CW.loadAccounts = loadAccounts;

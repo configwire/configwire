@@ -30,6 +30,7 @@ import (
 	"github.com/configwire/configwire/purge"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
+	"github.com/configwire/configwire/sso"
 	"github.com/configwire/configwire/stats"
 	"github.com/configwire/configwire/stream"
 )
@@ -487,6 +488,30 @@ func main() {
 		purge.Register(se)
 
 		account.Register(se)
+
+		// Cloud SSO bridge (plan cloud-sso-bridge P1): CONFIGWIRE_AUTH_MODE
+		// selects standard (default, today's behavior untouched) or sso
+		// (cloud-managed: redeem enabled, login UI gated). sso fails fast
+		// here — before any route serves — when the secret is missing or
+		// undersized. The secret value itself is never logged.
+		authMode := sso.ParseAuthMode(os.Getenv(sso.EnvAuthMode))
+		var ssoSecret []byte
+		if authMode == sso.ModeSSO {
+			secretHex := strings.TrimSpace(os.Getenv(sso.EnvSecret))
+			b, err := sso.ParseSecretHex(secretHex)
+			if err != nil {
+				log.Fatalf("configwire: CONFIGWIRE_AUTH_MODE=sso requires CONFIGWIRE_CLOUD_SSO_SECRET=<64-hex> (32 bytes): %v", err)
+			}
+			ssoSecret = b
+		} else if strings.TrimSpace(os.Getenv(sso.EnvSecret)) != "" {
+			log.Print("configwire: CONFIGWIRE_CLOUD_SSO_SECRET is set but CONFIGWIRE_AUTH_MODE is not sso; ignoring the secret (standard mode)")
+		}
+		sso.Register(se, sso.Config{
+			Mode:     authMode,
+			Secret:   ssoSecret,
+			Cache:    sso.NewNonceCache(sso.NonceTTL),
+			CloudURL: strings.TrimSpace(os.Getenv(sso.EnvCloudURL)),
+		})
 
 		// Static files only; dynamic data via
 		// fetch calls from pb_public/js/*.js. Mounted LAST on /{path...}
