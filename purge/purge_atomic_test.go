@@ -63,6 +63,20 @@ func TestDailyTickerBootRunAndShutdown(t *testing.T) {
 	}
 }
 
+// TestPurgeEnabledGate pins the multi-process opt-out: off/0/false (any
+// case, padded) disable the ticker; unset and anything else enable it.
+func TestPurgeEnabledGate(t *testing.T) {
+	for value, want := range map[string]bool{
+		"off": false, "OFF": false, " 0 ": false, "false": false, "False": false,
+		"": true, "1": true, "on": true, "yes": true,
+	} {
+		t.Setenv("CONFIGWIRE_PURGE", value)
+		if got := purgeEnabled(); got != want {
+			t.Errorf("CONFIGWIRE_PURGE=%q: enabled=%v, want %v", value, got, want)
+		}
+	}
+}
+
 // TestPurgeIntervalJitterBounds pins the daily schedule to 23-25h so
 // restarts do not phase-lock the run time.
 func TestPurgeIntervalJitterBounds(t *testing.T) {

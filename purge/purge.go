@@ -31,6 +31,8 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -333,8 +335,25 @@ func upsertRollups(app core.App, buckets []Rollup) error {
 // purges raw events older than RawRetentionDays. Uses re.App / se.App
 // per request (never a captured stale app beyond the process singleton
 // the ticker legitimately owns, same discipline as ingest.Batcher).
+// purgeEnabled reports whether the daily ticker runs: CONFIGWIRE_PURGE
+// of off/0/false disables it for multi-process deployments where
+// exactly one node should purge (two tickers would double-count
+// rollups). The manual route stays mounted regardless.
+func purgeEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CONFIGWIRE_PURGE"))) {
+	case "off", "0", "false":
+		return false
+	default:
+		return true
+	}
+}
+
 func Register(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/maintenance/purge", postPurge).Bind(apis.RequireSuperuserAuth())
+	if !purgeEnabled() {
+		log.Print("purge: daily ticker disabled via CONFIGWIRE_PURGE (manual route still mounted)")
+		return
+	}
 	stop := make(chan struct{})
 	var once sync.Once
 	se.App.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
