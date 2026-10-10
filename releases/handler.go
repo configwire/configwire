@@ -199,6 +199,10 @@ func postPublish(re *core.RequestEvent) error {
 	rec.Set("note", req.Note)
 	rec.Set("env", env.Id)
 	if err := internalSave(re.App, rec); err != nil {
+		var vce *versionConflictError
+		if errors.As(mapVersionConflict(re.App, env.Id, version, err), &vce) {
+			return versionConflictResponse(re, vce.current)
+		}
 		return err
 	}
 
@@ -288,6 +292,38 @@ func releaseRows(recs []*core.Record) []ReleaseRow {
 	return rows
 }
 
+// versionConflictError signals a lost publish race: another writer
+// stored our version (or newer) first, so the caller should refresh
+// baseVersion and retry instead of treating this as a server error.
+type versionConflictError struct{ current int }
+
+func (e *versionConflictError) Error() string {
+	return "stale baseVersion: version conflict at version " + strconv.Itoa(e.current)
+}
+
+// mapVersionConflict maps a release-row save failure to a version
+// conflict when the stored max moved to our version or beyond
+// (cross-process writeMu race): the write lost, the data didn't.
+// Driver-agnostic — no UNIQUE-message sniffing, just a max re-read.
+// Anything else propagates unchanged.
+func mapVersionConflict(app core.App, envID string, wantVersion int, err error) error {
+	cur, rerr := MaxVersionForEnv(app, envID)
+	if rerr == nil && cur >= wantVersion {
+		return &versionConflictError{current: cur}
+	}
+	return err
+}
+
+// versionConflictResponse renders the standard stale-base 409 so losing
+// racers retry exactly like any stale client.
+func versionConflictResponse(re *core.RequestEvent, current int) error {
+	return re.JSON(http.StatusConflict, map[string]any{
+		"message":        "Stale baseVersion: a newer release exists.",
+		"status":         http.StatusConflict,
+		"currentVersion": current,
+	})
+}
+
 // rollbackToNewRow copies src's snapshot bytes verbatim into a NEW row
 // with version=max+1 in the source row's env and a fresh etag (the
 // version is part of the etag input, so identical bytes still hash
@@ -332,7 +368,7 @@ func rollbackToNewRow(app core.App, src *core.Record, note, author string, fromV
 	rec.Set("note", note)
 	rec.Set("env", envID)
 	if err := internalSave(app, rec); err != nil {
-		return 0, "", err
+		return 0, "", mapVersionConflict(app, envID, version, err)
 	}
 
 	log.Printf("releases: rolled back fromVersion=%d version=%d etag=%s author=%s note=%q",
@@ -388,7 +424,7 @@ func promoteToNewRow(app core.App, src *core.Record, destEnvID, note, author str
 	rec.Set("note", note)
 	rec.Set("env", destEnvID)
 	if err := internalSave(app, rec); err != nil {
-		return 0, "", err
+		return 0, "", mapVersionConflict(app, destEnvID, version, err)
 	}
 
 	log.Printf("releases: promoted srcEnv=%s srcVersion=%d destEnv=%s version=%d etag=%s author=%s note=%q",
@@ -468,6 +504,10 @@ func postRollbackEnv(re *core.RequestEvent) error {
 
 	version, etag, err := rollbackToNewRow(re.App, recs[idx], req.Note, callerAuthor(re), n)
 	if err != nil {
+		var vce *versionConflictError
+		if errors.As(err, &vce) {
+			return versionConflictResponse(re, vce.current)
+		}
 		return re.BadRequestError(err.Error(), nil)
 	}
 
@@ -543,6 +583,10 @@ func postPromoteEnv(re *core.RequestEvent) error {
 
 	version, etag, err := promoteToNewRow(re.App, recs[idx], destEnvRec.Id, req.Note, callerAuthor(re), req.SrcVersion)
 	if err != nil {
+		var vce *versionConflictError
+		if errors.As(err, &vce) {
+			return versionConflictResponse(re, vce.current)
+		}
 		return re.BadRequestError(err.Error(), nil)
 	}
 

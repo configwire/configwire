@@ -3,10 +3,14 @@ package releases
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/configwire/configwire/eval"
+
+	"github.com/pocketbase/pocketbase/core"
 )
 
 func goodVariants() any {
@@ -311,6 +315,64 @@ func TestRollbackPickEnvScopedMissingVersion(t *testing.T) {
 	rows := []ReleaseRow{{EnvID: "envA", Version: 1}}
 	if _, err := RollbackPick(rows, 1, "envB"); !errors.Is(err, ErrReleaseNotFound) {
 		t.Fatalf("expected ErrReleaseNotFound for version absent in this env, got %v", err)
+	}
+}
+
+// TestMapVersionConflictLoserRetries pins the cross-process publish
+// contract: a save failure where the stored max reached our version
+// maps to a conflict (caller refreshes baseVersion and retries);
+// anything else propagates unchanged. Driver-agnostic: no
+// UNIQUE-message sniffing, just a max re-read.
+func TestMapVersionConflictLoserRetries(t *testing.T) {
+	app := promoteHandlerTestApp(t)
+	env := seedPromoteEnv(t, app, seedPromoteProject(t, app, "conflict"), "dev")
+	boom := errors.New("UNIQUE constraint failed: releases.env, releases.version")
+
+	if err := mapVersionConflict(app, env, 1, boom); err != boom {
+		t.Fatalf("no rows: got %v, want the original error", err)
+	}
+
+	col, err := app.FindCollectionByNameOrId("releases")
+	if err != nil {
+		t.Fatalf("find releases: %v", err)
+	}
+	rec := core.NewRecord(col)
+	rec.Set("env", env)
+	rec.Set("version", 1)
+	if err := internalSave(app, rec); err != nil {
+		t.Fatalf("seed release: %v", err)
+	}
+	var vce *versionConflictError
+	if err := mapVersionConflict(app, env, 1, boom); !errors.As(err, &vce) || vce.current != 1 {
+		t.Fatalf("collided write: got %v, want conflict at current 1", err)
+	}
+	if err := mapVersionConflict(app, env, 5, boom); err != boom {
+		t.Fatalf("want-beyond-max: got %v, want the original error", err)
+	}
+}
+
+// TestVersionConflictResponseShape pins the loser response: standard
+// stale-base 409 with the current version so clients retry like any
+// stale publisher.
+func TestVersionConflictResponseShape(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/env/dev/publish", nil)
+	rec := httptest.NewRecorder()
+	re := &core.RequestEvent{}
+	re.Request = req
+	re.Response = rec
+	// re.JSON writes and returns nil; the contract is the recorder.
+	if err := versionConflictResponse(re, 7); err != nil {
+		t.Fatalf("versionConflictResponse returned %v, want nil after writing", err)
+	}
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["message"] != "Stale baseVersion: a newer release exists." || body["currentVersion"] != float64(7) {
+		t.Fatalf("body = %v, want stale-base shape with currentVersion 7", body)
 	}
 }
 
