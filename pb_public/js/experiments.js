@@ -199,7 +199,9 @@
   }
 
   function loadExperiments() {
+    var gen = CW.state.scopeGen;
     return CW.apiAll("/api/collections/experiments/records").then(function (items) {
+      if (CW.scopeStale(gen)) return;
       items = items || [];
       if (CW.state.projectId) {
         var flagIds = {};

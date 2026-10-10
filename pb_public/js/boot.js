@@ -118,6 +118,7 @@
       CW.state.envId = null;
       CW.state.envs = [];
       CW.persistScope();
+      CW.bumpScopeGen();
       if (CW.renderProjectEnv) CW.renderProjectEnv();
       if (window.location.hash !== "#/") window.location.hash = "#/";
       CW.showHome();
@@ -127,6 +128,7 @@
       var sel = CW.selectedEnv();
       if (sel && sel.slug) CW.state.envSlug = sel.slug;
       CW.persistScope();
+      CW.bumpScopeGen();
       var eg = CW.$("env-group-name");
       if (eg) eg.textContent = (sel && sel.slug) || CW.state.envSlug || "env";
       CW.loadReleases().catch(function () {});

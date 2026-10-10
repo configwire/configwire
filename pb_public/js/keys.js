@@ -30,7 +30,9 @@
   }
 
   function loadKeys() {
+    var gen = CW.state.scopeGen;
     return CW.apiAll("/api/collections/sdk_keys/records?perPage=200").then(function (items) {
+      if (CW.scopeStale(gen)) return;
       items = items || [];
       if (CW.state.envId) items = items.filter(function (k) { return k.env === CW.state.envId; });
       else if (CW.state.projectId) {

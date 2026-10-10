@@ -138,6 +138,7 @@ function reset() {
   s.experiments = []; s.experimentsLoaded = false;
   s.keys = []; s.lastStats = null; s.lastStatsText = ""; s.lastStatsError = "";
   s.homeStats = {}; s.view = "home"; s.unpublishedChanges = false;
+  s.scopeGen = 0;
   s.activeFlagRulesId = null; s.activeFlagExperimentsId = null;
   s.collapsedGroups = {}; s.dirtyForms = {};
   h.CW.drafts.draftClearAll();
@@ -778,6 +779,42 @@ test("loadReleases: env filter + desc sort + publish-base fill", async function 
   assert.equal(String(el("publish-base").value), "2");
 });
 
+test("loadKeys: stale scope response is dropped", async function () {
+  reset();
+  h.CW.state.envId = "eA";
+  h.CW.state.keys = [{ id: "k-old", env: "eB" }];
+  var resolveFetch;
+  var gate = new Promise(function (r) { resolveFetch = r; });
+  var realApiAll = h.CW.apiAll;
+  h.CW.apiAll = function () { return gate.then(function () { return [{ id: "k-new", env: "eA" }]; }); };
+  var p = h.CW.loadKeys();
+  h.CW.state.envId = "eB";
+  h.CW.bumpScopeGen(); // env-select handler bumps on scope change
+  resolveFetch();
+  await p;
+  h.CW.apiAll = realApiAll;
+  assert.deepEqual(plain(h.CW.state.keys), [{ id: "k-old", env: "eB" }]);
+});
+
+test("loadReleases: stale scope response is dropped", async function () {
+  reset();
+  h.CW.state.envId = "eA";
+  h.CW.state.releases = [{ id: "r-old", env: "eB", version: 9 }];
+  h.CW.state.allReleases = [{ id: "r-old", env: "eB", version: 9 }];
+  var resolveFetch;
+  var gate = new Promise(function (r) { resolveFetch = r; });
+  var realApiAll = h.CW.apiAll;
+  h.CW.apiAll = function () { return gate.then(function () { return [{ id: "r-new", env: "eA", version: 1 }]; }); };
+  var p = h.CW.loadReleases();
+  h.CW.state.envId = "eB";
+  h.CW.bumpScopeGen();
+  resolveFetch();
+  await p;
+  h.CW.apiAll = realApiAll;
+  assert.deepEqual(plain(h.CW.state.releases), [{ id: "r-old", env: "eB", version: 9 }]);
+  assert.deepEqual(plain(h.CW.state.allReleases), [{ id: "r-old", env: "eB", version: 9 }]);
+});
+
 test("publish/rollback: URL shapes via fetch stub", async function () {
   reset();
   h.CW.state.envSlug = "dev"; h.CW.state.projectId = "p1";
@@ -843,6 +880,25 @@ test("applyDrafts: group-delete ungroups members first", async function () {
     "DELETE /api/collections/groups/records/g1",
   ]);
   assert.deepEqual(plain(calls[0].body), { group: null });
+});
+
+test("applyDrafts: concurrent second call is a busy noop", async function () {
+  reset();
+  h.CW.drafts.draftStage("group", {
+    op: "create", body: { name: "G", project: "p1" }, label: "G",
+  });
+  var release;
+  var gate = new Promise(function (r) { release = r; });
+  var realApiMut = h.CW.apiMut;
+  h.CW.apiMut = function () { return gate; };
+  var p1 = h.CW.applyDrafts();
+  var out2 = await h.CW.applyDrafts();
+  assert.deepEqual(plain(out2), { applied: 0, total: 0, noop: true, busy: true });
+  release({ status: 201, data: { id: "live-g1" } });
+  var out1 = await p1;
+  h.CW.apiMut = realApiMut;
+  assert.deepEqual(plain(out1), { applied: 1, total: 1 });
+  assert.equal(h.CW.drafts.hasDrafts(), false);
 });
 
 test("publish state + dirty forms: mark/set/arm", function () {

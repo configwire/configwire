@@ -648,11 +648,19 @@
     try { renderUnpublishedList(); updatePublishNavBadge(); updateDirtyHighlights(); } catch (e5) { /* best-effort */ }
   }
 
+  // applyRunning guards direct invocations (e.g. window.cwAdmin.
+  // applyDrafts): the UI-level CW.state.applying flag is set by callers
+  // BEFORE calling, so it cannot guard the function itself. A concurrent
+  // call gets a busy noop instead of interleaving POSTs with the
+  // in-flight run.
+  var applyRunning = false;
   function applyDrafts() {
+    if (applyRunning) return Promise.resolve({ applied: 0, total: 0, noop: true, busy: true });
     if (!useDraftSignal()) return Promise.resolve({ applied: 0, total: 0, noop: true });
     var steps = buildApplySteps();
     var total = steps.length;
     if (!total) return Promise.resolve({ applied: 0, total: 0 });
+    applyRunning = true;
     var tempMap = {};
     var idx = 0;
     function fail(s, stepNo, status, msg, name) {
@@ -692,7 +700,7 @@
         return fail(s, stepNo, st, m, e && e.name);
       });
     }
-    return next();
+    return next().then(function (out) { applyRunning = false; return out; }, function (e) { applyRunning = false; throw e; });
   }
 
   // Per-form dirty gating (publish-global CW.state.unpublishedChanges is
@@ -762,6 +770,7 @@
   }
 
   function loadReleases() {
+    var gen = CW.state.scopeGen;
     // Fetch all then filter client-side by selected env relation; sort -version.
     // allReleases-vs-second-fetch choice: keep the unfiltered full list in
     // CW.state.allReleases (one fetch, no extra round-trip); CW.state.releases
@@ -769,6 +778,7 @@
     // current-env semantics, while the promote dialog sources the fixed
     // source release and each dest env's max version from allReleases.
     return CW.apiAll("/api/collections/releases/records?perPage=200&sort=-version").then(function (items) {
+      if (CW.scopeStale(gen)) return;
       items = items || [];
       CW.state.allReleases = items.slice().sort(function (a, b) { return b.version - a.version; });
       if (CW.state.envId) items = items.filter(function (r) { return r.env === CW.state.envId; });

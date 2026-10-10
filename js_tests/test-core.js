@@ -46,6 +46,24 @@ test("esc null/undefined coerce to empty string, numbers stringified", function 
   assert.equal(ctx.CW.esc(""), "");
 });
 
+test("esc escapes single quotes for attribute safety", function () {
+  var ctx = fresh();
+  assert.equal(ctx.CW.esc("a'b"), "a&#39;b");
+  assert.equal(ctx.CW.esc("'\"<>&"), "&#39;&quot;&lt;&gt;&amp;");
+});
+
+// --- scope generation (core.js bumpScopeGen/scopeStale) ---
+
+test("scopeGen: bump invalidates older generations", function () {
+  var ctx = fresh();
+  var g0 = ctx.CW.state.scopeGen;
+  var g1 = ctx.CW.bumpScopeGen();
+  assert.ok(g1 !== g0);
+  assert.equal(ctx.CW.scopeStale(g0), true);
+  assert.equal(ctx.CW.scopeStale(g1), false);
+  assert.equal(ctx.CW.scopeStale(ctx.CW.bumpScopeGen()), false);
+});
+
 // --- serverMessage (core.js:128-133) ---
 
 test("serverMessage null/undefined to empty string", function () {

@@ -397,6 +397,7 @@
   }
 
   function refreshAll() {
+    CW.bumpScopeGen();
     CW.loadPersistedScope();
     loadProjects().then(function () {
       renderProjectEnv();

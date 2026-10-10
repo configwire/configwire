@@ -30,6 +30,7 @@
     view: "home", // "home" | "detail" (hash-routed)
     unpublishedChanges: false, // publish-global dirty (any unsaved/unpublished edit)
     unpublished: { flag: {}, rule: {}, experiment: {}, group: {} }, // kind -> id -> {label, at}
+    scopeGen: 0, // bumped on every scope change; loaders drop older generations
   };
 
   function $(id) { return document.getElementById(id); }
@@ -141,8 +142,17 @@
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
+
+  // Scope generation: bumped on every scope change that fans out loads
+  // (project/env switch, home/detail navigation). In-flight loaders
+  // capture the generation at call time and drop their response when it
+  // no longer matches, so a slow response from scope A can never paint
+  // over scope B.
+  function bumpScopeGen() { state.scopeGen = (state.scopeGen || 0) + 1; return state.scopeGen; }
+  function scopeStale(gen) { return gen !== state.scopeGen; }
 
   function serverMessage(data) {
     if (data == null) return "";
@@ -269,6 +279,8 @@
   CW.loadPersistedScope = loadPersistedScope;
   CW.persistScope = persistScope;
   CW.esc = esc;
+  CW.bumpScopeGen = bumpScopeGen;
+  CW.scopeStale = scopeStale;
   CW.serverMessage = serverMessage;
   CW.api = api;
   CW.apiAll = apiAll;

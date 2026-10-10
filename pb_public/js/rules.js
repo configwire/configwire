@@ -88,7 +88,9 @@
   }
 
   function loadRules() {
+    var gen = CW.state.scopeGen;
     return CW.apiAll("/api/collections/rules/records?sort=priority").then(function (items) {
+      if (CW.scopeStale(gen)) return;
       items = items || [];
       CW.state.rules = items.slice().sort(function (a, b) { return (a.priority || 0) - (b.priority || 0); });
       CW.state.rulesLoaded = true;

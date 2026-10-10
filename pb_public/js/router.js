@@ -142,6 +142,7 @@
   // keys are owned per-project through env->project, same as loadKeys,
   // and revoked keys are excluded.
   function loadHomeStats() {
+    var gen = CW.state.scopeGen;
     return CW.apiAll("/api/collections/environments/records?perPage=200").then(function (eItems) {
       var envs = eItems || [];
       var envProject = {};
@@ -169,6 +170,7 @@
             var pid = envProject[key.env];
             if (pid && stats[pid] && !key.revoked) stats[pid].keys++;
           });
+          if (CW.scopeStale(gen)) return;
           CW.state.homeStats = stats;
           renderProjectCards();
         });
@@ -177,6 +179,7 @@
   }
 
   function loadDetailScope() {
+    CW.bumpScopeGen();
     CW.loadEnvs().then(function () {
       renderDetailHeader();
       CW.loadReleases().catch(function (e) { CW.$("release-list").innerHTML = "<li>" + CW.esc(e.message) + "</li>"; });
@@ -205,6 +208,7 @@
   }
 
   function showHome() {
+    CW.bumpScopeGen();
     showView("home");
     renderProjectCards();
     if (CW.state.token) loadHomeStats().catch(function () { });

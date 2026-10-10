@@ -575,6 +575,7 @@
   }
 
   function loadStats() {
+    var gen = CW.state.scopeGen;
     var sinceEl = CW.$("stats-since");
     var sinceRaw = sinceEl && sinceEl.value != null ? String(sinceEl.value) : "";
     var since = sinceRaw !== "" ? sinceRaw : "7d";
@@ -584,14 +585,18 @@
     if (!CW.state.lastStats) CW.$("stats-view").textContent = "Loading…";
     CW.state.lastStatsError = "";
     return CW.api(url).then(function (data) {
-      CW.state.lastStatsError = "";
-      renderStats(data);
+      if (!CW.scopeStale(gen)) {
+        CW.state.lastStatsError = "";
+        renderStats(data);
+      }
       return data;
     }, function (err) {
       var msg = err && err.message ? String(err.message).split("\n")[0] : "Stats load failed.";
-      CW.state.lastStatsError = msg;
-      if (CW.state.lastStats) renderStats(CW.state.lastStats);
-      else CW.$("stats-view").innerHTML = "<p>Load failed.</p><p role=\"alert\">" + CW.esc(msg) + "</p>";
+      if (!CW.scopeStale(gen)) {
+        CW.state.lastStatsError = msg;
+        if (CW.state.lastStats) renderStats(CW.state.lastStats);
+        else CW.$("stats-view").innerHTML = "<p>Load failed.</p><p role=\"alert\">" + CW.esc(msg) + "</p>";
+      }
       throw err;
     });
   }
