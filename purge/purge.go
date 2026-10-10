@@ -8,13 +8,14 @@
 // RawRetentionDays) are deleted too. Raw releases/rollups collections are
 // never touched — events only.
 //
-// CRASH SEMANTIC: upserts land before deletes, so a crash can never lose
-// data silently — at worst the crashed batch is counted twice on re-run
-// (upsert re-adds the same rows' counts, then delete finishes). The
-// (day,env,variant,version) KEY itself is idempotent (one row per key, never
-// duplicates); only the counters of the in-flight bucket can overshoot on
-// a crash exactly between upsert and delete. Re-running the purge
-// converges (second run finds nothing to delete).
+// CRASH SEMANTIC: the whole run (rollup upserts + raw deletes + stale
+// rollup deletes) commits atomically in one transaction, so a crash or a
+// mid-run failure can neither lose data nor double-count: partial upserts
+// never become visible, and a re-run simply retries the full batch.
+// Rollup-before-delete order is preserved inside the transaction. The
+// (day,env,variant,version) KEY stays idempotent (one row per key, never
+// duplicates); re-running the purge converges (second run finds nothing
+// to delete).
 //
 // DELETION NOTE (no GDPR export UI by design): purged raw rows carry only
 // userHash (never raw user ids — see ingest), and event_daily rows carry
@@ -168,8 +169,9 @@ func emptyOrNull(col, val string) dbx.Expression {
 //
 // Candidates come from indexed range queries (a point-in-time snapshot,
 // same as the old scan): rows ingested after the select are untouched by
-// this run and converge on the next run. Rollup-before-delete order and
-// the crash semantic are unchanged (see the package note).
+// this run and converge on the next run. All writes below commit
+// atomically in one transaction (see the package CRASH SEMANTIC note);
+// on error nothing was deleted, so the count is 0.
 func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 	cands, err := app.FindAllRecords("events", eventRangeExpr(cutoff))
 	if err != nil {
@@ -191,38 +193,44 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 			Ts:      ts,
 		})
 	}
-
-	// Rollup BEFORE delete: no data-loss window beyond a crash (see the
-	// package CRASH SEMANTIC note).
-	if len(doomedRows) > 0 {
-		if err := upsertRollups(app, BuildRollups(doomedRows)); err != nil {
-			return 0, err
-		}
-	}
-	for _, r := range doomed {
-		if err := app.Delete(r); err != nil {
-			return deleted, err
-		}
-		deleted++
-	}
-
-	// Stale aggregates: event_daily rows older than 90d die too.
 	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
-	daily, err := app.FindAllRecords("event_daily", rollupRangeExpr(rollupCutoff))
-	if err != nil {
-		return deleted, err
-	}
-	for _, r := range daily {
-		day := r.GetDateTime("day").Time()
-		if day.IsZero() || !day.Before(rollupCutoff) {
-			continue
+
+	n := 0
+	if err := app.RunInTransaction(func(txApp core.App) error {
+		// Rollup BEFORE delete: no data-loss window beyond a crash (see
+		// the package CRASH SEMANTIC note).
+		if len(doomedRows) > 0 {
+			if err := upsertRollups(txApp, BuildRollups(doomedRows)); err != nil {
+				return err
+			}
 		}
-		if err := app.Delete(r); err != nil {
-			return deleted, err
+		for _, r := range doomed {
+			if err := txApp.Delete(r); err != nil {
+				return err
+			}
+			n++
 		}
-		deleted++
+
+		// Stale aggregates: event_daily rows older than 90d die too.
+		daily, err := txApp.FindAllRecords("event_daily", rollupRangeExpr(rollupCutoff))
+		if err != nil {
+			return err
+		}
+		for _, r := range daily {
+			day := r.GetDateTime("day").Time()
+			if day.IsZero() || !day.Before(rollupCutoff) {
+				continue
+			}
+			if err := txApp.Delete(r); err != nil {
+				return err
+			}
+			n++
+		}
+		return nil
+	}); err != nil {
+		return 0, err
 	}
-	return deleted, nil
+	return n, nil
 }
 
 // CountOlderThan reports how many rows PurgeOlderThan would delete with
