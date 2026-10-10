@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -205,5 +206,94 @@ func TestRuleSaveBadRegexRejectedByHook(t *testing.T) {
 	good.Set("condition", map[string]any{"field": "platform", "op": "regex", "value": "([bad"})
 	if err := app.Save(good); err == nil {
 		t.Fatal("rule update to uncompilable regex saved, want hook refusal")
+	}
+}
+
+func seedFlag(t *testing.T, app *tests.TestApp, projectID, key string) *core.Record {
+	t.Helper()
+	col, err := app.FindCollectionByNameOrId("flags")
+	if err != nil {
+		t.Fatalf("find flags: %v", err)
+	}
+	rec := core.NewRecord(col)
+	rec.Set("project", projectID)
+	rec.Set("key", key)
+	rec.Set("type", "bool")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save flag: %v", err)
+	}
+	return rec
+}
+
+// TestFlagDuplicateKeyRejectedByHook pins deterministic flag identity:
+// a second flag with the same key in the same project is refused (first-
+// match-wins downstream must never be order-dependent), while the same
+// key in another project and renames to a free key stay allowed.
+func TestFlagDuplicateKeyRejectedByHook(t *testing.T) {
+	app := envGuardTestApp(t)
+	pid := seedProject(t, app, "flag-dedup")
+	seedFlag(t, app, pid, "launch_flag")
+
+	dupCol, err := app.FindCollectionByNameOrId("flags")
+	if err != nil {
+		t.Fatalf("find flags: %v", err)
+	}
+	dup := core.NewRecord(dupCol)
+	dup.Set("project", pid)
+	dup.Set("key", "launch_flag")
+	dup.Set("type", "bool")
+	if err := app.Save(dup); err == nil {
+		t.Fatal("duplicate flag key saved, want hook refusal")
+	} else if lowered := strings.ToLower(err.Error()); !strings.Contains(lowered, "already exists") {
+		t.Fatalf("save error = %q, want it to mention the duplicate key", err)
+	}
+
+	other := seedProject(t, app, "flag-dedup-other")
+	seedFlag(t, app, other, "launch_flag")
+
+	free := seedFlag(t, app, pid, "other_flag")
+	free.Set("key", "launch_flag")
+	if err := app.Save(free); err == nil {
+		t.Fatal("flag rename onto a taken key saved, want hook refusal")
+	}
+}
+
+// TestEnvCreateDuplicateSlugConcurrentOneWinner pins the slug-race fix:
+// N concurrent creates of the same (project, slug) yield exactly one
+// winner; every loser is refused by the uniqueness check.
+func TestEnvCreateDuplicateSlugConcurrentOneWinner(t *testing.T) {
+	app := envGuardTestApp(t)
+	pid := seedProject(t, app, "slug-race")
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			col, err := app.FindCollectionByNameOrId("environments")
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			rec := core.NewRecord(col)
+			rec.Set("project", pid)
+			rec.Set("slug", "dev")
+			errs[i] = app.Save(rec)
+		}(i)
+	}
+	wg.Wait()
+	wins := 0
+	for _, err := range errs {
+		if err == nil {
+			wins++
+			continue
+		}
+		if lowered := strings.ToLower(err.Error()); !strings.Contains(lowered, "already exists") {
+			t.Fatalf("loser error = %q, want the slug-taken refusal", err)
+		}
+	}
+	if wins != 1 {
+		t.Fatalf("%d concurrent creates won, want exactly 1", wins)
 	}
 }

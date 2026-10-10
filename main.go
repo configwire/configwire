@@ -176,6 +176,13 @@ func checkRuleRegexConditions(cond any) error {
 // of a project's last two environments cannot both pass the count check.
 var envDeleteMu sync.Mutex
 
+// envSlugMu serializes environment creates/updates so two concurrent
+// creates with the same (project, slug) cannot both pass the uniqueness
+// check before either row is saved (check-then-act race). Held across
+// e.Next() like envDeleteMu so check and save are atomic together; env
+// writes are rare admin ops, so the serialization cost is negligible.
+var envSlugMu sync.Mutex
+
 // Exact count-query equivalent:
 //
 //	SELECT COUNT(*) FROM flags WHERE project = '<projectId>'
@@ -183,6 +190,28 @@ var envDeleteMu sync.Mutex
 // Filtered COUNT(*) at the DB layer (no full-table scan by design).
 func countProjectFlags(app core.App, project string) (int64, error) {
 	return app.CountRecords("flags", dbx.HashExp{"project": project})
+}
+
+// checkFlagKeyTaken rejects a duplicate (key, project) flag: flag keys
+// are snapshot identity downstream (envresolve.MatchFlag is
+// first-match-wins), so two rows with the same key make evaluation
+// order-dependent. Same key in a different project stays allowed.
+// O(n) scan like checkEnvSlug; flag writes are rare admin ops.
+func checkFlagKeyTaken(app core.App, rec *core.Record) error {
+	recs, err := app.FindAllRecords("flags")
+	if err != nil {
+		return err
+	}
+	for _, r := range recs {
+		if r.Id == rec.Id {
+			continue
+		}
+		if r.GetString("project") == rec.GetString("project") &&
+			r.GetString("key") == rec.GetString("key") {
+			return apis.NewBadRequestError("flag key already exists for this project", nil)
+		}
+	}
+	return nil
 }
 
 func registerConfigwireHooks(app core.App) {
@@ -224,6 +253,9 @@ func registerConfigwireHooks(app core.App) {
 		if err := checkFlagKey(e.Record.GetString("key")); err != nil {
 			return err
 		}
+		if err := checkFlagKeyTaken(e.App, e.Record); err != nil {
+			return err
+		}
 		n, err := countProjectFlags(e.App, e.Record.GetString("project"))
 		if err != nil {
 			return err
@@ -235,6 +267,9 @@ func registerConfigwireHooks(app core.App) {
 	})
 	app.OnRecordUpdate("flags").BindFunc(func(e *core.RecordEvent) error {
 		if err := checkFlagKey(e.Record.GetString("key")); err != nil {
+			return err
+		}
+		if err := checkFlagKeyTaken(e.App, e.Record); err != nil {
 			return err
 		}
 		return e.Next()
@@ -294,12 +329,16 @@ func registerConfigwireHooks(app core.App) {
 		return nil
 	}
 	app.OnRecordCreate("environments").BindFunc(func(e *core.RecordEvent) error {
+		envSlugMu.Lock()
+		defer envSlugMu.Unlock()
 		if err := checkEnvSlug(e.App, e.Record); err != nil {
 			return err
 		}
 		return e.Next()
 	})
 	app.OnRecordUpdate("environments").BindFunc(func(e *core.RecordEvent) error {
+		envSlugMu.Lock()
+		defer envSlugMu.Unlock()
 		if err := checkEnvSlug(e.App, e.Record); err != nil {
 			return err
 		}
