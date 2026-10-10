@@ -73,10 +73,14 @@ binary plus operator procedure.
   global per-IP (effective `min(globalRps 200, burst 400)` = 200 —
   `burst` is a hard ceiling, not a spike allowance above the sustained
   rate) plus per-key per-second (`fetchRps 100`, `ingestRps 50`,
-  fetch/ingest buckets independent) plus the admin IP allowlist
-  (`adminAllowedIPs`, empty = allow all; denied admin IPs get
-  `403` on every `/api/v1/admin/*` path, with no admin req/s
-  rate limiting).
+   fetch/ingest buckets independent) plus the admin IP allowlist
+   (`adminAllowedIPs`, empty = allow all; denied admin IPs get
+   `403` on every admin path — `/api/v1/admin/*` and the
+   PocketBase data API `/api/collections/*`, where a superuser
+   token alone grants full read/write. `/api/v1/admin/*` has no
+   req/s rate limiting; `/api/collections/*` additionally consumes
+   the global per-IP budget so superuser login keeps brute-force
+   protection when the allowlist is empty).
 - `X-Forwarded-For`/`X-Real-IP` (and the CDN headers
   `CF-Connecting-IP`/`Fly-Client-IP`, in configured `IPHeaders`
   order) are trusted only when the direct TCP peer is a local

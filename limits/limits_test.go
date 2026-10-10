@@ -446,3 +446,56 @@ func TestEffectiveFetchIngestRps(t *testing.T) {
 		t.Fatalf("EffectiveIngestRps(10000) = %d, want 10000", got)
 	}
 }
+
+// TestCheckIPCollectionsAllowlist pins that the PocketBase data API is
+// covered by the admin allowlist: denied IPs take the 403 path on
+// /api/collections/* (a superuser token alone no longer grants access
+// from a denied IP), while allowed IPs proceed.
+func TestCheckIPCollectionsAllowlist(t *testing.T) {
+	newCollectionsEvent := func(remote string) *core.RequestEvent {
+		req := httptest.NewRequest(http.MethodGet, "/api/collections/flags/records", nil)
+		req.RemoteAddr = remote
+		re := &core.RequestEvent{}
+		re.Request = req
+		return re
+	}
+	if !IsAdminPath("/api/collections/flags/records") {
+		t.Fatal("data API path must classify as an admin path")
+	}
+	resetForTest(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: []string{"1.2.3.4"}})
+	if !CheckIP(newCollectionsEvent("1.2.3.4:1234")) {
+		t.Fatal("allowlisted IP should pass the data API")
+	}
+	denied := newCollectionsEvent("203.0.113.9:1234")
+	if CheckIP(denied) {
+		t.Fatal("non-allowlisted IP should be blocked on the data API")
+	}
+	if !IsAdminDenied(denied) {
+		t.Fatal("blocked data-API request must classify as admin-denied (403, not 429)")
+	}
+}
+
+// TestCheckIPCollectionsKeepsRateLimit pins that allowed data-API
+// callers still consume the global per-IP budget (unlike
+// /api/v1/admin/*, which is allowlist-only): superuser login keeps
+// brute-force protection when the allowlist is empty.
+func TestCheckIPCollectionsKeepsRateLimit(t *testing.T) {
+	resetForTest(Config{GlobalRps: 2, Burst: 2, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: nil})
+	newLoginEvent := func() *core.RequestEvent {
+		req := httptest.NewRequest(http.MethodPost, "/api/collections/_superusers/auth-with-password", nil)
+		req.RemoteAddr = "198.51.100.7:1234"
+		re := &core.RequestEvent{}
+		re.Request = req
+		return re
+	}
+	if !CheckIP(newLoginEvent()) || !CheckIP(newLoginEvent()) {
+		t.Fatal("first two data-API requests should pass")
+	}
+	over := newLoginEvent()
+	if CheckIP(over) {
+		t.Fatal("third data-API request in the same window should be rate-limited")
+	}
+	if IsAdminDenied(over) {
+		t.Fatal("rate-limited (not allowlist-denied) request must not classify as admin-denied")
+	}
+}

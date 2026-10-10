@@ -378,9 +378,24 @@ func IsAdminIPAllowed(ip string) bool {
 	return false
 }
 
-// IsAdminPath reports whether path is an admin API path.
+// IsAdminPath reports whether path is an admin API path: the ConfigWire
+// admin routes (/api/v1/admin/*) AND the PocketBase data API
+// (/api/collections/*), which serves superuser tokens full read/write on
+// every collection. The allowlist must cover both or it is not a
+// boundary: without /api/collections/*, a token alone grants full admin
+// access from any IP regardless of the allowlist.
 func IsAdminPath(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/admin/")
+	return strings.HasPrefix(path, "/api/v1/admin/") ||
+		strings.HasPrefix(path, "/api/collections/")
+}
+
+// isCollectionsPath reports whether path hits the PocketBase data API.
+// Data-API requests pass the allowlist check but additionally consume a
+// global per-IP token (unlike /api/v1/admin/*, which is allowlist-only by
+// contract), so superuser auth endpoints keep brute-force rate limiting
+// even when the allowlist is empty (allow-all).
+func isCollectionsPath(path string) bool {
+	return strings.HasPrefix(path, "/api/collections/")
 }
 
 // IsAdminDenied reports whether re is an admin-path request whose client
@@ -774,19 +789,32 @@ func CheckAdmin(re *core.RequestEvent) bool {
 }
 
 // CheckIP reports whether re may proceed: non-/api/ paths always pass;
-// /api/v1/admin/* is gated by the IP allowlist only (no rate limiter);
-// other /api/* consumes one global per-IP token. Pure check — the caller
-// renders 403 (admin-denied) or 429 (global) via BlockAdmin / BlockIP.
+// admin paths (/api/v1/admin/*, /api/collections/*) are gated by the IP
+// allowlist (denied callers get the 403 via IsAdminDenied/BlockAdmin);
+// /api/collections/* additionally consumes one global per-IP token so
+// superuser login keeps rate limiting; other /api/* consumes one global
+// per-IP token. Pure check — the caller renders 403 (admin-denied) or
+// 429 (global) via BlockAdmin / BlockIP.
 func CheckIP(re *core.RequestEvent) bool {
 	if !strings.HasPrefix(re.Request.URL.Path, "/api/") {
 		return true
 	}
 	if IsAdminPath(re.Request.URL.Path) {
 		ip := ClientIP(re)
-		if ip == "" {
-			return len(GetConfig().AdminAllowedIPs) == 0
+		allowed := len(GetConfig().AdminAllowedIPs) == 0
+		if ip != "" {
+			allowed = IsAdminIPAllowed(ip)
 		}
-		return IsAdminIPAllowed(ip)
+		if !allowed {
+			return false
+		}
+		if isCollectionsPath(re.Request.URL.Path) {
+			if ip == "" {
+				ip = "unknown"
+			}
+			return AllowIP(ip)
+		}
+		return true
 	}
 	ip := ClientIP(re)
 	// Empty IP shares one "unknown" bucket instead of fail-opening:
@@ -822,10 +850,10 @@ func BlockAdmin(re *core.RequestEvent) error {
 }
 
 // Middleware adapts the IP check to a PocketBase router BindFunc: non-API
-// paths and allowed IPs call next; denied admin /api/v1/admin/* callers
-// get the 403 WITHOUT reaching auth (must be bound before
-// auth-dependent routes), while over-budget non-admin /api/* callers get
-// the 429. Either renders before auth.
+// paths and allowed IPs call next; denied admin-path callers
+// (/api/v1/admin/* and /api/collections/*) get the 403 WITHOUT reaching
+// auth (must be bound before auth-dependent routes), while over-budget
+// non-admin /api/* callers get the 429. Either renders before auth.
 // Usage (wiring layer): se.Router.BindFunc(func(re *core.RequestEvent) error {
 // return limits.Middleware(re.Next)(re) }) — or inline CheckIP with
 // IsAdminDenied to pick BlockAdmin vs BlockIP.
