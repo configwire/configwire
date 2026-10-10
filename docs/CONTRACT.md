@@ -529,6 +529,105 @@ Rollup-before-delete runs in the same op (upsert then delete; a crash
 between them double-counts only the in-flight bucket on re-run, and a
 clean re-run converges to `deleted: 0`). Ref: `configwire/purge/purge.go:70-83,124-182`.
 
+## 12. Cloud SSO (tenant side)
+
+Ref: `configwire/sso/sso.go` (routes, bodies, validation order),
+`configwire/main.go:492-514` (env wiring + fail-fast). Normative
+ticket format, TTL, and validation order live in repo-root
+`docs/sso-ticket.md` sections 1 and 4-5; the bodies below match its
+sections 6-7 exactly. On any mismatch that spec wins.
+
+Env (`CONFIGWIRE_*` convention, unset = `standard`, zero behavior
+change for standalone deploys):
+
+- `CONFIGWIRE_AUTH_MODE=standard|sso` (default `standard`). `sso`
+  match is case-insensitive, surrounding whitespace ignored; anything
+  else, including empty, is `standard`. Ref: `:94-99`.
+- `CONFIGWIRE_CLOUD_SSO_SECRET=<64-hex>` (32 bytes). Required in
+  `sso` mode: missing or malformed fails fast at startup before any
+  route serves. Set without `sso` mode: ignored with a log line.
+  Ref: `main.go:497-508`.
+- `CONFIGWIRE_CLOUD_URL` (optional): dashboard URL surfaced as
+  `cloudUrl` in the mode response for the managed notice link.
+  Ref: `:341-349`.
+
+### 12a. Mode signal — `GET /api/v1/admin/auth/mode`
+
+Public, pre-auth. Ref: `:326,340-349`.
+
+Success `200` (default shape is exactly `{mode}`):
+
+```json
+{"mode": "sso"}
+```
+
+- `mode` is `standard` or `sso`.
+- `cloudUrl` appears only when `CONFIGWIRE_CLOUD_URL` is set.
+
+### 12b. Redeem — `POST /api/v1/admin/sso/redeem`
+
+Public, rate-limited like setup (same global `limits.CheckIP`
+middleware under `/api/v1/admin/`; no per-route bucket).
+Ref: `:13-18,324-338`.
+
+Request:
+
+```json
+{"ticket": "<base64url>.<expiry>.<nonce>.<mac>"}
+```
+
+Empty body then `400` (`empty body: expected a JSON object.`);
+malformed JSON then `400` (`malformed JSON body: ...`).
+Ref: `:424-444`.
+
+Success `200` (token issued with PocketBase
+`record.NewAuthToken()` semantics for the matched non-installer
+`_superusers` record, email matched exactly after `TrimSpace`):
+
+```json
+{"token": "<auth-token>"}
+```
+
+Errors (spec-exact `{message, status}` bodies via `re.JSON`):
+
+```json
+{"message": "invalid ticket: malformed or tampered.", "status": 400}
+{"message": "invalid ticket: expired.", "status": 400}
+{"message": "unknown user.", "status": 404}
+{"message": "ticket already redeemed.", "status": 409}
+{"message": "sso not enabled.", "status": 404}
+```
+
+- `400` covers bad shape, bad base64, bad expiry, bad email shape,
+  and HMAC mismatch under one body (no oracle); `expired.` only
+  when shape is fine but time failed.
+- `404 unknown user.` only after the MAC passes (no oracle).
+- `409` when the nonce is already in the single-use cache; the
+  nonce is claimed BEFORE the token issues (insert-then-issue).
+- `404 sso not enabled.` when the server runs in `standard` mode
+  (secret empty): redeem exists but never issues.
+- Nonce cache is in-memory, entry TTL 60s (== ticket TTL).
+  Per-process caveat: with N tenant processes a replay hitting a
+  different process within the 60s window can pass, same trade-off
+  as the existing per-process rate-limit caveat. Replay window is
+  at most 60s worst case. Ref: `:257-269`.
+- The ticket, secret, MAC, and nonce never appear in logs; log
+  lines carry `email=` only. Ref: `:20-21,383-414`.
+
+Mint (orchestrator, for reference; owned by `cloud/orchestrator`):
+
+```text
+GET /api/v1/launch/ticket?tenant=<sub>   (users-token-authed)
+→ 200 {url, ticket}
+```
+
+Unknown tenant `404`, foreign tenant `403`, not-ready `409`
+(`resolveLaunchTenant` semantics); missing `tenant` param `400`;
+no auth `401`; rate breach `429` + `Retry-After: 1`. Rows without
+a secret (pre-backfill) answer `500`. Ticket TTL is 60s,
+non-negotiable; `?sso=` is stripped via `history.replaceState`
+right after redeem.
+
 ## History
 
 Current names: Go module `configwire`, Dart package `configwire`
