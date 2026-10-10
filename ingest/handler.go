@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -45,6 +46,9 @@ func EnableWAL(app core.App) {
 // Uses re.App for every request-scoped lookup (never a captured app).
 func postEvents(re *core.RequestEvent) error {
 	key, err := RequireSDKKey(re)
+	if errors.Is(err, ErrKeyResponded) {
+		return nil // saturation/storage response already written
+	}
 	if err != nil {
 		return err
 	}

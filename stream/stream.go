@@ -2,6 +2,7 @@ package stream
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -82,6 +83,9 @@ func formatUpdate(u Update) string {
 func getStream(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	key, err := ingest.RequireSDKKey(re)
+	if errors.Is(err, ingest.ErrKeyResponded) {
+		return nil // saturation/storage response already written
+	}
 	if err != nil {
 		return err
 	}

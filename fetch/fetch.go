@@ -49,6 +49,7 @@ package fetch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -313,6 +314,9 @@ func getConfig(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	setCORS(re)
 	key, err := ingest.RequireSDKKey(re)
+	if errors.Is(err, ingest.ErrKeyResponded) {
+		return nil // saturation/storage response already written
+	}
 	if err != nil {
 		return err
 	}

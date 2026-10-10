@@ -7,8 +7,10 @@
 package ingest
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -129,5 +131,73 @@ func TestRequireSDKKeyAuthOrder(t *testing.T) {
 		if _, err := RequireSDKKey(requestWithKey(app, full)); err == nil {
 			t.Errorf("%s key must fail (401 at handler), got nil error", name)
 		}
+	}
+}
+
+// requestWithRecorder builds a RequestEvent with a real ResponseWriter
+// so written-response paths (429/503) can be asserted instead of
+// panicking on a nil Response.
+func requestWithRecorder(app core.App, full string) (*core.RequestEvent, *httptest.ResponseRecorder) {
+	re := requestWithKey(app, full)
+	rec := httptest.NewRecorder()
+	re.Response = rec
+	return re, rec
+}
+
+// TestRequireSDKKeyDBError503 pins that a storage lookup failure reads
+// as an outage (503, retryable), never as a bad credential (401, which
+// would send operators rotating keys during an outage).
+func TestRequireSDKKeyDBError503(t *testing.T) {
+	app := lookupTestApp(t)
+	ResetKeyCache()
+	col, err := app.FindCollectionByNameOrId("sdk_keys")
+	if err != nil {
+		t.Fatalf("find sdk_keys: %v", err)
+	}
+	if err := app.Delete(col); err != nil {
+		t.Fatalf("delete sdk_keys: %v", err)
+	}
+	re, rec := requestWithRecorder(app, "cw-good-key-0001")
+	_, err = RequireSDKKey(re)
+	if !errors.Is(err, ErrKeyResponded) {
+		t.Fatalf("db error must yield ErrKeyResponded, got %v", err)
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("db error status = %d, want 503", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "Storage error") {
+		t.Fatalf("503 body = %q, want storage-error message", body)
+	}
+}
+
+// TestRequireSDKKeySaturation429 pins the verifier-saturation path: a
+// valid but unverifiable-right-now key gets 429 + Retry-After (never
+// 401), the hit is counted for ops, and the written-response contract
+// holds (no nil-key panic downstream).
+func TestRequireSDKKeySaturation429(t *testing.T) {
+	app := lookupTestApp(t)
+	ResetKeyCache()
+	seedV2Key(t, app, "cw-v2-sat-key-01", "envA")
+	for i := 0; i < cap(slowSem); i++ {
+		slowSem <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(slowSem); i++ {
+			<-slowSem
+		}
+	}()
+	re, rec := requestWithRecorder(app, "cw-v2-sat-key-01")
+	_, err := RequireSDKKey(re)
+	if !errors.Is(err, ErrKeyResponded) {
+		t.Fatalf("saturated verifier must yield ErrKeyResponded, got %v", err)
+	}
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("saturation status = %d, want 429", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") != "1" {
+		t.Fatal("saturation must carry Retry-After: 1")
+	}
+	if SlowSaturatedCalls() != 1 {
+		t.Fatalf("saturated count = %d, want 1", SlowSaturatedCalls())
 	}
 }

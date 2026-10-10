@@ -35,10 +35,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -251,6 +253,8 @@ func ResetKeyCache() {
 	fastCache = make(map[string]string)
 	slowVerifyCalls = 0
 	fastCacheMu.Unlock()
+	slowSaturated.Store(0)
+	slowSaturatedLogAt.Store(0)
 }
 
 // SlowVerifyCalls reports bcrypt verification count (tests only).
@@ -306,6 +310,37 @@ func EvictKeyByID(id string) {
 // errKeyBusy signals bcrypt verifier saturation: valid keys must retry
 // instead of being misclassified as invalid credentials.
 var errKeyBusy = errors.New("ingest: bcrypt verifier saturated")
+
+// ErrKeyResponded is returned by RequireSDKKey (with a nil record) when
+// the error response was already written to the client (saturation 429
+// or storage 503). Callers must return nil immediately — propagating it
+// would render a second response. The contract exists because
+// router.Event.JSON returns nil after writing, so without it callers
+// would proceed with a nil key and panic.
+var ErrKeyResponded = errors.New("ingest: auth error response already written")
+
+var (
+	// slowSaturated counts bcrypt-saturation 429s (test hook + ops).
+	slowSaturated atomic.Int64
+	// slowSaturatedLogAt throttles the saturation log to ~1 line/sec.
+	slowSaturatedLogAt atomic.Int64
+)
+
+// SlowSaturatedCalls reports bcrypt-saturation 429 count (tests only).
+func SlowSaturatedCalls() int64 {
+	return slowSaturated.Load()
+}
+
+// noteSaturation records one saturation hit and logs at most once per
+// second: under a sustained verifier flood every hit stays cheap (no log
+// line per request) yet visible to operators.
+func noteSaturation() {
+	n := slowSaturated.Add(1)
+	now := time.Now().Unix()
+	if last := slowSaturatedLogAt.Load(); now != last && slowSaturatedLogAt.CompareAndSwap(last, now) {
+		log.Printf("ingest: bcrypt verifier saturated (429 x%d), valid keys must retry", n)
+	}
+}
 
 // findSDKKey returns the sdk_keys row matching the full SDK key, or
 // (nil, nil) when no row matches, or (nil, errKeyBusy) when the bcrypt
@@ -366,8 +401,11 @@ func findSDKKey(app core.App, full string) (*core.Record, error) {
 // T10 reuse). Lookup prefilters on prefix (first 8 chars, DB-side), then
 // slow-verifies the bcrypt verifier (or the deprecated legacy fast hash).
 // Unknown/missing/revoked → 401 error suitable for returning directly from
-// a handler. Verifier saturation → 429 with Retry-After: 1 (never 401, so
-// clients retry instead of rotating keys).
+// a handler. Verifier saturation → 429 written inline with Retry-After: 1
+// (never 401, so clients retry instead of rotating keys). Storage lookup
+// failure → 503 written inline (never 401, so an outage reads as an
+// outage instead of mass credential rotation). Both written paths return
+// ErrKeyResponded: callers must return nil, NOT propagate it.
 func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	denied := func() (*core.Record, error) {
 		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
@@ -379,10 +417,18 @@ func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	key, err := findSDKKey(re.App, full)
 	if err != nil {
 		if errors.Is(err, errKeyBusy) {
+			noteSaturation()
 			re.Response.Header().Set("Retry-After", "1")
-			return nil, re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Server busy, retry.", "status": 429})
+			if werr := re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Server busy, retry.", "status": 429}); werr != nil {
+				return nil, werr
+			}
+			return nil, ErrKeyResponded
 		}
-		return denied()
+		log.Printf("ingest: sdk key lookup failed: %v", err)
+		if werr := re.JSON(http.StatusServiceUnavailable, map[string]any{"message": "Storage error, retry.", "status": 503}); werr != nil {
+			return nil, werr
+		}
+		return nil, ErrKeyResponded
 	}
 	if key == nil || key.GetBool("revoked") {
 		return denied()
