@@ -51,6 +51,11 @@ type Batcher struct {
 	once  sync.Once
 	wg    sync.WaitGroup
 	total int64 // accepted for flush accounting (log lines only)
+	// admitMu serializes batch admission so the capacity check and the
+	// enqueue loop are atomic together: concurrent admitters cannot
+	// interleave and overflow the channel. The background drain only
+	// frees space, so it needs no lock.
+	admitMu sync.Mutex
 }
 
 // NewBatcher builds (but does not start) a Batcher bound to app.
@@ -72,6 +77,23 @@ func (b *Batcher) Enqueue(ev StoredEvent) bool {
 	default:
 		return false
 	}
+}
+
+// EnqueueAll buffers every event without blocking, atomically: either
+// the whole batch fits and is queued, or nothing is queued and it
+// returns false (→ 503, client retries the whole batch). Per-event
+// enqueue could leave a prefix queued when the buffer fills mid-batch,
+// and a client retry would then double-count that prefix.
+func (b *Batcher) EnqueueAll(evs []StoredEvent) bool {
+	b.admitMu.Lock()
+	defer b.admitMu.Unlock()
+	if len(evs) > BatcherChannelCap-len(b.ch) {
+		return false
+	}
+	for _, ev := range evs {
+		b.ch <- ev // cannot block: capacity was reserved above
+	}
+	return true
 }
 
 // Stop signals shutdown, drains the buffer best-effort, and logs a receipt.

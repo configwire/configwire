@@ -286,6 +286,32 @@ func TestSplitBatch(t *testing.T) {
 	}
 }
 
+// TestEnqueueAllAtomic pins all-or-nothing batch admission: a batch
+// larger than the free space is refused with nothing queued (a retry
+// resends exactly the batch), while a fitting batch lands whole. Uses
+// an unstarted Batcher (no drain) for determinism; app is unused on
+// the admission path.
+func TestEnqueueAllAtomic(t *testing.T) {
+	b := NewBatcher(nil)
+	for i := 0; i < BatcherChannelCap-1; i++ {
+		if !b.Enqueue(StoredEvent{}) {
+			t.Fatalf("fill event %d refused, want buffered", i)
+		}
+	}
+	if b.EnqueueAll([]StoredEvent{{}, {}}) {
+		t.Fatal("oversized batch accepted, want refusal")
+	}
+	if got := len(b.ch); got != BatcherChannelCap-1 {
+		t.Fatalf("after refusal: %d queued, want %d (nothing added)", got, BatcherChannelCap-1)
+	}
+	if !b.EnqueueAll([]StoredEvent{{}}) {
+		t.Fatal("fitting batch refused, want buffered")
+	}
+	if got := len(b.ch); got != BatcherChannelCap {
+		t.Fatalf("after admit: %d queued, want full %d", got, BatcherChannelCap)
+	}
+}
+
 func lens[T any](chunks [][]T) []int {
 	out := make([]int, len(chunks))
 	for i, c := range chunks {

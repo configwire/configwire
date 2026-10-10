@@ -304,7 +304,9 @@ Request:
     then `403`). Every authed hit consumes a token (even
     later-400s); over-limit then `429` with `Retry-After: 1`.
     Ref: `configwire/limits/limits.go`, `configwire/limits/api.go`.
-  - Full buffer then `503`.
+  - Full buffer then `503`. Batch admission is all-or-nothing: a
+  batch larger than the free space is refused with nothing queued, so a
+  `503` retry resends exactly the batch with no duplicates.
   Ref: `configwire/ingest/ingest.go:44-58`, `configwire/ingest/handler.go:124-126,164-168`.
 
 Success `202`:

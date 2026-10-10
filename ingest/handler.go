@@ -81,11 +81,11 @@ func postEvents(re *core.RequestEvent) error {
 			Version: ev.Version,
 		})
 	}
-	for _, s := range stored {
-		if !module.batcher.Enqueue(s) {
-			// Buffer saturated (see drop-vs-block note in batcher.go).
-			return re.JSON(http.StatusServiceUnavailable, map[string]any{"message": "Ingest buffer full, retry.", "status": 503})
-		}
+	if !module.batcher.EnqueueAll(stored) {
+		// Buffer cannot fit the whole batch (see drop-vs-block note in
+		// batcher.go): nothing was queued, so a client retry resends
+		// exactly this batch with no duplicates.
+		return re.JSON(http.StatusServiceUnavailable, map[string]any{"message": "Ingest buffer full, retry.", "status": 503})
 	}
 	return re.JSON(http.StatusAccepted, map[string]any{"accepted": len(stored), "status": 202})
 }
