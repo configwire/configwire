@@ -1395,3 +1395,145 @@ test("RED §21: disable-then-re-enable refires fresh verify; stale first resolve
   assertBadgeButtonAgree(h5, els, badgeSet);
   assert.equal(els["backup-s3-badge"].textContent, "CONNECTED");
 });
+
+// --- backup upload validation + upload path ---
+
+test("validateBackupUploadFile no-FormData -> unavailable", function () {
+  var msg = C.validateBackupUploadFile({ name: "a.zip" }, false);
+  assert.ok(msg.indexOf("unavailable") !== -1, msg);
+});
+
+test("validateBackupUploadFile null file -> pick", function () {
+  var a = C.validateBackupUploadFile(null, true);
+  assert.ok(a.indexOf("Pick") !== -1, a);
+  var b = C.validateBackupUploadFile(undefined, true);
+  assert.ok(b.indexOf("Pick") !== -1, b);
+});
+
+test("validateBackupUploadFile bad names -> name-pattern error", function () {
+  assert.equal(C.validateBackupUploadFile({ name: "Backup.zip" }, true), "", "Backup.zip now valid");
+  ["a.txt", "../x.zip", ""].forEach(function (n) {
+    var msg = C.validateBackupUploadFile({ name: n }, true);
+    assert.ok(/must (match|end)/.test(msg), n + " -> " + msg);
+  });
+});
+
+test("validateBackupUploadFile good names -> empty", function () {
+  ["a.zip", "my-backup_01.zip"].forEach(function (n) {
+    assert.equal(C.validateBackupUploadFile({ name: n }, true), "", n);
+  });
+});
+
+test("CW.uploadBackup is wired function + boot.js wires header upload button", function () {
+  var fs = require("node:fs");
+  var path = require("node:path");
+  assert.equal(typeof C.uploadBackup, "function");
+  assert.equal(typeof C.triggerBackupUpload, "function");
+  var src = fs.readFileSync(path.join(__dirname, "..", "pb_public", "js", "boot.js"), "utf8");
+  assert.ok(src.indexOf('CW.on("backup-upload-btn"') !== -1);
+  assert.ok(src.indexOf('CW.on("backup-upload-file"') !== -1);
+});
+
+function loadUploadHandle(fetchImpl) {
+  return harness.load(["core.js", "backups.js"], { fetchImpl: fetchImpl });
+}
+
+function ensureUploadFormData(handle) {
+  if (typeof handle.context.FormData === "undefined") {
+    handle.context.FormData = function () { this.parts = []; };
+    handle.context.FormData.prototype.append = function (k, v, n) { this.parts.push([k, v, n]); };
+  }
+}
+
+test("uploadBackup validation path rejects bad name without fetch", async function () {
+  var hu = loadUploadHandle();
+  ensureUploadFormData(hu);
+  var input = hu.document.getElementById("backup-upload-file");
+  input.files = [{ name: "bad.txt" }];
+  input.value = "bad.txt";
+  var result = hu.document.getElementById("backup-result");
+  var out = await hu.CW.uploadBackup({ preventDefault: function () {} });
+  assert.equal(out.status, 0);
+  assert.ok(/must (match|end)/.test(result.textContent), result.textContent);
+  assert.equal(hu.fetchCalls.length, 0);
+});
+
+test("uploadBackup success posts multipart, clears input, says uploaded", async function () {
+  var hu = loadUploadHandle(function (url, opts) {
+    if (url === "/api/backups/upload" && opts && opts.method === "POST") {
+      return Promise.resolve({ status: 204, ok: true,
+        json: function () { return Promise.resolve({}); } });
+    }
+    return Promise.resolve({ status: 200, ok: true,
+      json: function () { return Promise.resolve([]); } });
+  });
+  ensureUploadFormData(hu);
+  var input = hu.document.getElementById("backup-upload-file");
+  input.files = [{ name: "good.zip" }];
+  input.value = "good.zip";
+  var result = hu.document.getElementById("backup-result");
+  var out = await hu.CW.uploadBackup({ preventDefault: function () {} });
+  assert.equal(out.status, 204);
+  assert.equal(input.value, "");
+  assert.equal(result.textContent, "Backup uploaded.");
+  var up = null;
+  hu.fetchCalls.forEach(function (c) { if (c.url === "/api/backups/upload") up = c; });
+  assert.ok(up, "upload fetch captured");
+  assert.equal(up.opts.method, "POST");
+  var body = up.opts.body;
+  var isFD = (hu.context.FormData && body instanceof hu.context.FormData) ||
+    (body && typeof body.append === "function");
+  assert.ok(isFD, "multipart FormData body");
+  var hdrs = up.opts.headers || {};
+  assert.ok(Object.keys(hdrs).every(function (k) { return String(k).toLowerCase() !== "content-type"; }),
+    "no manual Content-Type");
+});
+
+test("triggerBackupUpload clicks hidden file input", function () {
+  var hu = loadUploadHandle();
+  var clicked = false;
+  var input = hu.document.getElementById("backup-upload-file");
+  input.click = function () { clicked = true; };
+  hu.CW.triggerBackupUpload();
+  assert.equal(clicked, true);
+});
+
+// --- backupListErrorMessage: S3 failures map to friendly guidance ---
+
+test("backupListErrorMessage maps S3 failures to friendly guidance", function () {
+  var friendly = "Backup list unavailable \u2014 the backup store is unreachable (S3 AccessDenied). Check the S3 settings below (endpoint, bucket, keys, bucket policy), Save, then retry.";
+  var rawReport = "Failed to retrieve backup items. Raw error: 403 AccessDenied: Access Denied (RAW: <?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>...)";
+  [rawReport, "Access Denied", "NoSuchBucket", "SignatureDoesNotMatch"].forEach(function (msg) {
+    assert.equal(C.backupListErrorMessage({ message: msg }), friendly, msg);
+  });
+});
+
+test("backupListErrorMessage passes other messages through verbatim", function () {
+  assert.equal(C.backupListErrorMessage({ message: "Load failed." }), "Load failed.");
+  assert.equal(C.backupListErrorMessage({ message: "boom" }), "boom");
+});
+
+// --- isValidBackupUploadName: widened upload rule ---
+
+test("isValidBackupUploadName widened accept table", function () {
+  ["Backup.zip", "My Backup (1).zip", "a.b_c-d+e@f.zip", "good.zip"].forEach(function (n) {
+    assert.equal(C.isValidBackupUploadName(n), true, n);
+  });
+});
+
+test("isValidBackupUploadName reject table: dots, slashes, padding, length", function () {
+  var longName = "a";
+  var i;
+  for (i = 0; i < 200; i++) { longName += "a"; }
+  longName += ".zip";
+  ["", "a.txt", ".zip", ".hidden.zip", "a/b.zip", "a\\b.zip", "../x.zip",
+    " a.zip", "a.zip ", longName].forEach(function (n) {
+    assert.equal(C.isValidBackupUploadName(n), false, String(n).slice(0, 20));
+  });
+});
+
+test("validateBackupUploadFile widened names: space/parens ok, slash hints no /", function () {
+  assert.equal(C.validateBackupUploadFile({ name: "My Backup (1).zip" }, true), "");
+  var msg = C.validateBackupUploadFile({ name: "a/b.zip" }, true);
+  assert.ok(msg.indexOf("no /") !== -1, msg);
+});
