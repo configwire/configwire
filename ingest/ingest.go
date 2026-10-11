@@ -43,6 +43,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/configwire/configwire/internal/apireq"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -442,8 +443,7 @@ func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	if err != nil {
 		if errors.Is(err, errKeyBusy) {
 			noteSaturation()
-			re.Response.Header().Set("Retry-After", "1")
-			if werr := re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Server busy, retry.", "status": 429}); werr != nil {
+			if werr := apireq.TooMany(re, "Server busy, retry."); werr != nil {
 				return nil, werr
 			}
 			return nil, ErrKeyResponded

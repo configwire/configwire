@@ -198,10 +198,10 @@
         loadScopedAfterFlags();
       });
       function loadScopedAfterFlags() {
-        CW.loadRules().catch(function (e) { CW.toast(e.message); });
-        CW.loadExperiments().catch(function (e) { CW.toast(e.message); });
+        CW.loadRules().catch(CW.toastErr);
+        CW.loadExperiments().catch(CW.toastErr);
       }
-    }).catch(function (e) { CW.toast(e.message); });
+    }).catch(CW.toastErr);
   }
 
   function renderDetailHeader() {
@@ -283,7 +283,7 @@
     clearStaleAllScope();
     showView("account");
     try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
-    if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
+    if (CW.loadAccounts) CW.loadAccounts().catch(CW.toastErr);
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
   }
 
@@ -291,7 +291,7 @@
     clearStaleAllScope();
     showView("settings");
     try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
-    if (CW.loadAccounts) CW.loadAccounts().catch(function (e) { CW.toast(e.message); });
+    if (CW.loadAccounts) CW.loadAccounts().catch(CW.toastErr);
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
   }
 

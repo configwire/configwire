@@ -220,11 +220,7 @@ func mapSaveError(re *core.RequestEvent, err error) error {
 // failures use the mapSaveError phrasing ("could not ...") via
 // BadRequestError at each site.
 func internalError(re *core.RequestEvent, msg string, err error) error {
-	log.Printf("account: %s: %v", msg, err)
-	return re.JSON(http.StatusInternalServerError, map[string]any{
-		"message": "internal error",
-		"status":  http.StatusInternalServerError,
-	})
+	return apireq.Internal(re, "account: "+msg, err)
 }
 
 // createSuperuser persists one _superusers row via the caller's
@@ -257,11 +253,7 @@ func getSetupStatus(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	n, err := countRealSuperusers(re.App)
 	if err != nil {
-		log.Printf("account: failed to check setup status: %v", err)
-		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "internal error",
-			"status":  http.StatusInternalServerError,
-		})
+		return internalError(re, "failed to check setup status", err)
 	}
 	return re.JSON(http.StatusOK, map[string]any{"needsSetup": NeedsSetup(n)})
 }
@@ -278,11 +270,7 @@ func postSetup(re *core.RequestEvent) error {
 	}
 	n, err := countRealSuperusers(re.App)
 	if err != nil {
-		log.Printf("account: failed to check setup status: %v", err)
-		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "internal error",
-			"status":  http.StatusInternalServerError,
-		})
+		return internalError(re, "failed to check setup status", err)
 	}
 	if !NeedsSetup(n) {
 		return re.JSON(http.StatusConflict, map[string]any{
@@ -301,11 +289,7 @@ func postSetup(re *core.RequestEvent) error {
 	accountMu.Lock()
 	defer accountMu.Unlock()
 	if n, err := countRealSuperusers(re.App); err != nil {
-		log.Printf("account: failed to check setup status: %v", err)
-		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "internal error",
-			"status":  http.StatusInternalServerError,
-		})
+		return internalError(re, "failed to check setup status", err)
 	} else if !NeedsSetup(n) {
 		return re.JSON(http.StatusConflict, map[string]any{
 			"message": "setup already completed: a superuser already exists.",

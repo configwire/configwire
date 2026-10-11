@@ -129,19 +129,19 @@
       else ev.preventDefault();
     });
     CW.on("account-create-form", "submit", function (ev) {
-      if (CW.createAccount) CW.createAccount(ev).catch(function (e) { CW.toast(e.message); });
+      if (CW.createAccount) CW.createAccount(ev).catch(CW.toastErr);
       else ev.preventDefault();
     });
     CW.on("account-list", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var pw = t && t.getAttribute ? t.getAttribute("data-account-password") : null;
       if (pw) {
-        if (CW.changeAccountPassword) CW.changeAccountPassword(pw).catch(function (e) { CW.toast(e.message); });
+        if (CW.changeAccountPassword) CW.changeAccountPassword(pw).catch(CW.toastErr);
         return;
       }
       var del = t && t.getAttribute ? t.getAttribute("data-account-delete") : null;
       if (del) {
-        if (CW.deleteAccount) CW.deleteAccount(del).catch(function (e) { CW.toast(e.message); });
+        if (CW.deleteAccount) CW.deleteAccount(del).catch(CW.toastErr);
       }
     });
     CW.on("refresh-scope", "click", CW.refreshAll);
@@ -499,7 +499,7 @@
       if (CW.openProjectDialog) CW.openProjectDialog();
     });
     CW.on("project-dialog-form", "submit", function (ev) {
-      if (CW.saveProjectDialog) CW.saveProjectDialog(ev).catch(function (e) { CW.toast(e.message); });
+      if (CW.saveProjectDialog) CW.saveProjectDialog(ev).catch(CW.toastErr);
       else ev.preventDefault();
     });
     CW.on("project-dialog-close", "click", function () {
@@ -509,10 +509,10 @@
       if (CW.closeProjectDialog) CW.closeProjectDialog();
     });
     CW.on("project-rename-btn", "click", function () {
-      if (CW.renameProject) CW.renameProject().catch(function (e) { CW.toast(e.message); });
+      if (CW.renameProject) CW.renameProject().catch(CW.toastErr);
     });
     CW.on("project-delete-btn", "click", function () {
-      if (CW.deleteProject) CW.deleteProject().catch(function (e) { CW.toast(e.message); });
+      if (CW.deleteProject) CW.deleteProject().catch(CW.toastErr);
     });
     CW.on("env-bar", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
@@ -534,21 +534,21 @@
       if (!addBtn && t && t.getAttribute && t.getAttribute("data-env-add") != null) addBtn = t;
       if (addBtn) {
         closeEnvMenu();
-        if (CW.createEnv) CW.createEnv().catch(function (e) { CW.toast(e.message); });
+        if (CW.createEnv) CW.createEnv().catch(CW.toastErr);
         return;
       }
       var renBtn = t && t.closest ? t.closest("[data-env-rename]") : null;
       if (!renBtn && t && t.getAttribute && t.getAttribute("data-env-rename") != null) renBtn = t;
       if (renBtn) {
         closeEnvMenu();
-        if (CW.renameEnv) CW.renameEnv().catch(function (e) { CW.toast(e.message); });
+        if (CW.renameEnv) CW.renameEnv().catch(CW.toastErr);
         return;
       }
       var delBtn = t && t.closest ? t.closest("[data-env-delete]") : null;
       if (!delBtn && t && t.getAttribute && t.getAttribute("data-env-delete") != null) delBtn = t;
       if (delBtn) {
         closeEnvMenu();
-        if (CW.deleteEnv) CW.deleteEnv().catch(function (e) { CW.toast(e.message); });
+        if (CW.deleteEnv) CW.deleteEnv().catch(CW.toastErr);
       }
     });
     CW.on("flags-head-actions", "click", function (ev) {
@@ -570,7 +570,7 @@
       var item = t && t.closest ? t.closest('.flags-menu button[role="menuitem"]') : null;
       if (item) closeFlagsHeadMenu();
     });
-    CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(function (e) { CW.toast(e.message); }); });
+    CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(CW.toastErr); });
     CW.on("experiment-form", "submit", CW.saveExperiment);
     CW.on("experiment-reset", "click", function () {
       if (CW.resetExperimentForm) CW.resetExperimentForm();
@@ -635,7 +635,7 @@
         if (inMenu) closeExpMenus();
         cwConfirm("Delete this experiment?", {title: "Delete experiment", okText: "Delete", danger: true}).then(function (ok) {
           if (!ok) return;
-          CW.deleteExperiment(del).catch(function (e) { CW.toast(e.message); });
+          CW.deleteExperiment(del).catch(CW.toastErr);
         });
         return;
       }
@@ -669,7 +669,7 @@
       var sid = t && t.getAttribute && t.getAttribute("data-exp-status");
       if (!sid) return;
       var status = t.value;
-      CW.setExperimentStatus(sid, status).catch(function (e) { CW.toast(e.message); });
+      CW.setExperimentStatus(sid, status).catch(CW.toastErr);
       closeExpMenus();
     });
     CW.on("key-form", "submit", CW.createKey);
@@ -802,8 +802,8 @@
         cwConfirm("Delete this flag and all its rules?", {title: "Delete flag", okText: "Delete", danger: true}).then(function (ok) {
           if (!ok) return;
           CW.deleteFlag(del).then(function () {
-            CW.loadRules().catch(function (e) { CW.toast(e.message); });
-          }).catch(function (e) { CW.toast(e.message); });
+            CW.loadRules().catch(CW.toastErr);
+          }).catch(CW.toastErr);
         });
         return;
       }
@@ -859,9 +859,9 @@
       var ag = t && t.getAttribute ? t.getAttribute("data-add-flag-group") : null;
       if (ag !== null && ag !== undefined) { CW.addFlagToGroup(ag || ""); return; }
       var eg = t && t.getAttribute && t.getAttribute("data-edit-group");
-      if (eg) { CW.renameGroup(eg).catch(function (e) { CW.toast(e.message); }); return; }
+      if (eg) { CW.renameGroup(eg).catch(CW.toastErr); return; }
       var dg = t && t.getAttribute && t.getAttribute("data-delete-group");
-      if (dg) { CW.deleteGroup(dg).catch(function (e) { CW.toast(e.message); }); return; }
+      if (dg) { CW.deleteGroup(dg).catch(CW.toastErr); return; }
       flagRowClick(ev);
       closeFlagMenus();
     });
@@ -869,7 +869,7 @@
       var t = ev.target;
       var mid = t && t.getAttribute && t.getAttribute("data-move-flag");
       if (mid) {
-        CW.moveFlag(mid, t.value || "").catch(function (e) { CW.toast(e.message); });
+        CW.moveFlag(mid, t.value || "").catch(CW.toastErr);
         closeFlagMenus();
       }
     });
@@ -911,7 +911,7 @@
           CW.deleteRule(del).then(function () {
             if (CW.renderFlagRulesList) CW.renderFlagRulesList();
             if (CW.renderFlags) CW.renderFlags();
-          }).catch(function (e) { CW.toast(e.message); });
+          }).catch(CW.toastErr);
         });
         return;
       }
@@ -955,7 +955,7 @@
     });
     CW.on("flag-rules-form", "submit", function (ev) {
       ev.preventDefault();
-      if (CW.saveFlagRule) CW.saveFlagRule(ev).catch(function (e) { CW.toast(e.message); });
+      if (CW.saveFlagRule) CW.saveFlagRule(ev).catch(CW.toastErr);
     });
     CW.on("flag-rules-reset", "click", function () {
       if (CW.resetFlagRuleForm) CW.resetFlagRuleForm();
@@ -1085,7 +1085,7 @@
             try { CW.loadRules().catch(function () {}); } catch (e) { /* best-effort */ }
           }
           if (CW.loadExperiments) {
-            try { CW.loadExperiments().catch(function (e2) { CW.toast(e2.message); }); } catch (e3) { /* best-effort */ }
+            try { CW.loadExperiments().catch(CW.toastErr); } catch (e3) { /* best-effort */ }
           }
         }
         if (CW.loadFlags) {

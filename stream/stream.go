@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/security"
 
@@ -119,19 +118,12 @@ func formatUpdate(u Update) string {
 func getStream(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	setCORS(re)
-	key, err := ingest.RequireSDKKey(re)
+	key, env, err := ingest.RequireKeyEnv(re, ingest.KindStream)
 	if errors.Is(err, ingest.ErrKeyResponded) {
 		return nil // saturation/storage response already written
 	}
 	if err != nil {
 		return err
-	}
-	slug := re.Request.PathValue("env")
-	// Deterministic: the key's env IS the env, so a slug shared by
-	// several projects can never misroute here.
-	env, err := envresolve.ResolveForKey(re.App, slug, key.GetString("env"))
-	if err != nil {
-		return envresolve.ToRequestError(re, err)
 	}
 	streamMu.Lock()
 	if streamActive[key.Id] >= maxStreamsPerKey {

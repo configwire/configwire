@@ -418,11 +418,11 @@
         });
         if (CW.state.view === "home" && CW.syncSidebar) CW.syncSidebar();
         function loadScopedAfterFlags() {
-          CW.loadRules().catch(function (e) { CW.toast(e.message); });
-          CW.loadExperiments().catch(function (e) { CW.toast(e.message); });
+          CW.loadRules().catch(CW.toastErr);
+          CW.loadExperiments().catch(CW.toastErr);
         }
-      }).catch(function (e) { CW.toast(e.message); });
-    }).catch(function (e) { CW.toast(e.message); });
+      }).catch(CW.toastErr);
+    }).catch(CW.toastErr);
   }
 
   CW.renderProjectEnv = renderProjectEnv;

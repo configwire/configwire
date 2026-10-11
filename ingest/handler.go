@@ -6,9 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/configwire/configwire/envresolve"
-	"github.com/configwire/configwire/limits"
-
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -45,23 +42,12 @@ func EnableWAL(app core.App) {
 // 429 (rate) → 400/413 (body) → 202.
 // Uses re.App for every request-scoped lookup (never a captured app).
 func postEvents(re *core.RequestEvent) error {
-	key, err := RequireSDKKey(re)
+	_, env, err := RequireKeyEnv(re, KindIngest)
 	if errors.Is(err, ErrKeyResponded) {
-		return nil // saturation/storage response already written
+		return nil // saturation/storage/rate response already written
 	}
 	if err != nil {
 		return err
-	}
-	slug := re.Request.PathValue("env")
-	// Deterministic: the key's env IS the env, so a slug shared by
-	// several projects can never misroute here.
-	env, err := envresolve.ResolveForKey(re.App, slug, key.GetString("env"))
-	if err != nil {
-		return envresolve.ToRequestError(re, err)
-	}
-	if !limits.AllowIngestKey(key.Id, limits.EffectiveIngestRps(key)) {
-		re.Response.Header().Set("Retry-After", "1")
-		return re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Rate limit exceeded.", "status": 429})
 	}
 	body, aerr := readBody(re)
 	if aerr != nil {

@@ -39,6 +39,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -818,11 +819,7 @@ func CheckIP(re *core.RequestEvent) bool {
 // {message, status:429} matching the ingest/fetch 429 shape).
 func BlockIP(re *core.RequestEvent) error {
 	security.SetHeaders(re)
-	re.Response.Header().Set("Retry-After", "1")
-	return re.JSON(http.StatusTooManyRequests, map[string]any{
-		"message": "Rate limit exceeded.",
-		"status":  http.StatusTooManyRequests,
-	})
+	return apireq.TooMany(re, "Rate limit exceeded.")
 }
 
 // BlockAdmin renders the 403 admin-denied response (JSON shape

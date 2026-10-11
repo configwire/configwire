@@ -388,11 +388,7 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 			log.Printf("sso: redeem for unknown user email=%s", pt.Email)
 			return ticketError(re, http.StatusNotFound, msgUnknownUser)
 		}
-		log.Printf("sso: failed to look up superuser: %v", err)
-		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "internal error",
-			"status":  http.StatusInternalServerError,
-		})
+		return apireq.Internal(re, "sso: failed to look up superuser", err)
 	}
 	// Exact match after TrimSpace (validation already trimmed); the
 	// installer placeholder is never a redeem target.
@@ -403,11 +399,7 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 	}
 	token, err := rec.NewAuthToken()
 	if err != nil {
-		log.Printf("sso: failed to issue token: %v", err)
-		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "internal error",
-			"status":  http.StatusInternalServerError,
-		})
+		return apireq.Internal(re, "sso: failed to issue token", err)
 	}
 	log.Printf("sso: redeemed ticket email=%s", pt.Email)
 	return re.JSON(http.StatusOK, map[string]any{"token": token})

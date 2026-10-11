@@ -57,10 +57,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/ingest"
-	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
 	"github.com/pocketbase/dbx"
@@ -309,27 +307,17 @@ func setCORS(re *core.RequestEvent) {
 
 // getConfig handles GET /api/v1/env/:env/config.
 // Order: CORS stamp -> 401 (key) -> 404 (env) -> 401 (env scope) ->
-// 400/414 (attrs) -> 200 empty (no release) -> 304 (etag match) -> 200.
+// 429 (rate) -> 400/414 (attrs) -> 200 empty (no release) -> 304
+// (etag match) -> 200. Key+resolve+429 via ingest.RequireKeyEnv.
 func getConfig(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	setCORS(re)
-	key, err := ingest.RequireSDKKey(re)
+	_, env, err := ingest.RequireKeyEnv(re, ingest.KindFetch)
 	if errors.Is(err, ingest.ErrKeyResponded) {
-		return nil // saturation/storage response already written
+		return nil // saturation/storage/rate response already written
 	}
 	if err != nil {
 		return err
-	}
-	if !limits.AllowFetchKey(key.Id, limits.EffectiveFetchRps(key)) {
-		re.Response.Header().Set("Retry-After", "1")
-		return re.JSON(http.StatusTooManyRequests, map[string]any{"message": "Rate limit exceeded.", "status": 429})
-	}
-	slug := re.Request.PathValue("env")
-	// Deterministic: the key's env IS the env, so a slug shared by
-	// several projects can never misroute here.
-	env, err := envresolve.ResolveForKey(re.App, slug, key.GetString("env"))
-	if err != nil {
-		return envresolve.ToRequestError(re, err)
 	}
 
 	ctx, cerr := BuildContext(re.Request.URL.Query())
@@ -363,11 +351,8 @@ func getConfig(re *core.RequestEvent) error {
 	}
 
 	snapBytes, ok := rawBytes(rel.GetRaw("snapshot"))
-	if !ok || !json.Valid(snapBytes) {
-		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Release snapshot is corrupt.", "status": 500})
-	}
 	var snap releases.Snapshot
-	if err := json.Unmarshal(snapBytes, &snap); err != nil {
+	if !ok || !json.Valid(snapBytes) || json.Unmarshal(snapBytes, &snap) != nil {
 		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Release snapshot is corrupt.", "status": 500})
 	}
 

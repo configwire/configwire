@@ -101,16 +101,10 @@ func putLimits(re *core.RequestEvent) error {
 		return re.BadRequestError(err.Error(), nil)
 	}
 	if err := upsertGlobalRow(re.App, next); err != nil {
-		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "failed to persist rate settings: " + err.Error(),
-			"status":  http.StatusInternalServerError,
-		})
+		return apireq.Internal(re, "limits: failed to persist rate settings", err)
 	}
 	if err := applyConfig(next); err != nil {
-		return re.JSON(http.StatusInternalServerError, map[string]any{
-			"message": "failed to apply rate settings: " + err.Error(),
-			"status":  http.StatusInternalServerError,
-		})
+		return apireq.Internal(re, "limits: failed to apply rate settings", err)
 	}
 	return re.JSON(http.StatusOK, toBodyForRequest(re, next))
 }

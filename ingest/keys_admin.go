@@ -89,7 +89,7 @@ func postMintKey(re *core.RequestEvent) error {
 	}
 	rec, full, err := mintKey(re.App, req.Env, req.FetchRps, req.IngestRps)
 	if err != nil {
-		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Failed to generate key.", "status": 500})
+		return apireq.Internal(re, "ingest: failed to mint key", err)
 	}
 	log.Printf("configwire: minted sdk key id=%s prefix=%s env=%s", rec.Id, KeyPrefix(full), req.Env)
 	return re.JSON(http.StatusCreated, map[string]any{

@@ -74,6 +74,22 @@
     }
   }
 
+  // J3: single toast-error helper for the `.catch(function (e) {
+  // CW.toast(e.message); })` fanout (~30 sites). Null-safe: shows
+  // (e && e.message) || "Failed". No toast copy/behavior change —
+  // plain error toast (ok undefined, danger-red), identical output
+  // for normal Errors.
+  function toastErr(e) {
+    toast((e && e.message) || "Failed");
+  }
+
+  // J3: promise guard — attaches the shared toastErr handler so call
+  // sites stay one token (p.catch(CW.toastErr) or CW.guard(p)).
+  function guard(p) {
+    if (p && typeof p.catch === "function") return p.catch(toastErr);
+    return p;
+  }
+
   // Click-to-dismiss: single delegated listener, registered once at load.
   document.addEventListener("click", function (ev) {
     if (ev && ev.target && ev.target.closest && ev.target.closest("#toast")) hideToast();
@@ -441,6 +457,8 @@
   CW.on = on;
   CW.authHeaders = authHeaders;
   CW.toast = toast;
+  CW.toastErr = toastErr;
+  CW.guard = guard;
   CW.showLoginError = showLoginError;
   CW.setLoggedIn = setLoggedIn;
   CW.isSsoMode = isSsoMode;
