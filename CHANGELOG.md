@@ -3,7 +3,7 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
-## v0.1.7 — 2026-10-11
+## v0.1.7 — 2026-10-12
 
 ### Added
 
@@ -23,6 +23,68 @@ All notable changes to the ConfigWire server (`configwire/`, image
   while the flag column was gone stay empty-flag and still count
   env-wide. No behavior change to auth, throttle, or retention
   windows.
+- Backups operator surface (`backups/`, `main.go`): scheduled
+  auto-backups and the S3 target are configurable from the environment
+  and applied at boot, fail-soft (invalid values log and keep the
+  stored settings): `CONFIGWIRE_BACKUP_CRON` / `CONFIGWIRE_BACKUP_KEEP`
+  (rotation count, default 10 when cron is newly set), plus
+  `CONFIGWIRE_BACKUP_S3_ENABLED` (`1/true/yes` on, `0/false/no` off)
+  with `CONFIGWIRE_BACKUP_S3_ENDPOINT`, `CONFIGWIRE_BACKUP_S3_BUCKET`,
+  `CONFIGWIRE_BACKUP_S3_REGION`, `CONFIGWIRE_BACKUP_S3_ACCESS_KEY`,
+  `CONFIGWIRE_BACKUP_S3_SECRET`, `CONFIGWIRE_BACKUP_S3_FORCE_PATH_STYLE`.
+  Unset values leave stored settings untouched; only S3 field names
+  (never values) reach the log, so secrets cannot leak. The
+  application name is forced to `configwire` at boot (fail-soft) so
+  backup filenames and system mails present correctly.
+- Admin UI Backups view (`pb_public/js/backups.js`): Backup files
+  card (list, create with `^[a-z0-9_-]+\.zip$` names, header upload
+  button staging zips without restoring, download via short-lived file
+  token, delete, one-click restore), auto-backup schedule card (cron +
+  keep), and S3 target card. All backup API paths stay superuser-only
+  (SDK keys get `401`).
+- Cloud SSO tenant side (`sso/sso.go`, `main.go`):
+  `CONFIGWIRE_AUTH_MODE` (`standard` default — standalone behavior
+  unchanged — or `sso`), `CONFIGWIRE_CLOUD_SSO_SECRET` (`<64-hex>`,
+  required in `sso` mode: missing or malformed fails fast before any
+  route serves), and optional `CONFIGWIRE_CLOUD_URL` dashboard link.
+  Public `GET /api/v1/admin/auth/mode` → `{mode[, cloudUrl]}` mode
+  signal and public `POST /api/v1/admin/sso/redeem {ticket}` (HMAC
+  ticket, 60s TTL, nonce single-use; ticket, secret, MAC, and nonce
+  never appear in logs). In `sso` mode the native login UI is replaced
+  by a "Managed by ConfigWire Cloud" notice and logout returns to the
+  cloud dashboard.
+- Admin UI Stats card gains a flag filter and the flags header shows
+  the active flag scope line (`pb_public/js/stats.js`,
+  `js_tests/test-stats.js`); e2e exercises per-flag ingest → stats →
+  purge (`scripts/e2e.sh`).
+- Docs: `docs/BACKUPS.md` operator guide (manual, scheduled, S3, and
+  restore runbook), `docs/CONTRACT.md` backups (§11) and Cloud SSO
+  tenant (§12) sections, README backups link.
+
+### Changed
+
+- Compose files renamed: `compose.yml` → `docker-compose.yml`, plus a
+  new `docker-compose-dev.yml`; README updated.
+- Slimmer images: `docker build --build-arg GO_TAGS=no_ui` strips the
+  PocketBase `/_/` admin (upstream `no_ui` tag); the Admin UI at `/`
+  and all `/api/*` routes are unaffected. `make build` /
+  `make build-no-ui`; CI builds both tags.
+- Docker publish stamps a floating `v-minor` tag on stable releases
+  (`.github/workflows/docker-publish.yml`).
+- Shared request helpers (`internal/apireq`): body decode and generic
+  `500 {"message": "internal error"}` / `429` rendering are deduped
+  across limits/account paths — raw DB text stays server-log only. No
+  wire shape changes; the unused `AllowKey` / `AllowAdmin` helpers are
+  gone.
+
+### Fixed
+
+- Flag dialog rejects bad keys inline (`^[A-Za-z_][A-Za-z0-9_.-]*$`,
+  1–128 chars) before staging — previously an invalid key staged fine
+  and failed only at publish (`pb_public/js/flags.js`,
+  `js_tests/test-dom-ops.js`).
+- `docs/SECURITY.md` compromise runbook points at the ConfigWire
+  dashboard `/` instead of PocketBase `/_/`.
 
 ## v0.1.6 — 2026-10-10
 
