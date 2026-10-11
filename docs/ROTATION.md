@@ -24,9 +24,11 @@ Key facts (landed code):
 
 ## Procedure (scratch-port script, copy-paste verbatim)
 
-Run from the repo root on port 8120. Every command below was executed
-in order for the todo-8 proof (log:
-`.omo/evidence/configwire-t8-baseline.log` holds the 401/200 pair).
+Run from `configwire/` on scratch port 8120. Every command below was executed
+in order for the todo-8 proof.
+
+> Scratch ports (8120 here, 8106 in `SECURITY.md` section 9) are dated
+> history. Only 8090 (default serve) and 8108 (e2e) are reserved.
 
 ```bash
 PORT=8120
@@ -108,12 +110,12 @@ MINT2=$(curl -s -X POST $BASE/api/v1/admin/keys -H "Authorization: $TOKEN" -H 'C
 NEW_KEY2=$(echo "$MINT2" | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])')
 echo "key2:minted ok"
 curl -s -o /dev/null -w "revoke:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
-curl -s -o /dev/null -w "revoke:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
+curl -s -o /dev/null -w "verify:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
 curl -s -o /dev/null -w "old-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY"
 curl -s -o /dev/null -w "new-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY2"
 ```
 
-Expected: `revoke:200`, `old-fetch:401` (same
+Expected: `revoke:200`, `verify:200`, `old-fetch:401` (same
 `Missing or invalid SDK key.` body as step 3), `new-fetch:200`.
 Revocation is immediate; un-revoking (`revoked:false`) restores `200`.
 Delete the old row once all clients have rolled to the new key.

@@ -33,7 +33,7 @@ curl -s http://localhost:8090/healthz
 Or via Compose (see [`docker-compose.yml`](docker-compose.yml)):
 
 ```bash
-curl -O https://raw.githubusercontent.com/configwire/configwire/main/configwire/docker-compose.yml
+curl -O https://raw.githubusercontent.com/configwire/configwire/main/docker-compose.yml
 docker compose pull && docker compose up -d
 ```
 

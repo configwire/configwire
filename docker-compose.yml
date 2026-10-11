@@ -1,6 +1,6 @@
 # Release: download-and-run (prebuilt ghcr.io image, no build, no source needed).
 # Pull-only usage (no source needed, just this file):
-#   curl -O https://raw.githubusercontent.com/configwire/configwire/main/configwire/docker-compose.yml
+#   curl -O https://raw.githubusercontent.com/configwire/configwire/main/docker-compose.yml
 #   docker compose pull && docker compose up -d
 #   curl -s http://localhost:8090/healthz
 #   curl -s http://localhost:8090/healthz | grep -q '"status":"ok"'

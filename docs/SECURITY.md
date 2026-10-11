@@ -182,7 +182,6 @@ binary plus operator procedure.
 - Ingest lag spot: 100-batch → countable in **636ms** (≤2s bound).
 - Post-load matrix: publish `200` (v2), fetch `304`, stats `200`.
 - Post-burst 30s at 100rps: 3001×`200`, 0×`429`, 0×`500` (no stuck state).
-- Full JSON-parsed evidence: `.omo/evidence/task-16-configwire.log`.
 - Runner: **k6** (`k6 --version` → v2.3.0; installed via brew for the
   gate). No `hey` fallback shipped — k6 was present.
 

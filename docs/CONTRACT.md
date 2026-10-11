@@ -518,7 +518,7 @@ Push is best-effort (near-instant while connected; no sub-second
 guarantee). Otherwise freshness is at most `pollInterval` (Dart
 default 15min) plus one fetch: the client poller runs in every state
 (stream healthy, down, or 401), so the bound holds on all paths.
-Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.dart` (RealtimeUpdater), `docs/SECURITY.md` section 7.
+Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.dart` (RealtimeUpdater), `SECURITY.md` section 7.
 
 ## 11. Retention
 
@@ -638,4 +638,4 @@ SDK header `X-ConfigWire-Key`, env `CONFIGWIRE_CORS_ORIGIN`,
 collection ids `cw_*`, admin keys `cw_admin_*`. Keys carry the `cw-`
 prefix (first-8-chars prefix rule). Rotation procedure (reissue `cw-`
 keys, revoke the old rows, prove the break with a `401`) lives in
-`docs/ROTATION.md` (same semantics as `docs/SECURITY.md` section 2).
+`ROTATION.md` (same semantics as `SECURITY.md` section 2).
