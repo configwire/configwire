@@ -338,9 +338,10 @@
               </div>
               <p class="scope-group-sub muted">Snapshot files, auto backup schedule, one-click restore, and the S3 backup target.</p>
               <section class="card" aria-labelledby="backup-files">
-                <div class="card-head">
-                  <h2 id="backup-files">Backup files</h2>
-                </div>
+               <div class="card-head">
+                 <h2 id="backup-files">Backup files</h2>
+                 <div class="card-actions"><button id="backup-upload-btn" type="button" class="btn secondary" title="Upload a .zip backup file (staged without restoring)" aria-label="Upload backup"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Upload</span></button><input id="backup-upload-file" type="file" accept=".zip,application/zip" hidden></div>
+               </div>
                 <ul id="backup-list" aria-label="Backups">
                   <li>Loading…</li>
                 </ul>

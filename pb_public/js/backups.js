@@ -21,6 +21,18 @@
     return BACKUP_NAME_RE.test(String(name == null ? "" : name));
   }
 
+  function isValidBackupUploadName(name) {
+    var s = String(name == null ? "" : name);
+    if (s.length < 5 || s.length > 150) return false;
+    if (s !== s.replace(/^\s+|\s+$/g, "")) return false;
+    if (s.charAt(0) === ".") return false;
+    if (s.slice(-4) !== ".zip") return false;
+    var base = s.slice(0, -4);
+    if (base === "" || base.indexOf("..") !== -1) return false;
+    if (/[\/\\\x00-\x1f\x7f]/.test(s)) return false;
+    return true;
+  }
+
   function encodeBackupKey(key) {
     return encodeURIComponent(String(key == null ? "" : key));
   }
@@ -69,6 +81,15 @@
   function isBackupBusy(outOrErr) {
     var msg = backupFailureMessage(outOrErr);
     return /already been started|another backup/i.test(msg);
+  }
+
+  function backupListErrorMessage(err) {
+    var raw = (err && err.message) || "Load failed.";
+    raw = String(raw);
+    if (/AccessDenied|Access Denied|Failed to retrieve backup items|<\?xml|<Code>|InvalidAccessKeyId|SignatureDoesNotMatch|NoSuchBucket|TokenRefreshRequired|credentials|bucket policy/i.test(raw)) {
+      return "Backup list unavailable — the backup store is unreachable (S3 AccessDenied). Check the S3 settings below (endpoint, bucket, keys, bucket policy), Save, then retry.";
+    }
+    return raw;
   }
 
   // The test endpoint probes STORED settings, so a just-filled form
@@ -159,10 +180,10 @@
         if (typeof document !== "undefined" && document.createElement) {
           clearBackupList();
           var li = document.createElement("li");
-          li.textContent = (err && err.message) || "Load failed.";
+          li.textContent = backupListErrorMessage(err);
           list.appendChild(li);
         } else {
-          list.textContent = (err && err.message) || "Load failed.";
+          list.textContent = backupListErrorMessage(err);
         }
       }
       throw err;
@@ -264,6 +285,56 @@
       return out;
     });
   }
+
+  function backupUploadStatus(msg, ok) {
+    var el = CW.$("backup-result");
+    if (el) el.textContent = msg == null ? "" : String(msg);
+    if (msg) CW.toast(msg, ok);
+  }
+
+  function validateBackupUploadFile(file, hasFile) {
+    if (!hasFile) return "File upload unavailable in this browser.";
+    if (!file) return "Pick a .zip file first.";
+    var name = String(file.name || "");
+    if (!isValidBackupUploadName(name)) return "File name must end in .zip (1-150 chars; no / \\ or .. sequences).";
+    return "";
+  }
+
+  function uploadBackup(ev) {
+    if (ev && ev.preventDefault) ev.preventDefault();
+    var input = CW.$("backup-upload-file");
+    var hasApi = (typeof FormData !== "undefined");
+    var f = input && input.files ? input.files[0] : null;
+    var bad = validateBackupUploadFile(f, hasApi);
+    if (bad !== "") { try { var ri = CW.$("backup-upload-file"); if (ri) ri.value = ""; } catch (e3) { } backupUploadStatus(bad); return Promise.resolve({ status: 0, data: null }); }
+    var fd;
+    try { fd = new FormData(); fd.append("file", f, f.name || "backup.zip"); }
+    catch (e) { backupUploadStatus((e && e.message) || "Upload failed"); return Promise.resolve({ status: 0, data: null }); }
+    return fetch("/api/backups/upload", { method: "POST", headers: CW.authHeaders(), body: fd }).then(function (res) {
+      return res.json().then(function (data) { return { status: res.status, data: data }; }, function () { return { status: res.status, data: { message: "HTTP " + res.status } }; });
+    }, function (err) {
+      backupUploadStatus((err && err.message) || "Upload failed");
+      throw err;
+    }).then(function (out) {
+      if (out.status === 401 || out.status === 403) {
+        if (CW.logout) try { CW.logout(); } catch (e) { }
+        backupUploadStatus(CW.apiError(out, "Upload failed"));
+        return out;
+      }
+      var done = (out.status === 200 || out.status === 204);
+      if (done) {
+        try { if (input) input.value = ""; } catch (e) { }
+        backupUploadStatus("Backup uploaded.", true);
+        loadBackups().catch(function () { });
+        return out;
+      }
+      var fail = isBackupBusy(out) ? "Backup already in progress — try again when it finishes." : CW.apiError(out, "Upload failed");
+      backupUploadStatus(fail);
+      return out;
+    });
+  }
+
+  function triggerBackupUpload() { var input = CW.$("backup-upload-file"); if (input && input.click) { try { input.click(); } catch (e) { /* picker unavailable */ } } }
 
   function onBackupListClick(ev) {
     var t = ev && ev.target ? ev.target : null;
@@ -1072,17 +1143,23 @@
   CW.deleteBackup = deleteBackup;
   CW.restoreBackup = restoreBackup;
   CW.downloadBackup = downloadBackup;
+  CW.uploadBackup = uploadBackup;
+  CW.triggerBackupUpload = triggerBackupUpload;
+  CW.backupUploadStatus = backupUploadStatus;
+  CW.validateBackupUploadFile = validateBackupUploadFile;
   CW.onBackupListClick = onBackupListClick;
   // Pure helpers exported for js_tests (limits.js export precedent):
   // dependency-free, no DOM/fetch.
   CW.BACKUP_NAME_PATTERN = BACKUP_NAME_PATTERN;
   CW.isValidBackupName = isValidBackupName;
+  CW.isValidBackupUploadName = isValidBackupUploadName;
   CW.normalizeBackupName = normalizeBackupName;
   CW.encodeBackupKey = encodeBackupKey;
   CW.backupDownloadPath = backupDownloadPath;
   CW.formatBackupSize = formatBackupSize;
   CW.formatBackupDate = formatBackupDate;
   CW.isBackupBusy = isBackupBusy;
+  CW.backupListErrorMessage = backupListErrorMessage;
   CW.backupS3TestMessage = backupS3TestMessage;
   CW.loadBackupS3 = loadBackupS3;
   CW.autoVerifyBackupS3 = autoVerifyBackupS3;

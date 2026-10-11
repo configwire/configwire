@@ -681,6 +681,8 @@
     CW.on("limits-form", "submit", CW.saveLimits);
     CW.on("settings-admin-form", "submit", CW.saveAdminLimit);
     CW.on("backup-create-form", "submit", CW.createBackup);
+    CW.on("backup-upload-btn", "click", CW.triggerBackupUpload);
+    CW.on("backup-upload-file", "change", CW.uploadBackup);
     CW.on("backup-list", "click", CW.onBackupListClick);
     CW.on("backup-s3-form", "submit", CW.onBackupS3Action);
     CW.on("backup-s3-action", "click", CW.onBackupS3Action);
