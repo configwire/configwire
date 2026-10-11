@@ -43,10 +43,14 @@ type ssoVector struct {
 	Reason    string `json:"reason"`
 }
 
-// loadVectors reads the normative P0 fixtures at repo-root docs/.
+// loadVectors reads the normative P0 fixtures vendored at
+// testdata/sso_vectors.json (a copy of the spec companion
+// docs/sso_vectors.json at the monorepo root; testdata travels with the
+// package so the tests also pass in the standalone split repo, where the
+// root docs/ tree is absent — see TestVectorsMatchSpecFixtures).
 func loadVectors(t *testing.T) []ssoVector {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "sso_vectors.json"))
+	raw, err := os.ReadFile(filepath.Join("testdata", "sso_vectors.json"))
 	if err != nil {
 		t.Fatalf("read sso_vectors.json: %v", err)
 	}
@@ -58,6 +62,23 @@ func loadVectors(t *testing.T) []ssoVector {
 		t.Fatal("no vectors loaded")
 	}
 	return vecs
+}
+
+// TestVectorsMatchSpecFixtures guards the vendored copy: where the spec
+// companion exists (monorepo root docs/), testdata must be byte-identical
+// to it. Skipped in the split repo, where the companion is absent.
+func TestVectorsMatchSpecFixtures(t *testing.T) {
+	inner, err := os.ReadFile(filepath.Join("testdata", "sso_vectors.json"))
+	if err != nil {
+		t.Fatalf("read testdata vectors: %v", err)
+	}
+	spec, err := os.ReadFile(filepath.Join("..", "..", "docs", "sso_vectors.json"))
+	if err != nil {
+		t.Skipf("spec fixtures absent (split-repo layout): %v", err)
+	}
+	if string(inner) != string(spec) {
+		t.Fatal("testdata/sso_vectors.json diverged from docs/sso_vectors.json: update both")
+	}
 }
 
 // TestVectors consumes docs/sso_vectors.json: every well-formed vector's

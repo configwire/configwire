@@ -1,0 +1,52 @@
+[
+  {
+    "name": "valid",
+    "secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "email": "owner@example.com",
+    "expiry": 2000000000,
+    "nonce": "9f8e7d6c5b4a39281706f5e4d3c2b1a0",
+    "ticket": "b3duZXJAZXhhbXBsZS5jb20.2000000000.9f8e7d6c5b4a39281706f5e4d3c2b1a0.465dcac77df0660fb921afab539ab3b6ab766b5149317c06ec148a68b2081a5f",
+    "valid": true,
+    "reason": "passes all checks -> 200 {token}"
+  },
+  {
+    "name": "expired",
+    "secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "email": "owner@example.com",
+    "expiry": 1000000000,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "ticket": "b3duZXJAZXhhbXBsZS5jb20.1000000000.00112233445566778899aabbccddeeff.8466d226d3380a2d835701ce4fd6141d0fcc211d85292a2e50d5511b6782465d",
+    "valid": false,
+    "reason": "past expiry -> 400 expired"
+  },
+  {
+    "name": "tampered-mac",
+    "secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "email": "owner@example.com",
+    "expiry": 2000000000,
+    "nonce": "9f8e7d6c5b4a39281706f5e4d3c2b1a0",
+    "ticket": "b3duZXJAZXhhbXBsZS5jb20.2000000000.9f8e7d6c5b4a39281706f5e4d3c2b1a0.465dcac77df0660fb921afab539ab3b6ab766b5149317c06ec148a68b2081a5e",
+    "valid": false,
+    "reason": "one MAC nibble flipped -> 400 tampered"
+  },
+  {
+    "name": "malformed-segments",
+    "secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "email": "owner@example.com",
+    "expiry": 2000000000,
+    "nonce": "9f8e7d6c5b4a39281706f5e4d3c2b1a0",
+    "ticket": "b3duZXJAZXhhbXBsZS5jb20.2000000000",
+    "valid": false,
+    "reason": "only 2 dot-segments, want exactly 4 -> 400 malformed"
+  },
+  {
+    "name": "malformed-b64",
+    "secret_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "email": "owner@example.com",
+    "expiry": 2000000000,
+    "nonce": "9f8e7d6c5b4a39281706f5e4d3c2b1a0",
+    "ticket": "!!!not-base64!!!.2000000000.9f8e7d6c5b4a39281706f5e4d3c2b1a0.465dcac77df0660fb921afab539ab3b6ab766b5149317c06ec148a68b2081a5f",
+    "valid": false,
+    "reason": "email segment not base64url -> 400 malformed"
+  }
+]
