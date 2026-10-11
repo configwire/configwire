@@ -8,8 +8,9 @@
 //
 // SINCE GRAMMAR: ?since=<N>d (days), default 7d when absent, clamped to a
 // max of 90d. Malformed values (abc, -5d, 0d, 7h, bare numbers) -> 400.
-// ENV POLICY: stats are env-wide only; there is no per-key filtering.
-// Unknown env slugs -> 404. Auth is superuser-only via
+// FLAG FILTER: ?flag=<key> scopes counts to one flag (verbatim match,
+// max 64 chars, longer -> 400); absent/empty stays env-wide. Unknown
+// flags answer zeros with flagFound:false. Auth is superuser-only via
 // apis.RequireSuperuserAuth().
 //
 // SCALE NOTE: aggregation runs in-Go over indexed filter queries —
@@ -43,6 +44,8 @@ const (
 	DefaultSinceDays = 7
 	// MaxSinceDays clamps large ?since= values (e.g. 400d -> 90d).
 	MaxSinceDays = 90
+	// MaxFlagLen caps ?flag= length; longer values -> 400.
+	MaxFlagLen = 64
 )
 
 // ParseSince parses the ?since= query value purely (no I/O), so it is
@@ -75,11 +78,32 @@ func errBadSince() error {
 	return &sinceError{msg: "invalid since: must be <N>d (1-90 days), e.g. 7d."}
 }
 
+// ParseFlag validates the ?flag= query value purely (no I/O), so it is
+// unit-testable. "" -> "" (no filter, env-wide). Otherwise the verbatim
+// string (no trimming/normalization); longer than MaxFlagLen -> error,
+// which the handler maps to 400.
+func ParseFlag(raw string) (string, error) {
+	if len(raw) > MaxFlagLen {
+		return "", &sinceError{msg: "invalid flag: must be at most 64 characters."}
+	}
+	return raw, nil
+}
+
+// flagOnly normalizes the optional variadic flagFilter: absent or empty
+// means env-wide (""); otherwise the verbatim flag key to scope to.
+func flagOnly(flagFilter []string) string {
+	if len(flagFilter) == 0 {
+		return ""
+	}
+	return flagFilter[0]
+}
+
 // EventRow is the minimal event projection Aggregate needs — pure and
-// DB-free so aggregation is unit-testable on fake rows. Stats aggregate
-// env-wide with no flag reads.
+// DB-free so aggregation is unit-testable on fake rows. Without a flag
+// filter stats aggregate env-wide; with one only matching flags count.
 type EventRow struct {
 	EnvID   string
+	Flag    string // verbatim flag key ("" when the column is absent/unset — GetString reads both "" and NULL as "")
 	Kind    string // "fetch" | "exposure"
 	Variant string // verbatim stored variant ("" possible, counted as-is)
 	Version int
@@ -126,9 +150,11 @@ func EffectiveSince(days int) string {
 // from pre-purge daily rollups (see HorizonFor). horizon keeps its original
 // label meaning ("7d"); rollupHorizon is the additive machine-readable
 // split point, so old clients keep parsing horizon untouched.
-func EchoFor(envSlug string, days int, cutoff, horizon time.Time) map[string]any {
+// The optional flag (pass only for ?flag= requests) echoes back as
+// echo.flag; without it the key stays absent (no per-key entry).
+func EchoFor(envSlug string, days int, cutoff, horizon time.Time, flag ...string) map[string]any {
 	since := EffectiveSince(days)
-	return map[string]any{
+	echo := map[string]any{
 		"env":           envSlug,
 		"since":         since,
 		"sinceDays":     days,
@@ -136,6 +162,10 @@ func EchoFor(envSlug string, days int, cutoff, horizon time.Time) map[string]any
 		"horizon":       since,
 		"rollupHorizon": horizon.UTC().Format(time.RFC3339),
 	}
+	if f := flagOnly(flag); f != "" {
+		echo["flag"] = f
+	}
+	return echo
 }
 
 // HorizonFor returns the UTC-midnight split between raw events and
@@ -160,15 +190,20 @@ func EventCutoffFor(cutoff, horizon time.Time) time.Time {
 }
 
 // AggregateRollups folds event_daily buckets into Stats purely (no I/O).
-// Filter order mirrors Aggregate: env match -> day-grain cutoff
+// Filter order mirrors Aggregate: env match -> optional flag match
+// (empty filter = env-wide) -> day-grain cutoff
 // (day >= cutoffDay kept, exactly-at-cutoff kept, zero-day skipped) ->
 // horizon (day < horizon; the boundary day stays raw-side) -> counts
 // (fetches+exposures added, perVariant over exposures only, verbatim
 // variant incl "", perVersion over fetches only by stored version).
-func AggregateRollups(buckets []purge.Rollup, envID string, cutoffDay, horizon time.Time) Stats {
+func AggregateRollups(buckets []purge.Rollup, envID string, cutoffDay, horizon time.Time, flagFilter ...string) Stats {
 	out := Stats{PerVariant: map[string]int{}, PerVersion: map[int]int{}}
+	flag := flagOnly(flagFilter)
 	for _, b := range buckets {
 		if b.EnvID != envID {
+			continue
+		}
+		if flag != "" && b.Flag != flag {
 			continue
 		}
 		if b.Day.IsZero() || b.Day.Before(cutoffDay) {
@@ -218,13 +253,17 @@ func MergeStats(events, rollups Stats) Stats {
 }
 
 // Aggregate folds rows into Stats purely (no I/O). Filters: envID must
-// match; rows with ts before cutoff (or zero ts, which proves no
-// recency) are excluded. All flags in the env count together;
-// PerVariant counts exposures only.
-func Aggregate(rows []EventRow, envID string, cutoff time.Time) Stats {
+// match; optional flagFilter scopes to one verbatim flag (empty = env-wide);
+// rows with ts before cutoff (or zero ts, which proves no
+// recency) are excluded. PerVariant counts exposures only.
+func Aggregate(rows []EventRow, envID string, cutoff time.Time, flagFilter ...string) Stats {
 	out := Stats{PerVariant: map[string]int{}, PerVersion: map[int]int{}}
+	flag := flagOnly(flagFilter)
 	for _, r := range rows {
 		if r.EnvID != envID {
+			continue
+		}
+		if flag != "" && r.Flag != flag {
 			continue
 		}
 		if r.Ts.IsZero() || r.Ts.Before(cutoff) {
@@ -242,14 +281,45 @@ func Aggregate(rows []EventRow, envID string, cutoff time.Time) Stats {
 	return out
 }
 
+// FlagFound reports whether any in-window row or bucket carries flag:
+// same env + window predicates as Aggregate/AggregateRollups, kind-agnostic
+// (any row counts, not just fetch/exposure). The handler uses it for the
+// flagFound verdict on ?flag= requests: true when the flag appears anywhere
+// in the window, false for unknown flags (which then answer zeros).
+func FlagFound(rows []EventRow, buckets []purge.Rollup, envID string, eventCutoff, cutoffDay, horizon time.Time, flag string) bool {
+	for _, r := range rows {
+		if r.EnvID != envID || r.Flag != flag {
+			continue
+		}
+		if r.Ts.IsZero() || r.Ts.Before(eventCutoff) {
+			continue
+		}
+		return true
+	}
+	for _, b := range buckets {
+		if b.EnvID != envID || b.Flag != flag {
+			continue
+		}
+		if b.Day.IsZero() || b.Day.Before(cutoffDay) {
+			continue
+		}
+		if !b.Day.Before(horizon) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // Register mounts the admin stats route (superuser-only; SDK keys -> 401).
 func Register(se *core.ServeEvent) {
 	se.Router.GET("/api/v1/admin/env/{env}/stats", getStats).Bind(apis.RequireSuperuserAuth())
 }
 
 // Order: 401 (superuser, via middleware) -> 404 (unknown env slug) ->
-// 400 (ambiguous slug without ?project=, or malformed since) -> 200
-// (env-wide counts).
+// 400 (ambiguous slug without ?project=, malformed since, or over-long
+// flag) -> 200 (env-wide counts, or per-flag counts with flagFound when
+// ?flag= is set).
 // Uses re.App for every request-scoped lookup (never a captured app).
 func getStats(re *core.RequestEvent) error {
 	security.SetHeaders(re)
@@ -265,6 +335,10 @@ func getStats(re *core.RequestEvent) error {
 	if perr != nil {
 		return re.BadRequestError(perr.Error(), nil)
 	}
+	flag, ferr := ParseFlag(re.Request.URL.Query().Get("flag"))
+	if ferr != nil {
+		return re.BadRequestError(ferr.Error(), nil)
+	}
 	now := time.Now().UTC()
 	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
 	horizon := HorizonFor(now)
@@ -275,13 +349,13 @@ func getStats(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	stEvents := Aggregate(rows, env.Id, eventCutoff)
+	stEvents := Aggregate(rows, env.Id, eventCutoff, flag)
 
 	buckets, err := loadRollups(re.App, env.Id, cutoffDay, horizon)
 	if err != nil {
 		return err
 	}
-	stRollups := AggregateRollups(buckets, env.Id, cutoffDay, horizon)
+	stRollups := AggregateRollups(buckets, env.Id, cutoffDay, horizon, flag)
 	st := MergeStats(stEvents, stRollups)
 
 	eventsTotal := TotalFor(stEvents)
@@ -295,16 +369,17 @@ func getStats(re *core.RequestEvent) error {
 
 	rates := RatesFor(st)
 	total := TotalFor(st)
-	echo := EchoFor(slug, days, cutoff, horizon)
+	echo := EchoFor(slug, days, cutoff, horizon, flag)
 
 	// Series window matches the totals window: every counted row lands on
-	// exactly one series day, so series sums equal totals.
+	// exactly one series day, so series sums equal totals (scoped to the
+	// flag too when ?flag= is set).
 	daysList := SeriesDays(cutoffDay, now)
-	evMap := BuildEventSeries(rows, env.Id, eventCutoff)
-	roMap := BuildRollupSeries(buckets, env.Id, cutoffDay, horizon)
+	evMap := BuildEventSeries(rows, env.Id, eventCutoff, flag)
+	roMap := BuildRollupSeries(buckets, env.Id, cutoffDay, horizon, flag)
 	series := MergeSeries(evMap, roMap, daysList)
 
-	return re.JSON(http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"fetches":     st.Fetches,
 		"exposures":   st.Exposures,
 		"perVariant":  st.PerVariant,
@@ -316,7 +391,11 @@ func getStats(re *core.RequestEvent) error {
 		"sources":     map[string]any{"events": eventsTotal, "rollups": rollupsTotal},
 		"approximate": approximate,
 		"series":      series,
-	})
+	}
+	if flag != "" {
+		resp["flagFound"] = FlagFound(rows, buckets, env.Id, eventCutoff, cutoffDay, horizon, flag)
+	}
+	return re.JSON(http.StatusOK, resp)
 }
 
 // dateParam formats t for indexed Date/DateTime comparisons: PocketBase
@@ -349,6 +428,7 @@ func loadRollups(app core.App, envID string, cutoffDay, horizon time.Time) ([]pu
 		out = append(out, purge.Rollup{
 			Day:       r.GetDateTime("day").Time(),
 			EnvID:     r.GetString("env"),
+			Flag:      r.GetString("flag"),
 			Variant:   r.GetString("variant"),
 			Version:   r.GetInt("version"),
 			Fetches:   r.GetInt("fetches"),
@@ -377,6 +457,7 @@ func loadRows(app core.App, envID string, cutoff time.Time) ([]EventRow, error) 
 	for _, r := range recs {
 		rows = append(rows, EventRow{
 			EnvID:   r.GetString("env"),
+			Flag:    r.GetString("flag"),
 			Kind:    r.GetString("kind"),
 			Variant: r.GetString("variant"),
 			Version: r.GetInt("version"),

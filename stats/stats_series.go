@@ -51,14 +51,18 @@ func SeriesDays(cutoffDay, now time.Time) []time.Time {
 }
 
 // BuildEventSeries folds rows into per-day counts keyed by DayBucket(ts)
-// date string. Parity with Aggregate: env must match; rows with zero ts
+// date string. Parity with Aggregate: env must match; optional flagFilter
+// scopes to one verbatim flag (empty = env-wide); rows with zero ts
 // or ts before eventCutoff are excluded; unknown kinds are ignored.
-// userHash is never read — counts only. All flags in the env count
-// together (env-wide stats only).
-func BuildEventSeries(rows []EventRow, envID string, eventCutoff time.Time) map[string]*SeriesPoint {
+// userHash is never read — counts only.
+func BuildEventSeries(rows []EventRow, envID string, eventCutoff time.Time, flagFilter ...string) map[string]*SeriesPoint {
 	out := map[string]*SeriesPoint{}
+	flag := flagOnly(flagFilter)
 	for _, r := range rows {
 		if r.EnvID != envID {
+			continue
+		}
+		if flag != "" && r.Flag != flag {
 			continue
 		}
 		if r.Ts.IsZero() || r.Ts.Before(eventCutoff) {
@@ -95,12 +99,17 @@ func BuildEventSeries(rows []EventRow, envID string, eventCutoff time.Time) map[
 
 // BuildRollupSeries folds event_daily buckets into per-day counts keyed by
 // DayBucket(day) date string. Parity with AggregateRollups: env must match;
+// optional flagFilter scopes to one verbatim flag (empty = env-wide);
 // zero days, days before cutoffDay, and days at/after horizon are excluded
 // (boundary day stays raw-side). Counts add verbatim, no rounding.
-func BuildRollupSeries(buckets []purge.Rollup, envID string, cutoffDay, horizon time.Time) map[string]*SeriesPoint {
+func BuildRollupSeries(buckets []purge.Rollup, envID string, cutoffDay, horizon time.Time, flagFilter ...string) map[string]*SeriesPoint {
 	out := map[string]*SeriesPoint{}
+	flag := flagOnly(flagFilter)
 	for _, b := range buckets {
 		if b.EnvID != envID {
+			continue
+		}
+		if flag != "" && b.Flag != flag {
 			continue
 		}
 		if b.Day.IsZero() || b.Day.Before(cutoffDay) {

@@ -142,7 +142,11 @@ func TestEchoCutoffMath(t *testing.T) {
 		t.Errorf("verbatim echo = %v, want env:dev", echo)
 	}
 	if _, ok := echo["flag"]; ok {
-		t.Errorf("echo must not carry a per-key entry: %v", echo)
+		t.Errorf("no-param echo must not carry a flag key: %v", echo)
+	}
+	flagged := EchoFor("dev", 7, cutoff7, purge.DayBucket(now.AddDate(0, 0, -30)), "exp_bool")
+	if flagged["flag"] != "exp_bool" {
+		t.Errorf("flagged echo.flag = %v, want exp_bool", flagged["flag"])
 	}
 	if echo["since"] != "7d" || echo["sinceDays"] != 7 || echo["horizon"] != "7d" {
 		t.Errorf("7d echo = %v, want since:7d sinceDays:7 horizon:7d", echo)

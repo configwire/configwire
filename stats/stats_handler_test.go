@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +17,11 @@ import (
 // are plain text holding the env id: the loaders only read them via
 // GetString, exactly like the handler path. event_daily stays empty so
 // the 7d window is events-only (approximate:false) and timing-flake-proof.
+//
+// Seeded rows carry distinct flags so per-flag filtering is provable:
+// exp_bool gets 2 fetches (v1) + exposures control:1 treatment:1;
+// other_flag gets 1 fetch (v1) + 1 exposure (treatment). Env-wide that
+// is 3 fetches + 3 exposures = 6 total.
 func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 	t.Helper()
 	app, err := tests.NewTestApp()
@@ -41,6 +46,7 @@ func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 	events := core.NewBaseCollection("events")
 	for _, f := range []string{
 		`{"type":"text","name":"env"}`,
+		`{"type":"text","name":"flag"}`,
 		`{"type":"text","name":"kind"}`,
 		`{"type":"text","name":"variant"}`,
 		`{"type":"number","name":"version"}`,
@@ -58,6 +64,7 @@ func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 	for _, f := range []string{
 		`{"type":"date","name":"day"}`,
 		`{"type":"text","name":"env"}`,
+		`{"type":"text","name":"flag"}`,
 		`{"type":"text","name":"variant"}`,
 		`{"type":"number","name":"version"}`,
 		`{"type":"number","name":"fetches"}`,
@@ -97,17 +104,18 @@ func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 	}
 	envID := envRec.Id
 
-	// Fresh rows far from the 7d cutoff: 2 fetches + 2 exposures.
+	// Fresh rows far from the 7d cutoff, scoped to distinct flags.
 	// No userHash field: loadRows never reads it.
 	now := time.Now().UTC()
 	eventsCol, err := app.FindCollectionByNameOrId("events")
 	if err != nil {
 		t.Fatalf("find events: %v", err)
 	}
-	seed := func(kind, variant string, version int) {
+	seed := func(flag, kind, variant string, version int) {
 		t.Helper()
 		rec := core.NewRecord(eventsCol)
 		rec.Set("env", envID)
+		rec.Set("flag", flag)
 		rec.Set("kind", kind)
 		rec.Set("variant", variant)
 		rec.Set("version", version)
@@ -116,10 +124,12 @@ func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 			t.Fatalf("save event: %v", err)
 		}
 	}
-	seed("fetch", "", 1)
-	seed("fetch", "", 1)
-	seed("exposure", "control", 1)
-	seed("exposure", "treatment", 1)
+	seed("exp_bool", "fetch", "", 1)
+	seed("exp_bool", "fetch", "", 1)
+	seed("exp_bool", "exposure", "control", 1)
+	seed("exp_bool", "exposure", "treatment", 1)
+	seed("other_flag", "fetch", "", 1)
+	seed("other_flag", "exposure", "treatment", 1)
 
 	relCol, err := app.FindCollectionByNameOrId("releases")
 	if err != nil {
@@ -155,102 +165,19 @@ func callStats(t *testing.T, app *tests.TestApp, rawQuery string) (int, map[stri
 	return rec.Code, body
 }
 
-// assertNoFlagKeys fails if "flag" or "flagFound" appears as a key
-// anywhere in the decoded response tree, including inside echo.
-func assertNoFlagKeys(t *testing.T, rawQuery string, v any) {
-	t.Helper()
-	switch v := v.(type) {
-	case map[string]any:
-		for k, child := range v {
-			if k == "flag" || k == "flagFound" {
-				t.Fatalf("getStats(%q): response carries %q key", rawQuery, k)
-			}
-			assertNoFlagKeys(t, rawQuery, child)
-		}
-	case []any:
-		for _, child := range v {
-			assertNoFlagKeys(t, rawQuery, child)
-		}
-	}
-}
-
-// TestGetStatsIgnoresFlagParam proves GET stats with ?flag=anything
-// returns 200 with env-wide counts identical to the no-param request:
-// getStats reads only PathValue("env") plus ?project= and ?since=, so a
-// stale ?flag= is ignored by construction. This pins that posture now
-// that the e2e unknown-flag block is gone.
+// TestGetStatsFiltersByFlag proves GET stats ?flag= scoping against the
+// (day,env,flag,variant,version) code: ?flag=exp_bool returns that flag's
+// counts only with flagFound:true and echo.flag echoed; ?flag=unknown
+// returns zeros with flagFound:false and echo.flag echoed; no-param
+// returns env-wide totals with no flagFound key and echo without flag;
+// an over-long flag maps to 400 (BadRequestError from ParseFlag).
 //
 // This test does not assert the 401 superuser path: it calls getStats
 // directly, skipping the RequireSuperuserAuth middleware by design;
-// counting/param-ignorance is orthogonal to auth.
-func TestGetStatsIgnoresFlagParam(t *testing.T) {
+// counting/flag-filtering is orthogonal to auth.
+func TestGetStatsFiltersByFlag(t *testing.T) {
 	app, _ := flagIgnoranceApp(t)
 
-	codePlain, plain := callStats(t, app, "?since=7d")
-	if codePlain != http.StatusOK {
-		t.Fatalf("no-param status = %d, want 200", codePlain)
-	}
-	codeFlag, flagged := callStats(t, app, "?since=7d&flag=anything")
-	if codeFlag != http.StatusOK {
-		t.Fatalf("?flag=anything status = %d, want 200", codeFlag)
-	}
-	codePath, pathish := callStats(t, app, "?since=7d&flag=../x")
-	if codePath != http.StatusOK {
-		t.Fatalf("?flag=../x status = %d, want 200", codePath)
-	}
-
-	// Identical bodies, field by field. echo carries the live cutoff
-	// timestamp, so it is compared with time-tolerance instead of
-	// exact DeepEqual; everything else must match exactly.
-	for _, key := range []string{
-		"fetches", "exposures", "perVariant", "perVersion",
-		"total", "rates", "sources", "approximate", "series", "version",
-	} {
-		if !reflect.DeepEqual(flagged[key], plain[key]) {
-			t.Errorf("?flag=anything changed %q: got %v, want %v (no-param)", key, flagged[key], plain[key])
-		}
-		if !reflect.DeepEqual(pathish[key], plain[key]) {
-			t.Errorf("?flag=../x changed %q: got %v, want %v (no-param)", key, pathish[key], plain[key])
-		}
-	}
-	for name, body := range map[string]map[string]any{"flagged": flagged, "pathish": pathish} {
-		plainEcho, ok := plain["echo"].(map[string]any)
-		if !ok {
-			t.Fatalf("no-param echo is not an object: %v", plain["echo"])
-		}
-		echo, ok := body["echo"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s echo is not an object: %v", name, body["echo"])
-		}
-		for _, key := range []string{"env", "since", "sinceDays", "horizon"} {
-			if !reflect.DeepEqual(echo[key], plainEcho[key]) {
-				t.Errorf("%s echo[%q] = %v, want %v (no-param)", name, key, echo[key], plainEcho[key])
-			}
-		}
-		for _, key := range []string{"cutoff", "rollupHorizon"} {
-			got, err := time.Parse(time.RFC3339, echo[key].(string))
-			if err != nil {
-				t.Fatalf("%s echo[%q] %v does not parse as RFC3339: %v", name, key, echo[key], err)
-			}
-			want, err := time.Parse(time.RFC3339, plainEcho[key].(string))
-			if err != nil {
-				t.Fatalf("no-param echo[%q] %v does not parse as RFC3339: %v", key, plainEcho[key], err)
-			}
-			if got.Sub(want).Abs() > 5*time.Second {
-				t.Errorf("%s echo[%q] = %v, want ~%v", name, key, got, want)
-			}
-		}
-	}
-
-	// No flag-shaped keys anywhere, including inside echo.
-	for name, body := range map[string]map[string]any{
-		"no-param": plain, "flagged": flagged, "pathish": pathish,
-	} {
-		assertNoFlagKeys(t, name, body)
-	}
-
-	// Positive env-wide values equal to the seeded expectation,
-	// not just equal-zeros: 2 fetches + 2 exposures = 4 total.
 	num := func(body map[string]any, key string) float64 {
 		t.Helper()
 		v, ok := body[key].(float64)
@@ -259,26 +186,130 @@ func TestGetStatsIgnoresFlagParam(t *testing.T) {
 		}
 		return v
 	}
-	if got := num(flagged, "fetches"); got != 2 {
-		t.Errorf("flagged fetches = %v, want 2", got)
+	echoOf := func(body map[string]any, query string) map[string]any {
+		t.Helper()
+		echo, ok := body["echo"].(map[string]any)
+		if !ok {
+			t.Fatalf("getStats(%q) echo is not an object: %v", query, body["echo"])
+		}
+		return echo
 	}
-	if got := num(flagged, "exposures"); got != 2 {
-		t.Errorf("flagged exposures = %v, want 2", got)
+
+	// No-param: env-wide totals (3 fetches + 3 exposures = 6), no
+	// flagFound key, echo without flag.
+	codePlain, plain := callStats(t, app, "?since=7d")
+	if codePlain != http.StatusOK {
+		t.Fatalf("no-param status = %d, want 200", codePlain)
 	}
-	if got := num(flagged, "total"); got != 4 {
-		t.Errorf("flagged total = %v, want 4", got)
+	if got := num(plain, "fetches"); got != 3 {
+		t.Errorf("no-param fetches = %v, want 3", got)
 	}
-	perVariant, ok := flagged["perVariant"].(map[string]any)
+	if got := num(plain, "exposures"); got != 3 {
+		t.Errorf("no-param exposures = %v, want 3", got)
+	}
+	if got := num(plain, "total"); got != 6 {
+		t.Errorf("no-param total = %v, want 6", got)
+	}
+	if _, ok := plain["flagFound"]; ok {
+		t.Errorf("no-param carries flagFound key: %v", plain["flagFound"])
+	}
+	if _, ok := echoOf(plain, "no-param")["flag"]; ok {
+		t.Errorf("no-param echo carries flag key: %v", plain["echo"])
+	}
+	if plain["approximate"] != false {
+		t.Errorf("no-param approximate = %v, want false (events-only window)", plain["approximate"])
+	}
+
+	// ?flag=exp_bool: that flag's counts only + flagFound:true + echo.flag.
+	codeExp, exp := callStats(t, app, "?since=7d&flag=exp_bool")
+	if codeExp != http.StatusOK {
+		t.Fatalf("?flag=exp_bool status = %d, want 200", codeExp)
+	}
+	if got := num(exp, "fetches"); got != 2 {
+		t.Errorf("exp_bool fetches = %v, want 2", got)
+	}
+	if got := num(exp, "exposures"); got != 2 {
+		t.Errorf("exp_bool exposures = %v, want 2", got)
+	}
+	if got := num(exp, "total"); got != 4 {
+		t.Errorf("exp_bool total = %v, want 4", got)
+	}
+	perVariant, ok := exp["perVariant"].(map[string]any)
 	if !ok {
-		t.Fatalf("flagged perVariant is not an object: %v", flagged["perVariant"])
+		t.Fatalf("exp_bool perVariant is not an object: %v", exp["perVariant"])
 	}
 	if perVariant["control"] != float64(1) || perVariant["treatment"] != float64(1) {
-		t.Errorf("flagged perVariant = %v, want control:1 treatment:1", perVariant)
+		t.Errorf("exp_bool perVariant = %v, want control:1 treatment:1", perVariant)
 	}
-	if got := num(flagged, "version"); got != 1 {
-		t.Errorf("flagged version = %v, want 1", got)
+	if got := num(exp, "version"); got != 1 {
+		t.Errorf("exp_bool version = %v, want 1", got)
 	}
-	if flagged["approximate"] != false {
-		t.Errorf("flagged approximate = %v, want false (events-only window)", flagged["approximate"])
+	if exp["flagFound"] != true {
+		t.Errorf("exp_bool flagFound = %v, want true", exp["flagFound"])
+	}
+	if got := echoOf(exp, "?flag=exp_bool")["flag"]; got != "exp_bool" {
+		t.Errorf("exp_bool echo.flag = %v, want exp_bool", got)
+	}
+
+	// ?flag=other_flag: the other flag's counts only.
+	codeOther, other := callStats(t, app, "?since=7d&flag=other_flag")
+	if codeOther != http.StatusOK {
+		t.Fatalf("?flag=other_flag status = %d, want 200", codeOther)
+	}
+	if got := num(other, "fetches"); got != 1 {
+		t.Errorf("other_flag fetches = %v, want 1", got)
+	}
+	if got := num(other, "exposures"); got != 1 {
+		t.Errorf("other_flag exposures = %v, want 1", got)
+	}
+	if got := num(other, "total"); got != 2 {
+		t.Errorf("other_flag total = %v, want 2", got)
+	}
+	if other["flagFound"] != true {
+		t.Errorf("other_flag flagFound = %v, want true", other["flagFound"])
+	}
+	if got := echoOf(other, "?flag=other_flag")["flag"]; got != "other_flag" {
+		t.Errorf("other_flag echo.flag = %v, want other_flag", got)
+	}
+
+	// ?flag=unknown: matches nothing, so zeros + flagFound:false +
+	// echo.flag echoed back.
+	codeUnknown, unknown := callStats(t, app, "?since=7d&flag=unknown_flag_xyz")
+	if codeUnknown != http.StatusOK {
+		t.Fatalf("?flag=unknown status = %d, want 200", codeUnknown)
+	}
+	if got := num(unknown, "fetches"); got != 0 {
+		t.Errorf("unknown fetches = %v, want 0", got)
+	}
+	if got := num(unknown, "exposures"); got != 0 {
+		t.Errorf("unknown exposures = %v, want 0", got)
+	}
+	if got := num(unknown, "total"); got != 0 {
+		t.Errorf("unknown total = %v, want 0", got)
+	}
+	if unknown["flagFound"] != false {
+		t.Errorf("unknown flagFound = %v, want false", unknown["flagFound"])
+	}
+	if got := echoOf(unknown, "?flag=unknown")["flag"]; got != "unknown_flag_xyz" {
+		t.Errorf("unknown echo.flag = %v, want unknown_flag_xyz", got)
+	}
+
+	// Over-long flag: ParseFlag rejects >64 chars, which the handler
+	// maps to 400 (BadRequestError). callStats would Fatalf on the
+	// returned error, so invoke getStats directly and assert the error.
+	longFlag := strings.Repeat("f", MaxFlagLen+1)
+	if _, err := ParseFlag(longFlag); err == nil {
+		t.Fatalf("ParseFlag(65 chars): expected error, got nil")
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/env/dev/stats?since=7d&flag="+longFlag, nil)
+	req.SetPathValue("env", "dev")
+	re := &core.RequestEvent{App: app}
+	re.Request = req
+	re.Response = rec
+	if err := getStats(re); err == nil {
+		t.Errorf("getStats over-long flag: expected 400 error, got nil")
+	} else if !strings.Contains(err.Error(), "at most 64") {
+		t.Errorf("getStats over-long flag error = %q, want flag length cap", err.Error())
 	}
 }
