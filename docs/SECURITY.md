@@ -45,7 +45,7 @@ binary plus operator procedure.
   and **all outstanding tokens for that superuser — including
   impersonate tokens — fail validation immediately**.
 - Operator procedure on suspected compromise:
-  1. Change the superuser password (dashboard `_/` or API).
+   1. Change the superuser password (dashboard `/` or API).
      Old password stops working instantly; old tokens die with it.
   2. Optionally also rotate the auth collection's token secret
      (Settings → Application / auth collection options) and restart

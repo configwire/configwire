@@ -13,7 +13,7 @@ external DB. Admin UI ships as static files.
 > This README covers only running and developing this binary.
 
 - Docs: [https://configwire.com/guide.html](https://configwire.com/guide.html)
-- Wire contract: [`docs/CONTRACT.md`](docs/CONTRACT.md) · Security/ops: [`docs/SECURITY.md`](docs/SECURITY.md) · Key rotation: [`docs/ROTATION.md`](docs/ROTATION.md)
+- Wire contract: [`docs/CONTRACT.md`](docs/CONTRACT.md) · Security/ops: [`docs/SECURITY.md`](docs/SECURITY.md) · Key rotation: [`docs/ROTATION.md`](docs/ROTATION.md) · Backups: [`docs/BACKUPS.md`](docs/BACKUPS.md)
 - Dart client: [`configwire`](https://pub.dev/packages/configwire) on pub.dev (pure-Dart, runs on Flutter; source at [github.com/configwire/dart](https://github.com/configwire/dart))
 
 ## Run with Docker

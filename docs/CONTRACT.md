@@ -653,3 +653,67 @@ collection ids `cw_*`, admin keys `cw_admin_*`. Keys carry the `cw-`
 prefix (first-8-chars prefix rule). Rotation procedure (reissue `cw-`
 keys, revoke the old rows, prove the break with a `401`) lives in
 `ROTATION.md` (same semantics as `SECURITY.md` section 2).
+
+## 13. Backups
+
+PocketBase built-in backups (v0.40.4), adopted as-is. Operator
+procedure, copy-pasteable commands, Docker/S3 notes, and failure
+modes live in `BACKUPS.md`; the shapes below are normative.
+
+All backup paths are superuser-only; SDK-key-only or unauth then
+`401`. Admin auth is `Authorization: <token>` (bare, Bearer
+optional), same convention as sections 2a-8.
+
+- List: `GET /api/backups` then `200` (backup entries).
+- Create: `POST /api/backups` with `{"name": "<label>"}` then
+  `200/204` (PocketBase assigns the zip key).
+- Upload: `POST /api/backups/upload` (multipart `file=@<zip>`)
+  stages a zip into the backup store without applying it.
+- Download: `POST /api/files/token` mints a file token, then
+  `GET /api/backups/{key}?token=<token>` streams the zip.
+- Delete: `DELETE /api/backups/{key}` then `204`.
+- Restore: `POST /api/backups/{key}/restore` then `204`
+  immediately with an empty body; the restore applies about 1s
+  later and RESTARTS the server process (execve, Linux-only,
+  experimental upstream; Windows unsupported), so expect brief
+  downtime. Back up before restoring.
+- Schedule: `PATCH /api/settings` with
+  `{"backups": {"cron": "0 3 * * *", "cronMaxKeep": 10}}`
+  enables daily 03:00 auto-backups keeping the newest 10
+  `@auto_*` files (`0` = keep all). Boot env overrides
+  `CONFIGWIRE_BACKUP_CRON` / `CONFIGWIRE_BACKUP_KEEP`: empty
+  leaves the stored setting untouched, application is
+  idempotent, boot logs carry the `configwire: backups` prefix.
+   A set cron with no (or invalid) keep falls back to keep 10
+   (`DefaultCronMaxKeep` in `configwire/backups/env.go`).
+- S3: `PATCH /api/settings` with `{"backups": {"s3": {...}}}`
+  enables S3 backup storage (`enabled`, `bucket`, `region`,
+  `endpoint`, `accessKey`, `secret`, `forcePathStyle`); boot env
+  overrides `CONFIGWIRE_BACKUP_S3_ENABLED` /
+  `CONFIGWIRE_BACKUP_S3_ENDPOINT` / `CONFIGWIRE_BACKUP_S3_BUCKET` /
+  `CONFIGWIRE_BACKUP_S3_REGION` / `CONFIGWIRE_BACKUP_S3_ACCESS_KEY` /
+  `CONFIGWIRE_BACKUP_S3_SECRET` /
+  `CONFIGWIRE_BACKUP_S3_FORCE_PATH_STYLE`:
+  truthy `..._ENABLED` enables, falsy disables, empty per field
+  leaves the stored value untouched, secrets never logged.
+  `POST /api/settings/test/s3` with
+  `{"filesystem": "backups"}` tests the stored config without taking a
+  backup. The Admin UI Check connection button saves the form
+  (`enabled:true`) first, then tests; a pass morphs it to
+  Save S3 Settings.
+  Use a separate bucket from top-level `s3.*` record-upload storage. S3 failure
+  modes: wrong endpoint/creds then backup create `400`/`500` with
+  a filesystem error; single-flight `400` still applies;
+  `cronMaxKeep` rotation prunes old `@auto_*` objects in the
+  bucket too.
+- `GET /api/settings` blanks secrets (they read back empty).
+- Single-flight: a second backup/restore while one runs then
+  `400` (`another backup/restore operation has already been
+  started`); retry later.
+- Zips are created WAL-safe via `VACUUM INTO` (brief write
+  locks, query performance degrades while running). The local
+  `backups/` dir is excluded from zips. Record uploads stored
+  via top-level `s3.*` are NOT inside backup zips.
+
+Ref: `BACKUPS.md` (all sections), `SECURITY.md` section 10
+(back up before `migrate down`).
