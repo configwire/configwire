@@ -2632,12 +2632,15 @@ section[aria-labelledby="releases"] hr {
 /* ---- Stats card (scoped to section[aria-labelledby="stats"] + #stats-view only;
  * reuses :root tokens + .card/.btn/.ghost/.muted/.badge patterns. No new font/icon/dep.
  * Renderer contract (js/stats.js renderStats — order stable):
- * selects #stats-since only + button #refresh-stats; #stats-view holds
+ * selects #stats-since + #stats-flag only + button #refresh-stats; #stats-view holds
  * EITHER the true-empty branch (fetches==0 && exposures==0: tiles
- * <div class="stats-tiles"> (.stats-tile × 3, muted numbers), guide
+ * <div class="stats-tiles"> (.stats-tile × 3, muted numbers), optional flag
+ * <p class="stats-split stats-flag"> (only when echo.flag present), guide
  * <p class="stats-guide"> — NO
  * chart div, NO .stats-count/.stats-split) OR the data branch:
- * count <p class="stats-count">s, split <p class="stats-split">, chart
+ * count <p class="stats-count">s, optional flag <p class="stats-split stats-flag">
+ * (only when echo.flag present: escaped flag key + flagFound true/false),
+ * split <p class="stats-split">, chart
  * <div class="stats-chart"> (bars .stats-bars/.stats-bar-row + optional
  * .stats-donut conic-gradient, or .is-empty with .stats-empty note when
  * exposures==0), optional .muted approximate <p>,
@@ -2735,6 +2738,14 @@ section[aria-labelledby="stats"] form.inline-form button {
 
 #stats-view p.stats-split {
   display: none;
+}
+
+/* Flag scope line reuses the .stats-split/muted pattern: same type treatment,
+ * only unhidden so the echo.flag + flagFound scope stays visible. */
+#stats-view p.stats-split.stats-flag {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 /* Variant-split chart: bars carry the data, donut is a conic-gradient echo of

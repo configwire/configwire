@@ -21,6 +21,13 @@ function fullData() {
   };
 }
 
+function flagData(key, found) {
+  var d = fullData();
+  d.echo = { flag: key, since: "7d" };
+  d.flagFound = found;
+  return d;
+}
+
 function statsHTML(ctx) {
   return ctx.elementsById["stats-view"].innerHTML;
 }
@@ -49,9 +56,21 @@ test("renderStats bars/donut math sums to exposures and stores lastStatsText", f
   // Split line (stats.js:26-34) and perVersion line (stats.js:81-85).
   assert.ok(html.indexOf("control: 60 (60.0%), treatment: 40 (40.0%)") !== -1, "split wrong: " + html);
   assert.ok(html.indexOf("v1: 30, v2: 70") !== -1, "versions wrong: " + html);
-  // Since-only filters: no flag echo line is ever rendered.
-  assert.ok(html.indexOf("flag ") === -1, "flag echo must be gone: " + html);
+  // Env-wide (no echo.flag): no flag line. Flag-scoped (?flag= + echo.flag,
+  // see CONTRACT §5) renders an escaped flag + flagFound line.
+  assert.ok(html.indexOf("stats-flag") === -1, "env-wide must have no flag line: " + html);
   assert.ok(html.indexOf("stats-echo-quiet") === -1, "quiet echo must be gone: " + html);
+  var fctx = freshStats();
+  fctx.CW.renderStats(flagData("my-flag", true));
+  var fhtml = statsHTML(fctx);
+  assert.ok(fhtml.indexOf("stats-flag") !== -1, "missing flag line: " + fhtml);
+  assert.ok(fhtml.indexOf("flag my-flag") !== -1, "missing flag key: " + fhtml);
+  assert.ok(fhtml.indexOf("flagFound true") !== -1, "missing flagFound true: " + fhtml);
+  var xctx = freshStats();
+  xctx.CW.renderStats(flagData("<img>", true));
+  var xhtml = statsHTML(xctx);
+  assert.ok(xhtml.indexOf("&lt;img&gt;") !== -1, "flag key not escaped: " + xhtml);
+  assert.ok(xhtml.indexOf("<img>") === -1, "raw flag key leaked: " + xhtml);
 });
 
 test("renderStats pins approximate:true marker", function () {
@@ -84,7 +103,18 @@ test("renderStats true-empty onboarding state and empty chart", function () {
   var html = statsHTML(ctx);
   assert.ok(html.indexOf("Publish, fetch, then send exposure.") !== -1, "missing onboarding guide: " + html);
   assert.ok(html.indexOf("stats-echo-quiet") === -1, "quiet echo must be gone: " + html);
-  assert.ok(html.indexOf("flag ") === -1, "flag echo must be gone: " + html);
+  assert.ok(html.indexOf("stats-flag") === -1, "env-wide empty must have no flag line: " + html);
+  var fctx = freshStats();
+  fctx.CW.renderStats({
+    version: 0, fetches: 0, exposures: 0,
+    perVariant: {}, perVersion: {},
+    echo: { flag: "missing-flag", since: "7d" }, flagFound: false,
+  });
+  var fhtml = statsHTML(fctx);
+  assert.ok(fhtml.indexOf("stats-flag") !== -1, "empty flag scope must render flag line: " + fhtml);
+  assert.ok(fhtml.indexOf("flag missing-flag") !== -1, "empty flag key missing: " + fhtml);
+  assert.ok(fhtml.indexOf("flagFound false") !== -1, "empty flagFound false missing: " + fhtml);
+  assert.ok(fhtml.indexOf("Publish, fetch, then send exposure.") !== -1, "empty flag scope keeps guide: " + fhtml);
   var ctx2 = freshStats();
   ctx2.CW.renderStats({
     version: 1, fetches: 5, exposures: 0,
@@ -214,6 +244,7 @@ test("loadStats shows Loading placeholder then stores lastStatsText on success",
 test("loadStats defaults empty since to 7d", async function () {
   var ctx = freshStats();
   ctx.CW.$("stats-since").value = "";
+  ctx.CW.$("stats-flag").value = "";
   var seenUrl = null;
   ctx.CW.api = function (url) {
     seenUrl = url;
@@ -221,7 +252,49 @@ test("loadStats defaults empty since to 7d", async function () {
   };
   await ctx.CW.loadStats();
   assert.ok(seenUrl.indexOf("since=7d") !== -1, "unexpected stats url: " + seenUrl);
-  assert.ok(seenUrl.indexOf("flag=") === -1, "flag param must never be sent: " + seenUrl);
+  assert.ok(seenUrl.indexOf("flag=") === -1, "empty flag input must stay env-wide: " + seenUrl);
+});
+
+test("loadStats sends &flag= encoded when stats-flag input set", async function () {
+  var ctx = freshStats();
+  ctx.CW.$("stats-since").value = "7d";
+  ctx.CW.$("stats-flag").value = "my flag&x";
+  var seenUrl = null;
+  ctx.CW.api = function (url) {
+    seenUrl = url;
+    return Promise.resolve(flagData("my flag&x", true));
+  };
+  await ctx.CW.loadStats();
+  assert.ok(
+    seenUrl.indexOf("&flag=" + encodeURIComponent("my flag&x")) !== -1,
+    "flag param must be sent encoded: " + seenUrl
+  );
+  var tctx = freshStats();
+  tctx.CW.$("stats-since").value = "7d";
+  tctx.CW.$("stats-flag").value = "  spaced  ";
+  var seenTrim = null;
+  tctx.CW.api = function (url) {
+    seenTrim = url;
+    return Promise.resolve(flagData("spaced", true));
+  };
+  await tctx.CW.loadStats();
+  assert.ok(
+    seenTrim.indexOf("&flag=" + encodeURIComponent("spaced")) !== -1,
+    "flag value must trim: " + seenTrim
+  );
+});
+
+test("renderStats unknown flag renders zeros + flagFound:false", function () {
+  var ctx = freshStats();
+  ctx.CW.renderStats({
+    version: 0, fetches: 0, exposures: 0,
+    perVariant: {}, perVersion: {},
+    echo: { flag: "nope", since: "7d" }, flagFound: false,
+  });
+  var html = statsHTML(ctx);
+  assert.ok(html.indexOf("stats-flag") !== -1, "missing unknown flag line: " + html);
+  assert.ok(html.indexOf("flag nope") !== -1, "missing unknown flag key: " + html);
+  assert.ok(html.indexOf("flagFound false") !== -1, "missing flagFound:false: " + html);
 });
 
 test("loadStats 500 keeps previous lastStats rendered with first-line error", async function () {
