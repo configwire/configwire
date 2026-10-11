@@ -509,6 +509,22 @@ test("saveFlag: create + update stage local-only drafts resolving {status:200}",
   assert.equal(h.CW.state.drafts.flag.f1.body.group, null);
 });
 
+test("saveFlag: leading-digit key is rejected inline, stages nothing", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  setVal("flag-id", ""); setVal("flag-key", "1abc"); setVal("flag-description", "");
+  setVal("flag-type", "bool"); setVal("flag-default", "false"); setVal("flag-group", "");
+  await h.CW.saveFlag();
+  assert.equal(h.CW.drafts.hasDrafts(), false);
+  assert.ok(el("flag-result").textContent.indexOf("letter") >= 0);
+  assert.equal(h.fetchCalls.length, 0);
+  // Fixing the key recovers the normal path (flags.js saveFlag).
+  setVal("flag-key", "a1");
+  var out = await h.CW.saveFlag();
+  assert.deepEqual(plain(out), { status: 200, data: {} });
+  assert.equal(h.CW.drafts.hasDrafts(), true);
+});
+
 test("deleteFlag/moveFlag: local-only drafts resolving {status:200}", async function () {
   reset();
   h.CW.state.flags = [{ id: "f1", key: "k1", type: "bool", defaultValue: false }];

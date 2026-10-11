@@ -270,13 +270,29 @@
     });
   }
 
+  // Server shape (main.go/snapshot.go): ^[A-Za-z_][A-Za-z0-9_.-]*$, 1-128 chars.
+  // The input's pattern attribute never fires (saveFlag preventDefaults),
+  // so enforce it here: reject before staging, or the draft saves fine
+  // and only fails later at publish.
+  var FLAG_KEY_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
+  function validFlagKey(key) {
+    return key.length >= 1 && key.length <= 128 && FLAG_KEY_RE.test(key);
+  }
+
   function saveFlag(ev) {
     if (ev) ev.preventDefault();
     var id = CW.$("flag-id").value;
     var parsed = CW.parseJSONInput(CW.$("flag-default").value, "defaultValue");
     if (!parsed.ok) { CW.$("flag-result").textContent = parsed.error; return Promise.resolve(); }
+    var key = CW.$("flag-key").value.trim();
+    if (!validFlagKey(key)) {
+      var keyMsg = "Key must start with a letter or _, then letters/digits/_/./-, max 128 chars.";
+      CW.$("flag-result").textContent = keyMsg;
+      CW.toast(keyMsg);
+      return Promise.resolve();
+    }
     var body = {
-      key: CW.$("flag-key").value.trim(),
+      key: key,
       description: CW.$("flag-description") ? CW.$("flag-description").value.trim() : "",
       type: CW.$("flag-type").value,
       defaultValue: parsed.value,
