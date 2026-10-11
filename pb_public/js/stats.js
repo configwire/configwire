@@ -489,6 +489,12 @@
       }
       return CW.esc(label) + ": " + CW.esc(count);
     }).join(", ") || "(no exposures)";
+    var flagLine = "";
+    if (data.echo && data.echo.flag != null && String(data.echo.flag) !== "") {
+      var flagKey = String(data.echo.flag);
+      var foundText = data.flagFound ? "true" : "false";
+      flagLine = '<p class="stats-split stats-flag">flag ' + CW.esc(flagKey) + ': flagFound ' + CW.esc(foundText) + "</p>";
+    }
     var chart = "";
     if (exposures > 0 && entries.length) {
       var bars = entries.map(function (e) {
@@ -523,6 +529,7 @@
         '<div class="stats-tile"><span class="stats-tile-num">' + CW.esc(data.fetches) + '</span><span class="stats-tile-label">fetches</span></div>' +
         '<div class="stats-tile"><span class="stats-tile-num">' + CW.esc(data.exposures) + '</span><span class="stats-tile-label">exposures</span></div>' +
         "</div>" +
+        flagLine +
         '<p class="stats-guide">Publish, fetch, then send exposure.</p>';
     } else {
       var perVersion = data.perVersion || {};
@@ -538,6 +545,7 @@
         '<p class="stats-count">fetches: <strong>' + CW.esc(data.fetches) + "</strong></p>" +
         '<p class="stats-count">exposures: <strong>' + CW.esc(data.exposures) + "</strong></p>" +
         '</div>' +
+        flagLine +
         '<p class="stats-split">split: ' + split + "</p>" +
         '<p class="stats-split">versions: ' + vSplit + "</p>" +
         chart +
@@ -571,6 +579,9 @@
     var url = "/api/v1/admin/env/" + encodeURIComponent(CW.envSlug()) + "/stats?since=" +
       encodeURIComponent(since);
     if (CW.state.projectId) url += "&project=" + encodeURIComponent(CW.state.projectId);
+    var flagEl = CW.$("stats-flag");
+    var flagRaw = flagEl && flagEl.value != null ? String(flagEl.value).trim() : "";
+    if (flagRaw !== "") url += "&flag=" + encodeURIComponent(flagRaw);
     if (!CW.state.lastStats) CW.$("stats-view").textContent = "Loading…";
     CW.state.lastStatsError = "";
     return CW.api(url).then(function (data) {

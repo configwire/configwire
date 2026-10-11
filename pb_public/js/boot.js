@@ -197,6 +197,8 @@
       CW.loadStats().catch(function () {});
     });
     CW.on("stats-since", "change", function () { CW.loadStats().catch(function () {}); });
+    CW.on("stats-flag", "change", function () { CW.loadStats().catch(function () {}); });
+    CW.on("stats-flag", "input", function () { CW.loadStats().catch(function () {}); });
     CW.on("stats-view", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var btn = null;
