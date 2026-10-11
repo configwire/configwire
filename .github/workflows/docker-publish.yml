@@ -105,6 +105,11 @@ jobs:
             # Also publish the version without the "v" prefix.
             type=semver,pattern={{version}}
 
+            # Floating minor tracks the latest stable patch, so pushing
+            # v0.1.2 also moves v0.1 to it. Stable only: partial patterns
+            # expand to the full string on pre-releases.
+            type=semver,pattern=v{{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
+
             # Only stable versions update latest.
             # v1.2.3      -> latest
             # v1.2.3-rc.1 -> no latest
