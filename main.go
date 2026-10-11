@@ -21,6 +21,7 @@ import (
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	"github.com/configwire/configwire/account"
+	"github.com/configwire/configwire/backups"
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/fetch"
@@ -512,6 +513,81 @@ func main() {
 			Cache:    sso.NewNonceCache(sso.NonceTTL),
 			CloudURL: strings.TrimSpace(os.Getenv(sso.EnvCloudURL)),
 		})
+
+		// Scheduled auto-backups from the environment (Docker deploys set
+		// CONFIGWIRE_BACKUP_CRON / CONFIGWIRE_BACKUP_KEEP instead of
+		// clicking through settings): resolved against the stored values
+		// and persisted only when something differs (idempotent — a
+		// second boot with the same env writes nothing). Runs before
+		// se.Next() so the validating save fires a settings reload and
+		// PocketBase (re)registers __pbAutoBackup__ from the new values.
+		// Fail-soft: an invalid cron or a save error is logged and boot
+		// continues with the stored settings untouched.
+		settings := se.App.Settings()
+		newCron, newKeep, backupChanged, backupMsg := backups.Resolve(
+			settings.Backups.Cron, settings.Backups.CronMaxKeep)
+		if !backupChanged {
+			log.Print(backupMsg)
+		} else {
+			oldCron, oldKeep := settings.Backups.Cron, settings.Backups.CronMaxKeep
+			settings.Backups.Cron = newCron
+			settings.Backups.CronMaxKeep = newKeep
+			if err := se.App.Save(settings); err != nil {
+				settings.Backups.Cron = oldCron
+				settings.Backups.CronMaxKeep = oldKeep
+				log.Printf("configwire: backups env overrides ignored: %v", err)
+			} else {
+				log.Print(backupMsg)
+			}
+		}
+
+		// S3 backup-target from the environment (Docker deploys set
+		// CONFIGWIRE_BACKUP_S3_* instead of clicking through settings):
+		// resolved against the stored values and persisted only when
+		// something differs (idempotent — a second boot with the same
+		// env writes nothing). Runs before se.Next() like the cron
+		// block above. Fail-soft: enabling S3 with required fields
+		// missing (bucket/region/endpoint/accessKey/secret per
+		// S3Config.Validate) or any save error is logged and boot
+		// continues with the stored settings untouched (in-memory
+		// revert mirrors the cron path). Field names only in logs —
+		// never endpoint URLs, keys, bucket names, or secrets.
+		// Once backups.s3.enabled is true, app.NewBackupsFilesystem()
+		// routes backup zips to S3 automatically (see NewBackupsFilesystem
+		// in core/base.go) — no other code needed.
+		storedS3 := backups.S3{
+			Enabled:        settings.Backups.S3.Enabled,
+			Bucket:         settings.Backups.S3.Bucket,
+			Region:         settings.Backups.S3.Region,
+			Endpoint:       settings.Backups.S3.Endpoint,
+			AccessKey:      settings.Backups.S3.AccessKey,
+			Secret:         settings.Backups.S3.Secret,
+			ForcePathStyle: settings.Backups.S3.ForcePathStyle,
+		}
+		newS3, s3Changed, s3Msg := backups.ResolveS3(storedS3)
+		if !s3Changed {
+			log.Print(s3Msg)
+		} else {
+			settings.Backups.S3.Enabled = newS3.Enabled
+			settings.Backups.S3.Bucket = newS3.Bucket
+			settings.Backups.S3.Region = newS3.Region
+			settings.Backups.S3.Endpoint = newS3.Endpoint
+			settings.Backups.S3.AccessKey = newS3.AccessKey
+			settings.Backups.S3.Secret = newS3.Secret
+			settings.Backups.S3.ForcePathStyle = newS3.ForcePathStyle
+			if err := se.App.Save(settings); err != nil {
+				settings.Backups.S3.Enabled = storedS3.Enabled
+				settings.Backups.S3.Bucket = storedS3.Bucket
+				settings.Backups.S3.Region = storedS3.Region
+				settings.Backups.S3.Endpoint = storedS3.Endpoint
+				settings.Backups.S3.AccessKey = storedS3.AccessKey
+				settings.Backups.S3.Secret = storedS3.Secret
+				settings.Backups.S3.ForcePathStyle = storedS3.ForcePathStyle
+				log.Printf("configwire: backups s3 env overrides ignored: %v", err)
+			} else {
+				log.Print(s3Msg)
+			}
+		}
 
 		// Static files only; dynamic data via
 		// fetch calls from pb_public/js/*.js. Mounted LAST on /{path...}
