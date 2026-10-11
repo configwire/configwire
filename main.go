@@ -524,6 +524,24 @@ func main() {
 		// Fail-soft: an invalid cron or a save error is logged and boot
 		// continues with the stored settings untouched.
 		settings := se.App.Settings()
+
+		// Application name override: this binary always presents itself
+		// as "configwire" in PocketBase system surfaces (mails, alerts,
+		// backup filenames). Enforced at every boot before se.Next() so
+		// the validating save fires a settings reload; fail-soft like the
+		// backup blocks below — a save error is logged and boot continues
+		// with the stored settings untouched.
+		if settings.Meta.AppName != "configwire" {
+			oldName := settings.Meta.AppName
+			settings.Meta.AppName = "configwire"
+			if err := se.App.Save(settings); err != nil {
+				settings.Meta.AppName = oldName
+				log.Printf("configwire: app name override ignored: %v", err)
+			} else {
+				log.Print("configwire: application name set to configwire")
+			}
+		}
+
 		newCron, newKeep, backupChanged, backupMsg := backups.Resolve(
 			settings.Backups.Cron, settings.Backups.CronMaxKeep)
 		if !backupChanged {
