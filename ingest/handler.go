@@ -66,7 +66,7 @@ func postEvents(re *core.RequestEvent) error {
 		}
 		stored = append(stored, StoredEvent{
 			EnvID: env.Id,
-			Kind:  ev.Kind, Variant: ev.Variant,
+			Kind:  ev.Kind, Flag: ev.Flag, Variant: ev.Variant,
 			UserHash: ResolveUserHash(ev.UserHash, ""), Ts: ts,
 			Version: ev.Version,
 		})

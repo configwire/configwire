@@ -109,14 +109,49 @@ func TestValidateBodyIgnoresLegacyFlag(t *testing.T) {
 	e["flag"] = "launch_flag"
 	events, aerr := ValidateBody(body(t, []any{e}))
 	if aerr != nil {
-		t.Fatalf("legacy flag key must be accepted-but-ignored: %v", aerr)
+		t.Fatalf("flag key must be accepted: %v", aerr)
 	}
-	if len(events) != 1 || events[0].Kind != "exposure" || events[0].Variant != "control" || events[0].UserHash != "abcdef0123456789" {
+	if len(events) != 1 || events[0].Kind != "exposure" || events[0].Flag != "launch_flag" || events[0].Variant != "control" || events[0].UserHash != "abcdef0123456789" {
 		t.Fatalf("unexpected decode: %+v", events)
 	}
-	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Variant: events[0].Variant, UserHash: events[0].UserHash, Ts: time.Now().UTC(), Version: events[0].Version}
-	if se.Kind != "exposure" || se.Variant != "control" {
-		t.Fatalf("stored event must carry env-wide fields only: %+v", se)
+	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Flag: events[0].Flag, Variant: events[0].Variant, UserHash: events[0].UserHash, Ts: time.Now().UTC(), Version: events[0].Version}
+	if se.Kind != "exposure" || se.Flag != "launch_flag" || se.Variant != "control" {
+		t.Fatalf("stored event must carry per-flag attribution: %+v", se)
+	}
+}
+
+func TestValidateBodyFlagRules(t *testing.T) {
+	e := ev("exposure")
+	events, aerr := ValidateBody(body(t, []any{e}))
+	if aerr != nil {
+		t.Fatalf("missing flag must stay 202-eligible (env-wide): %v", aerr)
+	}
+	if len(events) != 1 || events[0].Flag != "" {
+		t.Fatalf("missing flag must decode to empty, got %+v", events)
+	}
+	over := ev("exposure")
+	over["flag"] = strings.Repeat("f", MaxFlagLen+1)
+	if _, aerr := ValidateBody(body(t, []any{over})); aerr == nil || aerr.Status != 400 {
+		t.Fatalf("over-limit flag must be 400, got %v", aerr)
+	}
+	nul := ev("exposure")
+	nul["flag"] = "exp\x00bool"
+	if _, aerr := ValidateBody(body(t, []any{nul})); aerr == nil || aerr.Status != 400 {
+		t.Fatalf("NUL flag must be 400, got %v", aerr)
+	}
+	atCap := ev("exposure")
+	atCap["flag"] = strings.Repeat("f", MaxFlagLen)
+	if _, aerr := ValidateBody(body(t, []any{atCap})); aerr != nil {
+		t.Fatalf("flag at exactly MaxFlagLen must pass, got %v", aerr)
+	}
+	unknown := ev("exposure")
+	unknown["flag"] = "never_defined_flag"
+	events, aerr = ValidateBody(body(t, []any{unknown}))
+	if aerr != nil {
+		t.Fatalf("unknown flag key must be accepted-and-stored verbatim: %v", aerr)
+	}
+	if len(events) != 1 || events[0].Flag != "never_defined_flag" {
+		t.Fatalf("unknown flag must round-trip verbatim, got %+v", events)
 	}
 }
 

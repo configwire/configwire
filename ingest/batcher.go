@@ -9,10 +9,12 @@ import (
 )
 
 // StoredEvent is one validated event ready for persistence. It carries IDs,
-// never raw PII (see hash.go).
+// never raw PII (see hash.go). Flag is the verbatim per-flag attribution
+// key ("" when the client sent none, i.e. env-wide).
 type StoredEvent struct {
 	EnvID    string
 	Kind     string
+	Flag     string
 	Variant  string
 	UserHash string
 	Version  int
@@ -155,6 +157,7 @@ func (b *Batcher) flush(items []StoredEvent) {
 			rec.Set("env", it.EnvID)
 		}
 		rec.Set("kind", it.Kind)
+		rec.Set("flag", it.Flag)
 		rec.Set("variant", it.Variant)
 		rec.Set("userHash", it.UserHash)
 		rec.Set("version", it.Version)
