@@ -617,14 +617,6 @@ func AllowIP(ip string) bool {
 	return ipLimiter.Allow(ip, limit)
 }
 
-// AllowKey consumes one per-second token for an SDK key hash at an
-// explicit limit. Generic primitive only: fetch/ingest paths must use the
-// namespaced AllowFetch/AllowIngest above, never this with a bare hash,
-// or their budgets would share one bucket.
-func AllowKey(hash string, limit int) bool {
-	return keyLimiter.Allow(hash, limit)
-}
-
 // AllowFetch consumes one per-second token for a fetch key hash on its
 // own namespaced per-key bucket ("fetch:"+hash), independent of ingest.
 func AllowFetch(keyHash string) bool {
@@ -680,12 +672,6 @@ func EffectiveFetchRps(key *core.Record) int {
 // ingestRps override when valid (1..10000), else the global IngestRps.
 func EffectiveIngestRps(key *core.Record) int {
 	return effectiveRps(key, IngestRpsField, GetConfig().IngestRps)
-}
-
-// AllowAdmin is deprecated: admin paths are gated by the allowlist, not
-// a rate limiter. Kept for back-compat; reports allowlist membership.
-func AllowAdmin(ip string) bool {
-	return IsAdminIPAllowed(ip)
 }
 
 // isTrustedProxyRemote reports whether remoteAddr (the direct TCP peer)

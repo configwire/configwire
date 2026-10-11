@@ -162,7 +162,7 @@ func TestVectors(t *testing.T) {
 				mustJSON(t, tc.wantJSON, &want)
 				got := Evaluate(flag, rules, ctx)
 				if canon(got) != canon(want) {
-					t.Errorf("TODO(todo6) vector %s: input flag=%s rules=%s ctx=%s: got %s want %s",
+					t.Errorf("vector %s: input flag=%s rules=%s ctx=%s: got %s want %s",
 						tc.name, tc.flagJSON, rulesRaw, tc.ctxJSON, canon(got), canon(want))
 				}
 			case "assign":
@@ -173,10 +173,10 @@ func TestVectors(t *testing.T) {
 				mustJSON(t, want, &wantStr)
 				got := Assign(exp, tc.userID)
 				if again := Assign(exp, tc.userID); again != got {
-					t.Errorf("TODO(todo6) vector %s: sticky re-check flapped: %q vs %q", tc.name, got, again)
+					t.Errorf("vector %s: sticky re-check flapped: %q vs %q", tc.name, got, again)
 				}
 				if got != wantStr {
-					t.Errorf("TODO(todo6) vector %s: user %q: got %q want oracle %q", tc.name, tc.userID, got, wantStr)
+					t.Errorf("vector %s: user %q: got %q want oracle %q", tc.name, tc.userID, got, wantStr)
 				}
 			case "bucket":
 				want := strings.ReplaceAll(tc.wantJSON, "$BUCKETNUM",
@@ -185,7 +185,7 @@ func TestVectors(t *testing.T) {
 				mustJSON(t, want, &wantNum)
 				got := Bucket(tc.bucketUser, tc.bucketSeed)
 				if float64(got) != wantNum {
-					t.Errorf("TODO(todo6) vector %s: bucket(%q+%q): got %d want %v",
+					t.Errorf("vector %s: bucket(%q+%q): got %d want %v",
 						tc.name, tc.bucketUser, tc.bucketSeed, got, want)
 				}
 			default:
@@ -200,7 +200,7 @@ func TestVectors(t *testing.T) {
 		b0 := Bucket("det-fixed-user", seed)
 		for i := 0; i < n; i++ {
 			if got := Bucket("det-fixed-user", seed); got != b0 {
-				t.Errorf("TODO(todo6) same userId+seed flapped on run %d: %d vs %d", i, got, b0)
+				t.Errorf("same userId+seed flapped on run %d: %d vs %d", i, got, b0)
 				break
 			}
 		}
@@ -210,7 +210,7 @@ func TestVectors(t *testing.T) {
 		}
 		for i, b := range first {
 			if b < 0 || b > 9999 {
-				t.Errorf("TODO(todo6) bucket out of range at %d: %d", i, b)
+				t.Errorf("bucket out of range at %d: %d", i, b)
 				break
 			}
 		}
@@ -221,7 +221,7 @@ func TestVectors(t *testing.T) {
 			}
 		}
 		if lo < 4750 || lo > 5250 {
-			t.Errorf("TODO(todo6) distribution halves out of ±5%%: lo=%d/10000 want 5000±250", lo)
+			t.Errorf("distribution halves out of ±5%%: lo=%d/10000 want 5000±250", lo)
 		}
 		again := make([]int, n)
 		for i := 0; i < n; i++ {
@@ -256,7 +256,7 @@ func TestVectors(t *testing.T) {
 				t.Errorf("sticky re-check flapped for %q: %q vs %q", u, a1, a2)
 			}
 			if want := oracleVariant(fx.Experiment, u); a1 != want {
-				t.Errorf("TODO(todo6) user %q: got %q want oracle %q", u, a1, want)
+				t.Errorf("user %q: got %q want oracle %q", u, a1, want)
 			}
 		}
 	})
@@ -291,7 +291,7 @@ func TestVectors(t *testing.T) {
 			mustJSON(t, wantRaw, &want)
 			got := Evaluate(flag, rules, ctx)
 			if canon(got) != canon(want) {
-				t.Errorf("TODO(todo6) fixture %s: got %s want %s", file, canon(got), canon(want))
+				t.Errorf("fixture %s: got %s want %s", file, canon(got), canon(want))
 			}
 		}
 	})

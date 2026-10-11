@@ -132,11 +132,6 @@ func Evaluate(flag Flag, rules []Rule, ctx Context) any {
 	return flag.Default
 }
 
-// Unknown field/op, bad semver, missing seed/attr -> false.
-func MatchCondition(c Condition, ctx Context) bool {
-	return matchCondition(c, ctx)
-}
-
 // Assign returns the sticky variant for userID, or DefaultVariant when
 // userID is empty or Variants is empty.
 func Assign(exp Experiment, userID string) string {
