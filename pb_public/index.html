@@ -332,6 +332,79 @@
                 </div>
               </form>
             </section>
+            <section class="scope-group scope-group-backups" aria-labelledby="backups">
+              <div class="scope-group-head">
+                <h2 id="backups" class="scope-group-title">Backups</h2>
+              </div>
+              <p class="scope-group-sub muted">Snapshot files, auto backup schedule, one-click restore, and the S3 backup target.</p>
+              <section class="card" aria-labelledby="backup-files">
+                <div class="card-head">
+                  <h2 id="backup-files">Backup files</h2>
+                </div>
+                <ul id="backup-list" aria-label="Backups">
+                  <li>Loading…</li>
+                </ul>
+                <hr>
+                <h3>New backup</h3>
+                <p class="muted">Name must match ^[a-z0-9_-]+\.zip$ — leave empty for a server-generated name.</p>
+                <form id="backup-create-form" aria-label="Backup create">
+                  <label>Name (optional) <input id="backup-name" type="text" autocomplete="off" spellcheck="false"
+                      maxlength="128" placeholder="auto" title="Lowercase letters, digits, _ or -, ending in .zip"></label>
+                  <button type="submit" class="btn primary">Create backup</button>
+                </form>
+                <p id="backup-result" role="status"></p>
+              </section>
+              <section class="card" aria-labelledby="backup-schedule">
+                <div class="card-head">
+                  <h2 id="backup-schedule">Auto backup schedule</h2>
+                </div>
+                <hr>
+                <p id="backup-schedule-status" role="status" class="muted">Loading…</p>
+                <h3>Set schedule</h3>
+                <p class="muted">Cron expression, e.g. daily <code>0 3 * * *</code> — leave empty to disable.</p>
+                <form id="backup-schedule-form" aria-label="Backup schedule">
+                  <label>Schedule (cron) <span class="backup-schedule-cron-suffix"><input id="backup-schedule-cron" type="text" autocomplete="off" spellcheck="false"
+                      maxlength="128" placeholder="0 3 * * *"><button type="button" id="backup-schedule-helper-btn" class="btn ghost" title="Build schedule from frequency, time and day" aria-label="Build schedule from frequency, time and day"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="2"/><path d="M2.5 6.5h11"/><path d="M5.5 1.8v2"/><path d="M10.5 1.8v2"/><path d="M8 8.5v2.2l1.6 1"/></svg></button></span></label>
+                  <label>Keep last N <input id="backup-schedule-keep" type="number" min="1" placeholder="10"></label>
+                  <button type="submit" class="btn primary">Save schedule</button>
+                  <p id="backup-schedule-cron-hint" class="muted"></p>
+                </form>
+                <p id="backup-schedule-result" role="status"></p>
+              </section>
+              <section class="card" aria-labelledby="backups-s3">
+                <div class="card-head">
+                  <h2 id="backups-s3">S3 backup target</h2>
+                  <div class="card-actions"><button type="button" id="backup-s3-switch" class="backup-s3-switch" role="switch" aria-checked="false" aria-label="S3 storage enabled" title="Toggle S3 storage"><span class="backup-s3-switch-knob" aria-hidden="true"></span></button></div>
+                </div>
+                <hr>
+                <div class="backup-s3-head">
+                  <span id="backup-s3-badge" class="backup-s3-badge is-unconnected">UNCONNECTED</span>
+                </div>
+                <form id="backup-s3-form" aria-label="Backup S3 settings">
+                  <div id="backup-s3-fields" hidden>
+                  <div class="backup-s3-grid">
+                    <label class="backup-s3-full">Endpoint <input id="backup-s3-endpoint" type="text" autocomplete="off" spellcheck="false"
+                        maxlength="512" placeholder="https://s3.example.com"></label>
+                    <label>Bucket <input id="backup-s3-bucket" type="text" autocomplete="off" spellcheck="false"
+                        maxlength="255" placeholder="my-backups"></label>
+                    <label>Region <input id="backup-s3-region" type="text" autocomplete="off" spellcheck="false"
+                        maxlength="64" placeholder="us-east-1"></label>
+                    <label>Access key <input id="backup-s3-access-key" type="text" autocomplete="off" spellcheck="false"
+                        maxlength="512"></label>
+                    <label class="backup-s3-secret-field">Secret <span class="backup-s3-secret-wrap"><input id="backup-s3-secret" type="password" autocomplete="new-password"
+                        maxlength="1024" placeholder="leave empty to keep current" title="Leave empty to keep the currently stored secret"><button type="button" id="backup-s3-secret-toggle" class="btn ghost" aria-label="Show secret" aria-pressed="false" title="Show secret">Show</button></span></label>
+                  </div>
+                  <div class="backup-s3-checks">
+                    <label class="backup-s3-check"><input id="backup-s3-force-path-style" type="checkbox"> <span>Force path style</span></label>
+                  </div>
+                  <div class="form-actions">
+                    <button type="button" id="backup-s3-action" class="btn secondary">Check connection</button>
+                  </div>
+                  </div>
+                </form>
+                <p id="backup-s3-result" role="status"></p>
+              </section>
+            </section>
           </div>
         </section>
         <section id="view-account" aria-label="Account management (legacy alias)" hidden>
@@ -698,6 +771,143 @@
             <button type="button" id="transfer-diff-ok" class="btn primary">Close</button>
           </div>
         </dialog>
+        <dialog id="backup-schedule-helper-dialog" aria-labelledby="backup-schedule-helper-title">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="backup-schedule-helper-title">Build schedule</h3>
+            </div>
+            <button type="button" id="backup-schedule-helper-close" class="btn ghost" aria-label="Close dialog"
+              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+          </div>
+          <div class="backup-schedule-helper-grid">
+            <label>Frequency
+              <select id="backup-schedule-helper-freq">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label id="backup-schedule-helper-time-wrap">Time
+              <span class="backup-schedule-helper-time-row">
+                <select id="backup-schedule-helper-hour" aria-label="Hour">
+                  <option value="0">00</option>
+                  <option value="1">01</option>
+                  <option value="2">02</option>
+                  <option value="3" selected>03</option>
+                  <option value="4">04</option>
+                  <option value="5">05</option>
+                  <option value="6">06</option>
+                  <option value="7">07</option>
+                  <option value="8">08</option>
+                  <option value="9">09</option>
+                  <option value="10">10</option>
+                  <option value="11">11</option>
+                  <option value="12">12</option>
+                  <option value="13">13</option>
+                  <option value="14">14</option>
+                  <option value="15">15</option>
+                  <option value="16">16</option>
+                  <option value="17">17</option>
+                  <option value="18">18</option>
+                  <option value="19">19</option>
+                  <option value="20">20</option>
+                  <option value="21">21</option>
+                  <option value="22">22</option>
+                  <option value="23">23</option>
+                </select>
+                <select id="backup-schedule-helper-minute" aria-label="Minute">
+                  <option value="0" selected>00</option>
+                  <option value="1">01</option>
+                  <option value="2">02</option>
+                  <option value="3">03</option>
+                  <option value="4">04</option>
+                  <option value="5">05</option>
+                  <option value="6">06</option>
+                  <option value="7">07</option>
+                  <option value="8">08</option>
+                  <option value="9">09</option>
+                  <option value="10">10</option>
+                  <option value="11">11</option>
+                  <option value="12">12</option>
+                  <option value="13">13</option>
+                  <option value="14">14</option>
+                  <option value="15">15</option>
+                  <option value="16">16</option>
+                  <option value="17">17</option>
+                  <option value="18">18</option>
+                  <option value="19">19</option>
+                  <option value="20">20</option>
+                  <option value="21">21</option>
+                  <option value="22">22</option>
+                  <option value="23">23</option>
+                  <option value="24">24</option>
+                  <option value="25">25</option>
+                  <option value="26">26</option>
+                  <option value="27">27</option>
+                  <option value="28">28</option>
+                  <option value="29">29</option>
+                  <option value="30">30</option>
+                  <option value="31">31</option>
+                  <option value="32">32</option>
+                  <option value="33">33</option>
+                  <option value="34">34</option>
+                  <option value="35">35</option>
+                  <option value="36">36</option>
+                  <option value="37">37</option>
+                  <option value="38">38</option>
+                  <option value="39">39</option>
+                  <option value="40">40</option>
+                  <option value="41">41</option>
+                  <option value="42">42</option>
+                  <option value="43">43</option>
+                  <option value="44">44</option>
+                  <option value="45">45</option>
+                  <option value="46">46</option>
+                  <option value="47">47</option>
+                  <option value="48">48</option>
+                  <option value="49">49</option>
+                  <option value="50">50</option>
+                  <option value="51">51</option>
+                  <option value="52">52</option>
+                  <option value="53">53</option>
+                  <option value="54">54</option>
+                  <option value="55">55</option>
+                  <option value="56">56</option>
+                  <option value="57">57</option>
+                  <option value="58">58</option>
+                  <option value="59">59</option>
+                </select>
+              </span>
+            </label>
+            <label id="backup-schedule-helper-dow-wrap">Day of week
+              <select id="backup-schedule-helper-dow">
+                <option value="0">Sunday</option>
+                <option value="1" selected>Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+              </select>
+            </label>
+            <label id="backup-schedule-helper-dom-wrap">Day of month
+              <input id="backup-schedule-helper-dom" type="number" min="1" max="31" value="1"></label>
+            <label>Keep last N <input id="backup-schedule-helper-keep" type="number" min="1" placeholder="10"></label>
+            <label id="backup-schedule-helper-custom-wrap">Cron expression
+              <input id="backup-schedule-helper-custom" type="text" autocomplete="off" spellcheck="false"
+                maxlength="128" placeholder="0 3 * * *">
+              <small class="muted">Visual controls don't cover this expression — edit the text directly.</small>
+            </label>
+          </div>
+          <p id="backup-schedule-helper-preview" class="muted" role="status"></p>
+          <p id="backup-schedule-helper-error" class="json-hint" role="status" hidden></p>
+          <div class="dialog-actions">
+            <span class="dialog-spacer"></span>
+            <button type="button" id="backup-schedule-helper-cancel" class="btn ghost">Cancel</button>
+            <button type="button" id="backup-schedule-helper-apply" class="btn primary">Apply</button>
+          </div>
+        </dialog>
       </section>
     </main>
   </div>
@@ -717,6 +927,7 @@
   <script src="/js/stats.js"></script>
   <script src="/js/json-editor.js"></script>
   <script src="/js/limits.js"></script>
+  <script src="/js/backups.js"></script>
   <script src="/js/boot.js"></script>
   <script src="/js/update.js"></script>
 </body>

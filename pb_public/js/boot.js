@@ -680,6 +680,28 @@
     CW.on("key-limits-cancel", "click", function () { if (CW.closeKeyLimitsDialog) CW.closeKeyLimitsDialog(); });
     CW.on("limits-form", "submit", CW.saveLimits);
     CW.on("settings-admin-form", "submit", CW.saveAdminLimit);
+    CW.on("backup-create-form", "submit", CW.createBackup);
+    CW.on("backup-list", "click", CW.onBackupListClick);
+    CW.on("backup-s3-form", "submit", CW.onBackupS3Action);
+    CW.on("backup-s3-action", "click", CW.onBackupS3Action);
+    CW.on("backup-s3-switch", "click", CW.onBackupS3Switch);
+    CW.on("backup-s3-form", "input", CW.revertBackupS3Check);
+    CW.on("backup-s3-form", "change", CW.revertBackupS3Check);
+    CW.on("backup-s3-secret-toggle", "click", CW.toggleBackupS3Secret);
+    CW.on("backup-schedule-form", "submit", CW.saveBackupSchedule);
+    CW.on("backup-schedule-cron", "input", CW.refreshBackupScheduleCronHint);
+    CW.on("backup-schedule-helper-btn", "click", CW.openBackupScheduleHelper);
+    CW.on("backup-schedule-helper-close", "click", CW.closeBackupScheduleHelper);
+    CW.on("backup-schedule-helper-cancel", "click", CW.closeBackupScheduleHelper);
+    CW.on("backup-schedule-helper-apply", "click", CW.applyBackupScheduleHelper);
+    CW.on("backup-schedule-helper-freq", "change", CW.refreshBackupScheduleHelper);
+    CW.on("backup-schedule-helper-hour", "change", CW.refreshBackupScheduleHelper);
+    CW.on("backup-schedule-helper-minute", "change", CW.refreshBackupScheduleHelper);
+    CW.on("backup-schedule-helper-dow", "change", CW.refreshBackupScheduleHelper);
+    CW.on("backup-schedule-helper-dom", "change", CW.refreshBackupScheduleHelper);
+    CW.on("backup-schedule-helper-dom", "input", CW.refreshBackupScheduleHelper);
+    CW.on("backup-schedule-helper-keep", "input", CW.refreshBackupScheduleHelper);
+    CW.on("backup-schedule-helper-custom", "input", CW.refreshBackupScheduleHelper);
     CW.on("admin-current-ip-copy", "click", function () {
       try {
         if (typeof CW.copyCurrentIP === "function") { CW.copyCurrentIP(); return; }

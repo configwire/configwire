@@ -635,6 +635,13 @@ main {
   background: rgba(59, 130, 246, 0.12);
 }
 
+/* Backups settings group: same container language as .scope-group-env. */
+.scope-group-backups {
+  border-color: var(--border);
+  background: var(--panel);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 56px);
+}
+
 /* ---- Projects home (two-view app: home grid + per-project detail) ---- */
 .project-grid {
   display: grid;
@@ -1146,6 +1153,13 @@ textarea:focus-visible {
   outline: none;
   border-color: var(--mint);
   box-shadow: var(--ring);
+}
+
+/* Native date/time picker glyph: UA paints it dark-on-light by default.
+ * :root already declares color-scheme: dark so popups use dark chrome —
+ * this keeps the WebKit clock/calendar glyph visible on dark inputs. */
+::-webkit-calendar-picker-indicator {
+  filter: invert(0.65);
 }
 
 /* Custom select chevron */
@@ -2615,7 +2629,10 @@ td code {
   margin: 0 0 var(--space-2);
 }
 
-section[aria-labelledby="releases"] hr {
+section[aria-labelledby="releases"] hr,
+section[aria-labelledby="backup-files"] hr,
+section[aria-labelledby="backup-schedule"] hr,
+section[aria-labelledby="backups-s3"] hr {
   border: none;
   border-top: 1px solid var(--border-soft);
   margin: var(--space-4) 0;
@@ -4538,4 +4555,404 @@ dialog#promote-dialog {
   min-height: 1em;
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+/* ---- Backups card (Settings): reuses :root tokens only, scoped to
+ * #backup-* (same list-row/box rhythm as #key-list; buttons reuse the
+ * generic .btn treatments, sized like the release/key row buttons). */
+#backup-list {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+}
+
+#backup-list li {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+#backup-list .backup-meta {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#backup-list .backup-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+#backup-list .backup-actions button {
+  padding: 0 var(--space-2);
+  height: 28px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+#backup-create-form label {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#backup-create-form label input {
+  width: 100%;
+}
+
+#backup-create-form button[type="submit"] {
+  flex-shrink: 0;
+}
+
+#backup-result {
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
+  min-height: 1em;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+#backup-schedule-status {
+  color: var(--muted);
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+#backup-schedule-form label {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#backup-schedule-form label input {
+  width: 100%;
+}
+
+#backup-schedule-form button[type="submit"] {
+  flex-shrink: 0;
+}
+
+#backup-schedule-form .backup-schedule-cron-suffix {
+  position: relative;
+  display: block;
+}
+
+#backup-schedule-form .backup-schedule-cron-suffix input {
+  width: 100%;
+  padding-right: 40px;
+}
+
+#backup-schedule-form .backup-schedule-cron-suffix #backup-schedule-helper-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#backup-schedule-form #backup-schedule-cron-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#backup-schedule-form #backup-schedule-cron-hint:empty {
+  display: none;
+}
+
+#backup-schedule-result {
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
+  min-height: 1em;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+#backup-schedule-helper-dialog .backup-schedule-helper-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+#backup-schedule-helper-dialog .backup-schedule-helper-grid > label {
+  min-width: 0;
+}
+
+#backup-schedule-helper-dialog .backup-schedule-helper-grid > label[hidden] {
+  display: none;
+}
+
+#backup-schedule-helper-dialog .backup-schedule-helper-grid input,
+#backup-schedule-helper-dialog .backup-schedule-helper-grid select {
+  width: 100%;
+}
+
+#backup-schedule-helper-dialog .backup-schedule-helper-grid small {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+#backup-schedule-helper-dialog .backup-schedule-helper-time-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+#backup-schedule-helper-dialog .backup-schedule-helper-time-row select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+#backup-schedule-helper-preview {
+  color: var(--muted);
+  margin: var(--space-3) 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  #backup-schedule-helper-dialog .backup-schedule-helper-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  #backup-create-form button[type="submit"] {
+    width: 100%;
+  }
+
+  #backup-schedule-form button[type="submit"] {
+    width: 100%;
+  }
+}
+
+/* ---- S3 backup target polish (scoped to .backup-s3-*/#backup-s3-* only;
+ * reuses :root tokens, .btn treatments, and the #backup-result rhythm —
+ * no other card is touched). */
+.backup-s3-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: var(--space-2) 0;
+}
+
+section[aria-labelledby="backups-s3"] .card-head {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+#backup-s3-badge.backup-s3-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin-bottom: var(--space-2);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+#backup-s3-badge.backup-s3-badge[hidden] {
+  display: none;
+}
+
+#backup-s3-badge.backup-s3-badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-dim);
+  flex-shrink: 0;
+}
+
+#backup-s3-badge.backup-s3-badge.is-connected {
+  border-color: rgba(94, 234, 212, 0.4);
+  background: rgba(94, 234, 212, 0.1);
+  color: var(--mint);
+}
+
+#backup-s3-badge.backup-s3-badge.is-connected::before {
+  background: var(--mint);
+}
+
+#backup-s3-form .backup-s3-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  width: 100%;
+}
+
+#backup-s3-form #backup-s3-fields {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+#backup-s3-form #backup-s3-fields[hidden] {
+  display: none;
+}
+
+#backup-s3-form .backup-s3-grid > label {
+  min-width: 0;
+}
+
+#backup-s3-form .backup-s3-grid .backup-s3-full {
+  grid-column: 1 / -1;
+}
+
+#backup-s3-form .backup-s3-grid input {
+  width: 100%;
+  text-overflow: ellipsis;
+}
+
+#backup-s3-form .backup-s3-secret-field {
+  grid-column: 1 / -1;
+}
+
+#backup-s3-form .backup-s3-secret-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+#backup-s3-form .backup-s3-secret-wrap input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#backup-s3-secret-toggle {
+  flex-shrink: 0;
+  height: var(--input-h);
+  padding: 0 var(--space-3);
+  font-size: 12px;
+}
+
+/* Inline checkbox options: themed box, label beside (not below) the box,
+ * vertically centered with the input rows, keyboard-focus visible. */
+#backup-s3-form .backup-s3-checks {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+#backup-s3-form label.backup-s3-check {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+#backup-s3-form .backup-s3-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--mint);
+  cursor: pointer;
+}
+
+#backup-s3-form .backup-s3-check input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 4px;
+}
+
+#backup-s3-form .form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+#backup-s3-switch.backup-s3-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  cursor: pointer;
+}
+
+#backup-s3-switch .backup-s3-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted-dim);
+  transform: translateX(0);
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+#backup-s3-switch[aria-checked="true"] {
+  border-color: rgba(94, 234, 212, 0.4);
+  background: rgba(94, 234, 212, 0.12);
+}
+
+#backup-s3-switch[aria-checked="true"] .backup-s3-switch-knob {
+  transform: translateX(18px);
+  background: var(--mint);
+}
+
+#backup-s3-switch:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #backup-s3-switch .backup-s3-switch-knob {
+    transition: none;
+  }
+}
+
+#backup-s3-result {
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
+  min-height: 1.5em;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  #backup-s3-form .backup-s3-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #backup-s3-form .form-actions .btn {
+    flex: 1 1 auto;
+  }
 }
