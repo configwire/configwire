@@ -3,7 +3,6 @@ package stream
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,11 +10,11 @@ import (
 	"time"
 
 	"github.com/configwire/configwire/ingest"
+	"github.com/configwire/configwire/internal/testhelp"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 // streamTestApp boots a TestApp with the three collections getStream and
@@ -132,11 +131,7 @@ func callStream(app core.App, ctx context.Context, slug, key string) (int, *http
 	re.Request = req
 	re.Response = rec
 	if err := getStream(re); err != nil {
-		var apiErr *router.ApiError
-		if errors.As(err, &apiErr) {
-			return apiErr.Status, rec
-		}
-		return -1, rec
+		return testhelp.Code(err, rec), rec
 	}
 	return rec.Code, rec
 }

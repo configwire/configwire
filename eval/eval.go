@@ -180,7 +180,9 @@ func ruleMatches(r Rule, ctx Context) (ok bool) {
 	return true
 }
 
-// matchCondition is the panic-guarded core of MatchCondition.
+// matchCondition evaluates a single Condition against ctx. It never
+// panics: invalid input yields false, so ruleMatches treats the rule
+// as non-matching and evaluation falls through to the next rule.
 func matchCondition(c Condition, ctx Context) (ok bool) {
 	defer func() {
 		if recover() != nil {

@@ -560,18 +560,7 @@
     }
     var text = CW.state.lastStatsText || "";
     if (!text) { say("Nothing to copy."); return; }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { say("Copied"); },
-        function () { say("Copy failed"); });
-    } else {
-      var ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand("copy"); say("Copied"); }
-      catch (e) { say("Copy failed"); }
-      document.body.removeChild(ta);
-    }
+    CW.copyText(text).then(function (ok) { say(ok ? "Copied" : "Copy failed"); });
   }
 
   function loadStats() {

@@ -762,31 +762,10 @@
 
   function copyExportText() {
     var v = exportText();
-    var ta = el("transfer-export-text");
-    if (typeof navigator !== "undefined" && navigator && navigator.clipboard &&
-        typeof navigator.clipboard.writeText === "function") {
-      try {
-        var p = navigator.clipboard.writeText(v);
-        if (p && typeof p.then === "function") {
-          p.then(function () { toastSafe("Copied", true); }, function () { fallbackCopy(ta, v); });
-          return;
-        }
-        toastSafe("Copied", true);
-        return;
-      } catch (e) { /* fall through to textarea fallback */ }
-    }
-    fallbackCopy(ta, v);
-  }
-
-  function fallbackCopy(ta, v) {
-    try {
-      if (ta && typeof ta.select === "function" && typeof document !== "undefined" && document &&
-          typeof document.execCommand === "function") {
-        ta.select();
-        if (document.execCommand("copy")) { toastSafe("Copied", true); return; }
-      }
-    } catch (e) { /* manual fallback below */ }
-    toastSafe(v ? "Copy failed." : "Nothing to copy.");
+    CW.copyText(v).then(function (ok) {
+      if (ok) { toastSafe("Copied", true); return; }
+      toastSafe(v ? "Copy failed." : "Nothing to copy.");
+    });
   }
 
   function downloadExport() {

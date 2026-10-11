@@ -131,7 +131,7 @@ test("copyStatsJson clipboard rejection says copy failed", async function () {
   );
 });
 
-test("copyStatsJson fallback textarea+execCommand path copies and cleans up", function () {
+test("copyStatsJson fallback textarea+execCommand path copies and cleans up", async function () {
   var ctx = freshStats();
   ctx.CW.state.lastStatsText = '{"exposures":7}';
   delete ctx.context.navigator.clipboard;
@@ -144,25 +144,27 @@ test("copyStatsJson fallback textarea+execCommand path copies and cleans up", fu
   };
   var before = ctx.context.document.body.children.length;
   ctx.CW.copyStatsJson();
+  await new Promise(function (r) { setTimeout(r, 20); });
   assert.ok(created !== null, "fallback must create a textarea");
   assert.equal(created.value, '{"exposures":7}');
   assert.equal(ctx.context.document.body.children.length, before, "textarea must be removed");
   assert.equal(ctx.elementsById["stats-copy-status"].textContent, "Copied");
 });
 
-test("copyStatsJson fallback execCommand throw says copy failed", function () {
+test("copyStatsJson fallback execCommand throw says copy failed", async function () {
   var ctx = freshStats();
   ctx.CW.state.lastStatsText = '{"exposures":7}';
   delete ctx.context.navigator.clipboard;
   ctx.context.document.execCommand = function () { throw new Error("nope"); };
   ctx.CW.copyStatsJson();
+  await new Promise(function (r) { setTimeout(r, 20); });
   assert.equal(
     ctx.elementsById["stats-copy-status"].textContent,
     "Copy failed"
   );
 });
 
-test("copyStatsJson with empty text says nothing to copy; missing status falls back to toast", function () {
+test("copyStatsJson with empty text says nothing to copy; missing status falls back to toast", async function () {
   var ctx = freshStats();
   ctx.CW.state.lastStatsText = "";
   ctx.context.navigator.clipboard = {
@@ -177,6 +179,7 @@ test("copyStatsJson with empty text says nothing to copy; missing status falls b
   var toasted = [];
   ctx2.CW.toast = function (m) { toasted.push(m); };
   ctx2.CW.copyStatsJson();
+  await new Promise(function (r) { setTimeout(r, 20); });
   assert.deepEqual(toasted, ["Copied"]);
 });
 

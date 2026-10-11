@@ -90,7 +90,7 @@ type rollbackRequest struct {
 // srcEnv + srcVersion + destBaseVersion are required (srcProject only
 // disambiguates a src slug shared by several projects; note is free
 // text). Wrong JSON types (e.g. a string-typed srcVersion) fail strict
-// decodeBody -> 400.
+// apireq.DecodeBody -> 400.
 type promoteRequest struct {
 	SrcEnv          string `json:"srcEnv"`
 	SrcProject      string `json:"srcProject,omitempty"`
@@ -497,7 +497,7 @@ func postRollbackEnv(re *core.RequestEvent) error {
 // normal clone with no special case — it reads and writes the same env
 // like any other promote.
 // Order: 401 (superuser, via middleware) -> 400 (empty/malformed body,
-// strict decodeBody) -> 404/400 (unknown/ambiguous dest slug via
+// strict apireq.DecodeBody) -> 404/400 (unknown/ambiguous dest slug via
 // ?project=) -> 404/400 (unknown/ambiguous srcEnv + srcProject) ->
 // 400 (srcVersion < 1) -> 404 (unknown src release version in the src
 // env) / 400 (ambiguous duplicate rows, cross-project promote) ->

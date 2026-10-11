@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/configwire/configwire/internal/testhelp"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 func TestValidateCredentials(t *testing.T) {
@@ -112,11 +112,7 @@ func callPostSetup(app core.App, email string) int {
 	re.Request = req
 	re.Response = rec
 	if err := postSetup(re); err != nil {
-		var apiErr *router.ApiError
-		if errors.As(err, &apiErr) {
-			return apiErr.Status
-		}
-		return -1
+		return testhelp.Code(err, rec)
 	}
 	return rec.Code
 }
@@ -131,11 +127,7 @@ func callDeleteAccount(app core.App, id string) (int, string) {
 	re.Request = req
 	re.Response = rec
 	if err := deleteAccount(re); err != nil {
-		var apiErr *router.ApiError
-		if errors.As(err, &apiErr) {
-			return apiErr.Status, apiErr.Message
-		}
-		return -1, err.Error()
+		return testhelp.CodeMessage(err, rec)
 	}
 	return rec.Code, ""
 }
@@ -325,11 +317,7 @@ func callSetPassword(app core.App, id, password string) (int, string) {
 	re.Request = req
 	re.Response = rec
 	if err := setPassword(re); err != nil {
-		var apiErr *router.ApiError
-		if errors.As(err, &apiErr) {
-			return apiErr.Status, apiErr.Message
-		}
-		return -1, err.Error()
+		return testhelp.CodeMessage(err, rec)
 	}
 	return rec.Code, ""
 }

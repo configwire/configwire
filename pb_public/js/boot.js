@@ -684,9 +684,10 @@
         var d = (CW.state && CW.state.limits) || {};
         var ip = d.clientIp != null ? String(d.clientIp) : "";
         if (!ip) { CW.toast("Nothing to copy."); return; }
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(ip).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
-        } else { CW.toast("Copy failed"); }
+        CW.copyText(ip).then(function (ok) {
+          if (ok) CW.toast("Copied", true);
+          else CW.toast("Copy failed");
+        });
       } catch (e) { CW.toast((e && e.message) || "Copy failed"); }
     });
     CW.on("key-copy", "click", function () {

@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/configwire/configwire/internal/testhelp"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 // testSecretHex is the fixed P0 fixture secret (test-only).
@@ -233,16 +233,7 @@ func ssoTestApp(t *testing.T) *tests.TestApp {
 
 func createTestSuperuser(t *testing.T, app *tests.TestApp, email string) {
 	t.Helper()
-	collection, err := app.FindCollectionByNameOrId(superusersCollection)
-	if err != nil {
-		t.Fatalf("find superusers collection: %v", err)
-	}
-	rec := core.NewRecord(collection)
-	rec.SetEmail(email)
-	rec.SetPassword("password123")
-	if err := app.Save(rec); err != nil {
-		t.Fatalf("save superuser %s: %v", email, err)
-	}
+	testhelp.MustSuperuser(t, app, email)
 }
 
 // testServer builds a handler server with a fresh cache.
@@ -259,11 +250,7 @@ func callRedeem(app core.App, srv *server, body string) (int, string) {
 	re.Request = req
 	re.Response = rec
 	if err := srv.postRedeem(re); err != nil {
-		var apiErr *router.ApiError
-		if errors.As(err, &apiErr) {
-			return apiErr.Status, apiErr.Message
-		}
-		return -1, err.Error()
+		return testhelp.CodeMessage(err, rec)
 	}
 	return rec.Code, rec.Body.String()
 }

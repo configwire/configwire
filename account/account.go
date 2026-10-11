@@ -171,9 +171,9 @@ func errInvalidPassword(msg string) error {
 	return &credentialsError{msg: "invalid password: " + msg}
 }
 
-// Empty bodies -> 400 (BindBody alone would silently return nil);
-// malformed JSON or wrong field types -> 400. Body bytes are the
-// emptiness source of truth (ContentLength is -1 for chunked).
+// decodeBody is a thin wrapper over the canonical
+// internal/apireq.DecodeBody (see internal/apireq/decode.go for the
+// empty/malformed-body contract); kept so existing call sites read unchanged.
 func decodeBody(re *core.RequestEvent, dst any) error {
 	return apireq.DecodeBody(re, dst)
 }

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/configwire/configwire/internal/testhelp"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 // promoteHandlerTestApp boots a TestApp the same way
@@ -172,11 +172,11 @@ func callPublish(t *testing.T, app *tests.TestApp, slug, projectQuery, body stri
 	re.Request = req
 	re.Response = rec
 	if err := postPublish(re); err != nil {
-		var apiErr *router.ApiError
-		if errors.As(err, &apiErr) {
-			return apiErr.Status, nil, apiErr.Message
+		code, msg := testhelp.CodeMessage(err, rec)
+		if code == -1 {
+			t.Fatalf("postPublish(%s): non ApiError %v", slug, err)
 		}
-		t.Fatalf("postPublish(%s): non ApiError %v", slug, err)
+		return code, nil, msg
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
@@ -209,11 +209,11 @@ func callPromote(t *testing.T, app *tests.TestApp, dest, projectQuery, body stri
 	re.Request = req
 	re.Response = rec
 	if err := postPromoteEnv(re); err != nil {
-		var apiErr *router.ApiError
-		if errors.As(err, &apiErr) {
-			return apiErr.Status, nil, apiErr.Message
+		code, msg := testhelp.CodeMessage(err, rec)
+		if code == -1 {
+			t.Fatalf("postPromoteEnv(%s): non ApiError %v", dest, err)
 		}
-		t.Fatalf("postPromoteEnv(%s): non ApiError %v", dest, err)
+		return code, nil, msg
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
