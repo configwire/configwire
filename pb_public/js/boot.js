@@ -51,7 +51,7 @@
       // attempt revealed it before falling back).
       try { var sn = CW.$("sso-section"); if (sn) sn.hidden = true; } catch (e) { /* best-effort */ }
       // Restore session (localStorage copy; memory-first once loaded).
-      try { CW.state.token = localStorage.getItem(CW.LS_KEY); } catch (e) { CW.state.token = null; }
+      CW.loadToken();
       CW.loadPersistedScope();
       if (CW.state.token) {
         CW.setLoggedIn(true);
@@ -401,17 +401,10 @@
         var ta = CW.$("transfer-export-text");
         var v = ta && ta.value != null ? String(ta.value) : "";
         if (!v) { CW.toast("Nothing to copy."); return; }
-        if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(v).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
-        } else {
-          var tmp = document.createElement("textarea");
-          tmp.value = v;
-          document.body.appendChild(tmp);
-          tmp.select();
-          try { document.execCommand("copy"); CW.toast("Copied", true); }
-          catch (e2) { CW.toast("Copy failed"); }
-          document.body.removeChild(tmp);
-        }
+        CW.copyText(v).then(function (ok) {
+          if (ok) CW.toast("Copied", true);
+          else CW.toast("Copy failed");
+        });
       } catch (e) { CW.toast((e && e.message) || "Copy failed"); }
     });
     CW.on("transfer-export-download", "click", function () {
@@ -698,17 +691,10 @@
     });
     CW.on("key-copy", "click", function () {
       var v = CW.$("key-once-value").textContent;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(v).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
-      } else {
-        var ta = document.createElement("textarea");
-        ta.value = v;
-        document.body.appendChild(ta);
-        ta.select();
-        try { document.execCommand("copy"); CW.toast("Copied", true); }
-        catch (e) { CW.toast("Copy failed"); }
-        document.body.removeChild(ta);
-      }
+      CW.copyText(v).then(function (ok) {
+        if (ok) CW.toast("Copied", true);
+        else CW.toast("Copy failed");
+      });
     });
 
     function closeFlagMenus(except) {
@@ -1043,7 +1029,7 @@
       CW.rollback(v, "rollback via admin UI").then(function (out) {
         CW.$("publish-result").textContent = out.status === 200
           ? "Rolled back: now v" + out.data.version
-          : "Rollback failed (" + out.status + "): " + CW.serverMessage(out.data);
+          : CW.apiError(out, "Rollback failed");
         CW.loadReleases().catch(function () {});
       });
     });
@@ -1120,7 +1106,7 @@
             CW.$("publish-result").textContent = "Stale baseVersion (409): currentVersion is " +
               out.data.currentVersion + " — refreshed latest, retry publish. " + CW.serverMessage(out.data);
           } else {
-            CW.$("publish-result").textContent = "Publish failed (" + out.status + "): " + CW.serverMessage(out.data);
+            CW.$("publish-result").textContent = CW.apiError(out, "Publish failed");
           }
           CW.loadReleases().then(function () {
             if (out.status !== 200 && CW.markUnpublished) CW.markUnpublished();

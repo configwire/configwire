@@ -242,6 +242,66 @@
     try { return JSON.stringify(data); } catch (e) { return "request failed"; }
   }
 
+  // J2: single formatter for the `"X failed (" + out.status + "): " +
+  // serverMessage(out.data)` pattern (15+ sites). Identical output, no
+  // contract change — api vs apiMut vs apiAll call sites untouched.
+  function apiError(out, prefix) {
+    out = out || {};
+    return String(prefix) + " (" + out.status + "): " + serverMessage(out.data);
+  }
+
+  // J4: single clipboard helper (boot.js x2, limits.js, stats.js pattern).
+  // Promise<boolean> — callers keep their own UX strings ("Copied" /
+  // "Copy failed" / "Nothing to copy." toasts or status lines), so no UX
+  // copy changes. Clipboard API first, textarea+execCommand fallback.
+  function copyText(v) {
+    var text = v == null ? "" : String(v);
+    try {
+      if (typeof navigator !== "undefined" && navigator && navigator.clipboard &&
+          navigator.clipboard.writeText) {
+        try {
+          var p = navigator.clipboard.writeText(text);
+          if (p && typeof p.then === "function") {
+            return p.then(function () { return true; }, function () { return false; });
+          }
+          return Promise.resolve(true);
+        } catch (e) { /* fall through to textarea fallback */ }
+      }
+    } catch (e2) { /* fall through to textarea fallback */ }
+    var ok = false;
+    var tmp = null;
+    try {
+      tmp = document.createElement("textarea");
+      tmp.value = text;
+      document.body.appendChild(tmp);
+      tmp.select();
+      try { document.execCommand("copy"); ok = true; }
+      catch (e3) { ok = false; }
+    } catch (e4) { ok = false; }
+    try { document.body.removeChild(tmp); } catch (e5) { /* best-effort */ }
+    return Promise.resolve(ok);
+  }
+
+  // J5: single token-storage helper (auth.js x3, account.js sso-redeem,
+  // boot.js boot-restore, core.js logoutFallback). Memory-first + guarded
+  // localStorage copy, exactly like the inline lines they replace.
+  function saveToken(tok) {
+    state.token = tok;
+    try { localStorage.setItem(LS_KEY, tok); } catch (e) { /* private mode */ }
+    return tok;
+  }
+
+  function loadToken() {
+    try { state.token = localStorage.getItem(LS_KEY); }
+    catch (e) { state.token = null; }
+    return state.token;
+  }
+
+  function clearToken() {
+    state.token = null;
+    try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
+  }
+
   function api(path) {
     return fetch(path, { headers: authHeaders() }).then(function (res) {
       if (res.status === 401 || res.status === 403) { logoutRef(); throw new Error("session expired — please log in"); }
@@ -336,8 +396,7 @@
   }
 
   function logoutFallback() {
-    state.token = null;
-    try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
+    clearToken();
     setLoggedIn(false);
     try { ssoLogoutHome(); } catch (e2) { /* notice already shown */ }
   }
@@ -395,6 +454,11 @@
   CW.bumpScopeGen = bumpScopeGen;
   CW.scopeStale = scopeStale;
   CW.serverMessage = serverMessage;
+  CW.apiError = apiError;
+  CW.copyText = copyText;
+  CW.saveToken = saveToken;
+  CW.loadToken = loadToken;
+  CW.clearToken = clearToken;
   CW.api = api;
   CW.apiAll = apiAll;
   CW.apiMut = apiMut;

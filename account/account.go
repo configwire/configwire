@@ -11,8 +11,6 @@
 package account
 
 import (
-	"bytes"
-	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -21,6 +19,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/pocketbase/apis"
@@ -176,25 +175,7 @@ func errInvalidPassword(msg string) error {
 // malformed JSON or wrong field types -> 400. Body bytes are the
 // emptiness source of truth (ContentLength is -1 for chunked).
 func decodeBody(re *core.RequestEvent, dst any) error {
-	if re.Request.ContentLength == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if re.Request.Body == nil {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 1<<20+1))
-	if err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	// Restore for BindBody.
-	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if err := re.BindBody(dst); err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	return nil
+	return apireq.DecodeBody(re, dst)
 }
 
 // countRealSuperusers returns the number of configured admins, excluding

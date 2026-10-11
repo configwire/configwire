@@ -22,7 +22,6 @@
 package sso
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -30,7 +29,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -38,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -367,7 +366,7 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 		})
 	}
 	var req redeemRequest
-	if err := decodeBody(re, &req); err != nil {
+	if err := apireq.DecodeBody(re, &req); err != nil {
 		return err
 	}
 	pt, err := ValidateTicket(req.Ticket, s.secret, time.Now().Unix())
@@ -417,28 +416,4 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 // ticketError renders a spec-exact error body ({message, status}).
 func ticketError(re *core.RequestEvent, status int, msg string) error {
 	return re.JSON(status, map[string]any{"message": msg, "status": status})
-}
-
-// decodeBody mirrors account.decodeBody: empty bodies -> 400 (BindBody
-// alone would silently return nil); malformed JSON -> 400.
-func decodeBody(re *core.RequestEvent, dst any) error {
-	if re.Request.ContentLength == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if re.Request.Body == nil {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 1<<20+1))
-	if err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	// Restore for BindBody.
-	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if err := re.BindBody(dst); err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	return nil
 }

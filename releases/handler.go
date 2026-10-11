@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/dbx"
@@ -110,31 +111,6 @@ func callerAuthor(re *core.RequestEvent) string {
 	return "superuser"
 }
 
-// Empty bodies -> 400 (BindBody alone would silently return nil);
-// malformed JSON or wrong field types -> 400. Body bytes are the
-// emptiness source of truth (ContentLength is -1 for chunked).
-func decodeBody(re *core.RequestEvent, dst any) error {
-	if re.Request.ContentLength == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if re.Request.Body == nil {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 1<<20+1))
-	if err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	// Restore for BindBody.
-	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if err := re.BindBody(dst); err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	return nil
-}
-
 // postPublish handles POST /api/v1/admin/env/:env/publish.
 // Order: 401 (superuser, via middleware) -> 404 (unknown env slug) ->
 // 400 (ambiguous slug without ?project=) -> 409 (stale baseVersion, NO
@@ -144,7 +120,7 @@ func decodeBody(re *core.RequestEvent, dst any) error {
 func postPublish(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	var req publishRequest
-	if err := decodeBody(re, &req); err != nil {
+	if err := apireq.DecodeBody(re, &req); err != nil {
 		return err
 	}
 	slug := re.Request.PathValue("env")
@@ -530,7 +506,7 @@ func postRollbackEnv(re *core.RequestEvent) error {
 func postPromoteEnv(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	var req promoteRequest
-	if err := decodeBody(re, &req); err != nil {
+	if err := apireq.DecodeBody(re, &req); err != nil {
 		return err
 	}
 	destSlug := re.Request.PathValue("dest")

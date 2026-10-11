@@ -112,17 +112,10 @@
       CW.toast("Nothing to copy.");
       return;
     }
-    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(ip).then(function () { CW.toast("Copied", true); }, function () { CW.toast("Copy failed"); });
-    } else {
-      var tmp = document.createElement("textarea");
-      tmp.value = ip;
-      document.body.appendChild(tmp);
-      tmp.select();
-      try { document.execCommand("copy"); CW.toast("Copied", true); }
-      catch (e) { CW.toast("Copy failed"); }
-      document.body.removeChild(tmp);
-    }
+    CW.copyText(ip).then(function (ok) {
+      if (ok) CW.toast("Copied", true);
+      else CW.toast("Copy failed");
+    });
   }
 
   function setInputs(d) {
@@ -190,7 +183,7 @@
         }
         return loadLimits().catch(function () {});
       }
-      var fail = "Save failed (" + out.status + "): " + CW.serverMessage(out.data);
+      var fail = CW.apiError(out, "Save failed");
       if (resEl) resEl.textContent = fail;
       CW.toast(fail);
       return out;

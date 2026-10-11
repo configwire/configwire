@@ -107,7 +107,7 @@
         CW.$("key-once-value").textContent = data.key;
         CW.$("key-once").hidden = false;
       } else {
-        CW.$("key-result").textContent = "Key create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        CW.$("key-result").textContent = CW.apiError(out, "Key create failed");
       }
       loadKeys().catch(function () {});
       return out;
@@ -120,7 +120,7 @@
         var keyOk = out.status === 200 || out.status === 204;
         CW.toast(keyOk
           ? "Key revoked."
-          : "Revoke failed (" + out.status + "): " + CW.serverMessage(out.data), keyOk);
+          : CW.apiError(out, "Revoke failed"), keyOk);
         loadKeys().catch(function () {});
         return out;
       });
@@ -185,7 +185,7 @@
       var ok = out.status === 200 || out.status === 204;
       CW.toast(ok
         ? "Key limits updated."
-        : "Update failed (" + out.status + "): " + CW.serverMessage(out.data), ok);
+        : CW.apiError(out, "Update failed"), ok);
       if (ok) closeKeyLimitsDialog();
       loadKeys().catch(function () {});
       return out;

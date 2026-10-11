@@ -60,7 +60,7 @@
     return CW.apiMut("POST", "/api/v1/admin/setup", { email: email, password: pw }).then(function (out) {
       var ok = out.status === 200 || out.status === 201;
       if (!ok) {
-        setSetupStatus("", "Setup failed (" + out.status + "): " + CW.serverMessage(out.data));
+        setSetupStatus("", CW.apiError(out, "Setup failed"));
         return out;
       }
       var res = CW.$("setup-result");
@@ -112,7 +112,7 @@
       var ok = out.status === 200 || out.status === 201;
       CW.$("account-result").textContent = ok
         ? "Account created: " + (out.data.email || out.data.id || email)
-        : "Account create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        : CW.apiError(out, "Account create failed");
       if (ok) {
         CW.toast("Account created: " + (out.data.email || email), true);
         CW.$("account-email").value = "";
@@ -138,7 +138,7 @@
           var ok = out.status === 200 || out.status === 204;
           CW.$("account-result").textContent = ok
             ? "Password changed."
-            : "Password change failed (" + out.status + "): " + CW.serverMessage(out.data);
+            : CW.apiError(out, "Password change failed");
           CW.toast(CW.$("account-result").textContent, ok);
           if (ok) loadAccounts().catch(function () {});
           return out;
@@ -160,7 +160,7 @@
           // Blocked for last user: surface the server message verbatim.
           CW.$("account-result").textContent = ok
             ? "Admin deleted."
-            : "Delete failed (" + out.status + "): " + CW.serverMessage(out.data);
+            : CW.apiError(out, "Delete failed");
           CW.toast(CW.$("account-result").textContent, ok);
           if (ok) loadAccounts().catch(function () {});
           return out;
@@ -245,8 +245,7 @@
       return res.json();
     }).then(function (data) {
       if (!data || !data.token) throw new Error("sso redeem failed: no token");
-      CW.state.token = data.token; // bare token, memory-first
-      try { localStorage.setItem(CW.LS_KEY, data.token); } catch (e) { /* private mode */ }
+      CW.saveToken(data.token); // bare token, memory-first
       var sso = CW.$("sso-section");
       if (sso) sso.hidden = true;
       CW.setLoggedIn(true);

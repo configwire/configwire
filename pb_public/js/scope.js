@@ -155,7 +155,7 @@
       var ok = out.status === 200 || out.status === 201;
       var msg = ok
         ? "Project created: " + (out.data.name || out.data.id)
-        : "Project create failed (" + out.status + "): " + CW.serverMessage(out.data);
+        : CW.apiError(out, "Project create failed");
       if (d.result) d.result.textContent = msg;
       if (d.legacyResult) d.legacyResult.textContent = msg;
       if (!ok) return out;
@@ -164,7 +164,7 @@
       return CW.apiMut("POST", "/api/collections/environments/records", { project: newId, slug: envSlug }).then(function (eout) {
         var eok = eout.status === 200 || eout.status === 201;
         if (!eok) {
-          var emsg = "Env create failed (" + eout.status + "): " + CW.serverMessage(eout.data);
+          var emsg = CW.apiError(eout, "Env create failed");
           if (d.result) d.result.textContent = emsg;
           if (d.legacyResult) d.legacyResult.textContent = emsg;
           CW.toast(emsg);
@@ -227,7 +227,7 @@
         var ok = out.status === 200 || out.status === 201;
         CW.$("env-result").textContent = ok
           ? "Env created: " + (out.data.slug || out.data.id)
-          : "Env create failed (" + out.status + "): " + CW.serverMessage(out.data);
+          : CW.apiError(out, "Env create failed");
         if (ok) {
           CW.toast("Env created: " + (out.data.slug || out.data.id), true);
           loadEnvs().catch(function () {});
@@ -281,7 +281,7 @@
             if (CW.loadHomeStats) CW.loadHomeStats().catch(function () {});
             CW.toast("Project renamed: " + name, true);
           } else {
-            CW.toast("Rename failed (" + out.status + "): " + CW.serverMessage(out.data));
+            CW.toast(CW.apiError(out, "Rename failed"));
           }
           return out;
         });
@@ -303,7 +303,7 @@
         .then(function (out) {
           var okDel = out.status === 200 || out.status === 204;
           if (!okDel) {
-            CW.toast("Delete failed (" + out.status + "): " + CW.serverMessage(out.data));
+            CW.toast(CW.apiError(out, "Delete failed"));
             return out;
           }
           CW.state.projects = CW.state.projects.filter(function (p) { return p.id !== pid; });
@@ -353,7 +353,7 @@
             if (CW.loadStats) CW.loadStats().catch(function () {});
             CW.toast("Environment renamed: " + nextSlug, true);
           } else {
-            CW.toast("Rename failed (" + out.status + "): " + CW.serverMessage(out.data));
+            CW.toast(CW.apiError(out, "Rename failed"));
           }
           return out;
         });
@@ -379,7 +379,7 @@
         .then(function (out) {
           var okDel = out.status === 200 || out.status === 204;
           if (!okDel) {
-            CW.toast("Delete failed (" + out.status + "): " + CW.serverMessage(out.data));
+            CW.toast(CW.apiError(out, "Delete failed"));
             return out;
           }
           CW.state.envs = CW.state.envs.filter(function (e) { return e.id !== eid; });

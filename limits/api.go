@@ -1,10 +1,9 @@
 package limits
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 
+	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/pocketbase/apis"
@@ -72,30 +71,6 @@ func toBodyForRequest(re *core.RequestEvent, c Config) map[string]any {
 	return body
 }
 
-// decodeBody mirrors account.decodeBody: empty bodies -> 400 (BindBody
-// alone would silently return nil); malformed JSON -> 400.
-func decodeBody(re *core.RequestEvent, dst any) error {
-	if re.Request.ContentLength == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if re.Request.Body == nil {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, (1<<20)+1))
-	if err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	// Restore for BindBody.
-	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if err := re.BindBody(dst); err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	return nil
-}
-
 // getLimits handles GET /api/v1/admin/limits (superuser-only).
 func getLimits(re *core.RequestEvent) error {
 	security.SetHeaders(re)
@@ -110,7 +85,7 @@ func getLimits(re *core.RequestEvent) error {
 func putLimits(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	var req limitsBody
-	if err := decodeBody(re, &req); err != nil {
+	if err := apireq.DecodeBody(re, &req); err != nil {
 		return err
 	}
 	stored := GetConfig()

@@ -12,14 +12,12 @@
       body: JSON.stringify({ identity: email, password: password }),
     }).then(function (res) {
       if (!res.ok) {
-        CW.state.token = null;
-        try { localStorage.removeItem(CW.LS_KEY); } catch (e) { /* private mode */ }
+        CW.clearToken();
         throw new Error("login failed: HTTP " + res.status);
       }
       return res.json();
     }).then(function (data) {
-      CW.state.token = data.token; // bare token, memory-first
-      try { localStorage.setItem(CW.LS_KEY, data.token); } catch (e) { /* private mode */ }
+      CW.saveToken(data.token); // bare token, memory-first
       CW.setLoggedIn(true);
       CW.refreshAll();
       return data;
@@ -40,8 +38,7 @@
   // the same lines. Mode-fetch failure stays standard (login) by
   // construction — the documented residual case.
   function doLogout() {
-    CW.state.token = null;
-    try { localStorage.removeItem(CW.LS_KEY); } catch (e) { /* private mode */ }
+    CW.clearToken();
     CW.setLoggedIn(false);
     if (CW.syncSidebar) CW.syncSidebar();
     // SSO logout event: leave for the cloud dashboard when its URL is

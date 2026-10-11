@@ -795,15 +795,7 @@
   function publish(note, baseVersion) {
     var url = "/api/v1/admin/env/" + encodeURIComponent(CW.envSlug()) + "/publish";
     if (CW.state.projectId) url += "?project=" + encodeURIComponent(CW.state.projectId);
-    return fetch(url, {
-      method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" }, CW.authHeaders()),
-      body: JSON.stringify({ note: note || "", baseVersion: baseVersion }),
-    }).then(function (res) {
-      return res.json().then(function (data) {
-        return { status: res.status, data: data };
-      });
-    });
+    return CW.apiMut("POST", url, { note: note || "", baseVersion: baseVersion });
   }
 
   function promote(srcEnv, srcVersion, destBaseVersion, note, srcProject, destSlug) {
@@ -812,15 +804,7 @@
     if (CW.state.projectId) url += "?project=" + encodeURIComponent(CW.state.projectId);
     var body = { srcEnv: srcEnv, srcVersion: srcVersion, note: note || "", destBaseVersion: destBaseVersion };
     if (srcProject) body.srcProject = srcProject;
-    return fetch(url, {
-      method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" }, CW.authHeaders()),
-      body: JSON.stringify(body),
-    }).then(function (res) {
-      return res.json().then(function (data) {
-        return { status: res.status, data: data };
-      });
-    });
+    return CW.apiMut("POST", url, body);
   }
 
   // Control-surface choice (A, promote-to direction): release-menu item
@@ -1076,7 +1060,7 @@
           say("Stale baseVersion: " + CW.serverMessage(out.data));
         });
       }
-      say("Promote failed (" + out.status + "): " + CW.serverMessage(out.data));
+      say(CW.apiError(out, "Promote failed"));
       return null;
     }, function (e) {
       setApplying(false);
@@ -1114,15 +1098,7 @@
     var url = "/api/v1/admin/env/" + encodeURIComponent(CW.envSlug()) +
       "/releases/" + encodeURIComponent(version) + "/rollback";
     if (CW.state.projectId) url += "?project=" + encodeURIComponent(CW.state.projectId);
-    return fetch(url, {
-      method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" }, CW.authHeaders()),
-      body: JSON.stringify({ note: note || "" }),
-    }).then(function (res) {
-      return res.json().then(function (data) {
-        return { status: res.status, data: data };
-      });
-    });
+    return CW.apiMut("POST", url, { note: note || "" });
   }
 
   CW.renderReleases = renderReleases;

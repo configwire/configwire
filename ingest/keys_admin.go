@@ -1,11 +1,10 @@
 package ingest
 
 import (
-	"bytes"
-	"io"
 	"log"
 	"net/http"
 
+	"github.com/configwire/configwire/internal/apireq"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -77,30 +76,9 @@ func RegisterKeys(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/keys", postMintKey).Bind(apis.RequireSuperuserAuth())
 }
 
-func decodeBody(re *core.RequestEvent, dst any) error {
-	if re.Request.ContentLength == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if re.Request.Body == nil {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	raw, err := io.ReadAll(io.LimitReader(re.Request.Body, 1<<20+1))
-	if err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	re.Request.Body = io.NopCloser(bytes.NewReader(raw))
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return re.BadRequestError("empty body: expected a JSON object.", nil)
-	}
-	if err := re.BindBody(dst); err != nil {
-		return re.BadRequestError("malformed JSON body: "+err.Error(), nil)
-	}
-	return nil
-}
-
 func postMintKey(re *core.RequestEvent) error {
 	var req mintKeyRequest
-	if err := decodeBody(re, &req); err != nil {
+	if err := apireq.DecodeBody(re, &req); err != nil {
 		return err
 	}
 	if status, msg, ok := mintInputError(re.App, req.Env, req.FetchRps, req.IngestRps); !ok {
