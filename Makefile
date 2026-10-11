@@ -1,7 +1,13 @@
-.PHONY: serve migrate test lint e2e
+.PHONY: serve migrate test lint e2e build build-no-ui
 
 serve:
 	go run . serve
+
+build:
+	go build ./...
+
+build-no-ui:
+	go build -tags no_ui ./...
 
 migrate:
 	go run . migrate $(ARGS)

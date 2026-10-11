@@ -4,12 +4,18 @@
 # Run:
 #   docker run --rm -p 8090:8090 -v cw-data:/app/pb_data configwire
 # Or: docker compose up --build
+# Or: docker build --build-arg GO_TAGS=no_ui -t configwire ./configwire
+# (strips the PocketBase admin UI at /_/ via upstream's built-in no_ui
+# tag: github.com/pocketbase/pocketbase/ui/embed_no_ui.go leaves
+# ui.DistDirFS nil so /_/ routes never register. Our Admin UI at /
+# (./pb_public) and all /api/* routes are unaffected — still copied below.)
 FROM golang:1.27-alpine AS builder
+ARG GO_TAGS=""
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
-RUN CGO_ENABLED=0 go build -trimpath -o /out/configwire .
+RUN CGO_ENABLED=0 go build -trimpath ${GO_TAGS:+-tags=${GO_TAGS}} -o /out/configwire .
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
