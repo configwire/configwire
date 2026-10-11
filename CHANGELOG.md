@@ -3,6 +3,27 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.7 — 2026-10-11
+
+### Added
+
+- Per-flag stats restore (`1790000017_restore_event_flag`): ingest
+  accepts optional `flag` (verbatim key, max 64 chars) with a
+  project-scoped relation; `events` re-adds nullable cascade `flag`
+  to `cw_flags` plus `idx_events_env_flag_ts`; `event_daily` rollup
+  key returns to UNIQUE `(day, env, flag, variant, version)`. Stats
+  `GET /api/v1/admin/env/{env}/stats?flag=X&since=` filters by flag
+  relation again, with `flagFound` and `echo.flag` back in the
+  response; `?flag=` over 64 chars answers `400`, unknown keys answer
+  `200` zeros with `flagFound: false`, absent `?flag=` stays env-wide
+  with no `flagFound` key. Dart client passes optional `flag`
+  through to stats.
+- Compatibility: events ingested without `flag` keep an unset
+  relation and count in the env-wide (`""`) bucket; rows written
+  while the flag column was gone stay empty-flag and still count
+  env-wide. No behavior change to auth, throttle, or retention
+  windows.
+
 ## v0.1.6 — 2026-10-10
 
 ### Added

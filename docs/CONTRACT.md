@@ -281,13 +281,16 @@ Ref: `configwire/ingest/handler.go:108-109`.
 Request:
 
 ```json
-{"events": [{"kind": "exposure", "variant": "treatment", "userHash": "4017c6d850aedf6b", "ts": "2026-09-22T00:00:00Z"}]}
+{"events": [{"kind": "exposure", "flag": "launch_flag", "variant": "treatment", "userHash": "4017c6d850aedf6b", "ts": "2026-09-22T00:00:00Z"}]}
 ```
 
 - `kind` must be `fetch` or `exposure`.
-- `variant`, `userHash`, `ts` are all optional. `version` is an
-  optional non-negative int (fetched release version; SDK fetch events
-  carry it); absent means 0. Negative then `400`.
+- `flag`, `variant`, `userHash`, `ts` are all optional. Unknown flag
+  keys are stored with the flag relation unset (kind/variant preserved).
+  Flag keys resolve scoped to the event env's project (key + project,
+  never global key): the same key under another project never matches.
+  `version` is an optional non-negative int (fetched release version;
+  SDK fetch events carry it); absent means 0. Negative then `400`.
 - `ts` accepts RFC3339 string, unix-seconds number, or absent/null
   (server time). Anything else then `400`.
 - Raw `userId`/`ip` keys are strictly rejected (presence, not value,
@@ -334,7 +337,7 @@ Flush bound: buffered channel (cap 2048), flush every 1s or 500 rows;
 worst-case ingest lag about 1s plus write time (bounded at 2s).
 Ref: `configwire/ingest/ingest.go:25-28`.
 
-## 5. Stats — `GET /api/v1/admin/env/{env}/stats?since=7d`
+## 5. Stats — `GET /api/v1/admin/env/{env}/stats?flag=X&since=7d`
 
 Ref: `configwire/stats/stats.go` (handler) (route + superuser-only). Superuser-only;
 SDK-key-only or unauth then `401`.
@@ -342,11 +345,19 @@ SDK-key-only or unauth then `401`.
 Success `200`:
 
 ```json
-{"fetches": 3, "exposures": 2, "perVariant": {"control": 1, "treatment": 1}, "perVersion": {"1": 3}, "version": 1, "echo": {"env": "dev", "since": "90d", "sinceDays": 90, "cutoff": "2026-06-25T04:08:22Z", "horizon": "90d", "rollupHorizon": "2026-08-24T00:00:00Z"}, "total": 5, "rates": {"control": 0.5, "treatment": 0.5}, "sources": {"events": 2, "rollups": 3}, "approximate": true}
+{"fetches": 3, "exposures": 2, "perVariant": {"control": 1, "treatment": 1}, "perVersion": {"1": 3}, "version": 1, "echo": {"env": "dev", "flag": "launch_flag", "since": "90d", "sinceDays": 90, "cutoff": "2026-06-25T04:08:22Z", "horizon": "90d", "rollupHorizon": "2026-08-24T00:00:00Z"}, "flagFound": true, "total": 5, "rates": {"control": 0.5, "treatment": 0.5}, "sources": {"events": 2, "rollups": 3}, "approximate": true}
 ```
 
-- Env-wide stats with `since` only: every event in the env window
-  counts together; there is no per-key filtering.
+- `?flag=<key>` filters counts by flag relation (key resolution
+  scoped to the stats env's project, key + project, never global key);
+  absent means unfiltered (every event in the env window counts
+  together). Unknown flag keys (including path-ish `../x`) return
+  zeros with `200` (never `404`) and `flagFound: false`. Events with
+  an unset flag relation drop out under any `?flag=` filter and count
+  when absent.
+- `flagFound`: true when `?flag=` is absent (unfiltered) or the key
+  resolves; false on unknown keys, which then return zeros with `200`
+  and version populated, never `404`.
 - Additive-compat: the old keys (`fetches`, `exposures`,
   `perVariant`, `version`) are byte-identical to the frozen shape;
   every other key is additive only. Old clients ignore unknown JSON
@@ -359,7 +370,8 @@ Success `200`:
 - `version` is the env's max release version.
 - `userHash` is never read (aggregate counts only, no PII in the
   response).
-- `echo`: `env` is the verbatim request value; `since`/`sinceDays`
+- `echo`: `env`/`flag` are the verbatim request values (`flag` is
+  `""` when absent); `since`/`sinceDays`
   carry the EFFECTIVE window after the 90d clamp; `cutoff` is the
   UTC RFC3339 window start (now-UTC minus days); `horizon` keeps the
   human-readable window label (same string as `since`, for example
@@ -390,11 +402,13 @@ Success `200`:
 - Unknown env slug then `404`. Optional `?project=<projectId>`
   disambiguates a slug shared by several projects (`400` ambiguous
   without it).
-- Aggregation is env-wide only over indexed filters (env + ts/day):
-  `loadRows` selects events by env and ts window, `loadRollups`
-  selects `event_daily` by env and day window; the frozen
-  `Aggregate`/`AggregateRollups` helpers re-apply the same
-  predicates in-Go.
+- Aggregation is over indexed filters (env + ts/day, plus the stored
+  flag relation when `?flag=` is present): `loadRows` selects events by
+  env and ts window, `loadRollups` selects `event_daily` by env and day
+  window; the frozen `Aggregate`/`AggregateRollups` helpers re-apply the
+  same predicates in-Go. Flag join uses the once-per-request stored
+  flag ID (resolved once, never re-resolved per row/bucket), so
+  renamed/orphaned flags keep their history.
 
 ## 6. Stream — `GET /api/v1/env/{env}/stream`
 
@@ -523,7 +537,7 @@ Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.d
 ## 11. Retention
 
 Raw `events` rows live 30 days, daily `event_daily` rollups keyed
-`(day, env, variant, version)` live 90 days. Cutoff is strictly-older-than
+`(day, env, flag, variant, version)` live 90 days. Cutoff is strictly-older-than
 (`ts` before cutoff deleted, exactly-equal kept, zero-ts kept).
 Rollup-before-delete runs in the same op (upsert then delete; a crash
 between them double-counts only the in-flight bucket on re-run, and a
