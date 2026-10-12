@@ -410,6 +410,15 @@ func main() {
 		HideStartBanner: true,
 	})
 
+	// Fresh-install default: PocketBase request + app logs (_logs) off.
+	// Mutating the in-memory default before Start only affects the first
+	// bootstrap save (ReloadSettings persists defaults when no settings
+	// row exists yet); existing installs load the stored value and keep
+	// whatever the superuser chose in /_/ settings.
+	if app.Settings().IsNew() {
+		app.Settings().Logs.MaxDays = 0
+	}
+
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{
 		Automigrate: true,
 	})
