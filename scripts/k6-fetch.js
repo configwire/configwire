@@ -64,10 +64,20 @@ export const options = {
 
 const headers = { 'X-ConfigWire-Key': KEY };
 
+// Wave-2: fetch takes ?userHash= (16 lowercase hex) only; raw ?uid=
+// answers 400. k6 has no sha helper inline, so fetch cycles precomputed
+// sha256Hex16 fixtures (gate-user-1..4 hashed at doc time).
+const USER_HASHES = [
+  '810715a6d9496c8c', // gate-user-1
+  'fdab96da5491a3d2', // gate-user-2
+  '8d757ababa472ca3', // gate-user-3
+  'd4bcfda8cd7ccc55', // gate-user-4
+];
+
 export function fetchFn() {
-  const uid = `gate-user-${__VU}-${__ITER}`;
+  const userHash = USER_HASHES[(__VU + __ITER) % USER_HASHES.length];
   const res = http.get(
-    `${BASE}/api/v1/env/${ENV_SLUG}/config?uid=${uid}&platform=ios`,
+    `${BASE}/api/v1/env/${ENV_SLUG}/config?userHash=${userHash}&platform=ios`,
     { headers, tags: { kind: 'fetch' } },
   );
   fetchTrend.add(res.timings.duration);

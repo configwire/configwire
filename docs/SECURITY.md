@@ -57,6 +57,25 @@ binary plus operator procedure.
 - The ingest path **strictly rejects** raw `userId`/`ip` keys — even
   `null`-valued ones (presence, not value) → `400`. Clients must send
   the opaque `userHash` field.
+- The fetch path takes identity as canonical `userHash` query param:
+  `?userHash=` must be 16 lowercase hex (`^[0-9a-f]{16}$` strict) when
+  present; absent or empty stays `200` (anonymous). End state is
+  strict: raw `?uid=` presence returns `400` (even alongside
+  `userHash`). Ref: `configwire/fetch/fetch.go` (`BuildContext`).
+- Compat window (until the next server major): `?uid=` is a DEPRECATED
+  alias, not a rejection. The server hashes trimmed non-empty `uid` to
+  `userHash` semantics and stamps `X-CW-Deprecated-uid: true` on every
+  response where trimmed `uid` is non-empty. Precedence: both present
+  with valid `userHash` then `userHash` wins and the header is still
+  set; malformed `userHash` then `400` even with `uid` present; empty
+  `uid` equals absent. Privacy caveat: the deprecated path sends raw
+  identity on the wire and in URLs, so it stays visible in URL/query
+  logs until sunset. The server never logs raw `uid` or hash values
+  (PII-free counter and log line only); canonical `userHash` stays
+  PII-minimal (`hex(sha256)` truncated to 16).
+- Re-bucketing note: hashing cut over to `userHash` re-seats
+  assignments, so a 50/50 experiment flips about 50% of users once;
+  plan it as a one-time rebucket, not a steady-state churn.
 - Server-side derivation, when needed, is `hex(sha256(userID))[:16]`
   (64 bits: enough to join fetch/exposure rows, non-reversible).
 - Stats endpoints return aggregate counts only; `userHash` never

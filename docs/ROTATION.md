@@ -71,7 +71,7 @@ only its bcrypt verifier reaches the DB.)
 ### 2. Prove the new key works (200)
 
 ```bash
-curl -s -w "\nnew:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY"
+curl -s -w "\nnew:%{http_code}\n" "$BASE/api/v1/env/rotate/config?userHash=98e9cba6af6c3a25" -H "X-ConfigWire-Key: $NEW_KEY"
 ```
 
 Expected body shape plus `new:200`:
@@ -86,7 +86,7 @@ The proof run returned `etag ca8b8ecbb4742977` on its seed data.)
 ### 3. Prove an unknown key is rejected (401)
 
 ```bash
-curl -s -w "\nunknown:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: cw-unknown-dead-key-00"
+curl -s -w "\nunknown:%{http_code}\n" "$BASE/api/v1/env/rotate/config?userHash=98e9cba6af6c3a25" -H "X-ConfigWire-Key: cw-unknown-dead-key-00"
 ```
 
 Expected, byte-exact:
@@ -111,8 +111,8 @@ NEW_KEY2=$(echo "$MINT2" | python3 -c 'import json,sys; print(json.load(sys.stdi
 echo "key2:minted ok"
 curl -s -o /dev/null -w "revoke:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
 curl -s -o /dev/null -w "verify:%{http_code}\n" -X PATCH $BASE/api/collections/sdk_keys/records/$OLD_ROW -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d '{"revoked":true}'
-curl -s -o /dev/null -w "old-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY"
-curl -s -o /dev/null -w "new-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?uid=rotate-u1" -H "X-ConfigWire-Key: $NEW_KEY2"
+curl -s -o /dev/null -w "old-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?userHash=98e9cba6af6c3a25" -H "X-ConfigWire-Key: $NEW_KEY"
+curl -s -o /dev/null -w "new-fetch:%{http_code}\n" "$BASE/api/v1/env/rotate/config?userHash=98e9cba6af6c3a25" -H "X-ConfigWire-Key: $NEW_KEY2"
 ```
 
 Expected: `revoke:200`, `verify:200`, `old-fetch:401` (same

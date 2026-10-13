@@ -13,8 +13,22 @@ Conventions used below:
 
 Ref: `configwire/fetch/fetch.go:286` (order), `:87` (route + gzip).
 
-Query params: `uid`, `platform`, `appVersion`, `locale`, `country`,
-`attrs` (JSON object, max 8192 bytes), `exp` (status override).
+Query params: `userHash` canonical (16 lowercase hex `sha256Hex16`,
+strict `^[0-9a-f]{16}$` when non-empty); `?uid=` is a DEPRECATED compat
+alias (lenient non-empty, spaces-trimmed; empty equals absent). During
+the compat window the server hashes `uid` server-side to `userHash`
+semantics (`hex(sha256(uid))[:16]`) and stamps
+`X-CW-Deprecated-uid: true` on every response where trimmed `uid` is
+non-empty. The window ends at the next server major: then raw `?uid=`
+presence returns `400` again. Client 1.0.0 is hash-only and never
+sends `uid`.
+
+Precedence: both present with valid `userHash` then `userHash` wins and
+the header is still set; malformed `userHash` (non-empty, non-16-hex)
+then `400` even with `uid` present; both absent or empty stays `200`
+(anonymous: rules still evaluate, bucketing falls back to the default
+variant). Ref: `configwire/fetch/fetch.go:140-162` (`BuildContext`),
+`:85-91` (header).
 
 Auth/env order: 401 (key) then 404 (unknown env slug) then 401
 (key not scoped to this env) then 400/414 (attrs) then 200/304.
@@ -58,6 +72,30 @@ Ref: `:314-322`. Values are empty, not flag defaults; SDKs use in-app defaults.
 empty body. Ref: `:140-143,326-328`.
 
 ### 1d. Fetch errors
+
+Compat window (until the next server major): `?uid=` alone, or
+alongside a valid `userHash`, answers `200` with
+`X-CW-Deprecated-uid: true`. The server hashes the trimmed `uid` to
+`userHash` semantics when no valid `userHash` is present; when both are
+present and `userHash` is valid, `userHash` wins and the header is
+still set. Empty `uid` equals absent (no header, anonymous when
+`userHash` is also empty).
+
+> Sunset: at the next server major the compat alias is removed and raw
+> `?uid=` presence (even alongside `userHash`) returns `400` again
+> with `raw "uid" is forbidden: send "userHash" instead.` That string
+> is retired during the window (current compat code never emits it)
+> and returns only at sunset.
+
+Malformed `?userHash=` (anything but 16 lowercase hex, even with
+`?uid=` present):
+
+```json
+{"data": {}, "message": "invalid userHash: must be 16 lowercase hex.", "status": 400}
+```
+
+Ref: `configwire/fetch/fetch.go:153-162` (`BuildContext`, caller maps
+to `400` via `re.BadRequestError`).
 
 Malformed `attrs` (bad JSON, or valid JSON that is not an object):
 
@@ -517,7 +555,7 @@ Success `200` (both verbs, same shape):
 | 202  | events accepted                                                                       | `{"accepted": N, "status": 202}`                                                                                       | ingest handler `:170`                                                                             |
 | 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:93-101`                                                                                   |
 | 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:326-328`                                                                                  |
-| 400  | bad publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:70-76,193-195`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go` |
+| 400  | bad fetch/publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:70-76,193-195`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go`, fetch `BuildContext` (`?uid=` presence, bad `userHash`) |
 | 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:338-358`, fetch `:301-318`, stream `stream.go:getStream`                                                     |
 | 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:294-297`, releases `:220-221`                                                             |
 | 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:102-108`                                                                               |
