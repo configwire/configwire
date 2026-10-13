@@ -59,10 +59,9 @@ binary plus operator procedure.
   the opaque `userHash` field.
 - The fetch path takes identity as canonical `userHash` query param:
   `?userHash=` must be 16 lowercase hex (`^[0-9a-f]{16}$` strict) when
-  present; absent or empty stays `200` (anonymous). End state is
-  strict: raw `?uid=` presence returns `400` (even alongside
-  `userHash`). Ref: `configwire/fetch/fetch.go` (`BuildContext`).
-- Compat window (until the next server major): `?uid=` is a DEPRECATED
+  present; absent or empty stays `200` (anonymous).
+  Ref: `configwire/fetch/fetch.go` (`BuildContext`).
+- Compat-current (until sunset in the next server major): `?uid=` is a DEPRECATED
   alias, not a rejection. The server hashes trimmed non-empty `uid` to
   `userHash` semantics and stamps `X-CW-Deprecated-uid: true` on every
   response where trimmed `uid` is non-empty. Precedence: both present
@@ -83,7 +82,7 @@ binary plus operator procedure.
 - Retention (enforced by the `configwire/purge` daily job + manual
   `POST /api/v1/admin/maintenance/purge`, superuser-only):
   - **raw `events` rows: 30 days**, then rolled up and deleted;
-  - **daily `event_daily` rollups `(day, env, variant, version)`: 90 days**;
+  - **daily `event_daily` rollups `(day, env, flag, variant, version)`: 90 days**;
   - rollups carry counts only — no PII survives past the raw window.
 
 ## 4. Rate limits (per-second global/per-key)
@@ -186,8 +185,9 @@ binary plus operator procedure.
 ## 8. Response headers
 
 - API handlers (releases, stats, fetch) stamp, via the shared
-  `configwire/security` helper (ownership: those packages' files only,
-  never `main.go`):
+  `configwire/security` helper (values owned by `configwire/security`;
+  `main.go` only calls the helper globally as middleware, per-handler
+  calls stay as backup):
   - `X-Content-Type-Options: nosniff`,
   - `X-Frame-Options: DENY`,
   - `Referrer-Policy: no-referrer`.
