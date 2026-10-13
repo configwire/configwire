@@ -196,13 +196,9 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 		flagIDs = append(flagIDs, fr.Id)
 	}
 
-	ruleRecs := []*core.Record{}
-	if len(flagIDs) > 0 {
-		recs, ferr := app.FindRecordsByFilter("rules", "flag ?= {:flags}", "", 0, 0, dbx.Params{"flags": flagIDs})
-		if ferr != nil {
-			return snap, ferr
-		}
-		ruleRecs = recs
+	ruleRecs, err := findFlagScopedRecords(app, "rules", flagIDs)
+	if err != nil {
+		return snap, err
 	}
 	rulesByFlag := map[string][]SnapshotRule{}
 	for _, rr := range ruleRecs {
@@ -237,13 +233,9 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 		return snap.Flags[i].Key < snap.Flags[j].Key
 	})
 
-	expRecs := []*core.Record{}
-	if len(flagIDs) > 0 {
-		recs, ferr := app.FindRecordsByFilter("experiments", "flag ?= {:flags}", "", 0, 0, dbx.Params{"flags": flagIDs})
-		if ferr != nil {
-			return snap, ferr
-		}
-		expRecs = recs
+	expRecs, err := findFlagScopedRecords(app, "experiments", flagIDs)
+	if err != nil {
+		return snap, err
 	}
 	flagProjects := make(map[string]string, len(flagRecs))
 	for _, fr := range flagRecs {
@@ -267,6 +259,26 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 	})
 
 	return snap, nil
+}
+
+// findFlagScopedRecords returns every row of collection whose single-select
+// `flag` relation (MaxSelect 1, plain id column) is one of flagIDs, via one
+// indexed IN query. FindRecordsByFilter cannot express this: its params are
+// stringified before parsing, so a []string would become a single JSON-array
+// string literal and silently match zero rows.
+func findFlagScopedRecords(app core.App, collection string, flagIDs []string) ([]*core.Record, error) {
+	if len(flagIDs) == 0 {
+		return []*core.Record{}, nil
+	}
+	args := make([]any, len(flagIDs))
+	for i, id := range flagIDs {
+		args[i] = id
+	}
+	recs := []*core.Record{}
+	if err := app.RecordQuery(collection).AndWhere(dbx.In("flag", args...)).All(&recs); err != nil {
+		return nil, err
+	}
+	return recs, nil
 }
 
 // ResolveExperimentFlag decides whether one experiment row belongs in
