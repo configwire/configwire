@@ -56,7 +56,7 @@ const (
 // DB-free so rollup math is unit-testable on fake rows.
 type EventRow struct {
 	EnvID   string
-	Flag    string // verbatim flag key ("" when the column is absent/unset — GetString reads both "" and NULL as "")
+	Flag    string // flag record ID ("" when the relation is absent/unset — GetString reads both "" and NULL as "")
 	Kind    string // "fetch" | "exposure"
 	Variant string // verbatim stored variant ("" possible, counted as-is)
 	Version int

@@ -172,10 +172,11 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	if r.Kind != "fetch" && r.Kind != "exposure" {
 		return ev, badRequest("invalid kind: must be \"fetch\" or \"exposure\".")
 	}
-	// Flag attribution is optional (absent means env-wide) and stored
-	// verbatim: ValidateBody is pure (no I/O), so resolving the key against
-	// the flags collection scoped to the env's project is not feasible here.
-	// Unknown keys are accepted and stored as-is for later attribution.
+	// Flag attribution is optional (absent means env-wide). ValidateBody
+	// is pure (no I/O), so it accepts the verbatim key here; the handler
+	// resolves it against the flags collection scoped to the env's
+	// project (key + project) before enqueue, storing the record ID, or
+	// leaving the flag relation unset for unknown keys.
 	if len([]rune(r.Flag)) > MaxFlagLen {
 		return ev, badRequest("flag too long: max 64 chars.")
 	}

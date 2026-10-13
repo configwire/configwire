@@ -12,13 +12,15 @@ import (
 	"github.com/pocketbase/pocketbase/tests"
 )
 
-// flagIgnoranceApp builds a TestApp with the four collections getStats
-// reads: environments, events, event_daily, releases. Relation targets
-// are plain text holding the env id: the loaders only read them via
+// flagIgnoranceApp builds a TestApp with the five collections getStats
+// reads: environments, flags, events, event_daily, releases. Relation targets
+// are plain text holding the env/flag ids: the loaders only read them via
 // GetString, exactly like the handler path. event_daily stays empty so
 // the 7d window is events-only (approximate:false) and timing-flake-proof.
 //
-// Seeded rows carry distinct flags so per-flag filtering is provable:
+// Production stores events/event_daily flag as a relation ID, so seeded
+// rows carry flag record IDs (not keys) and the flags collection maps
+// verbatim ?flag= keys back to those IDs scoped to project p1.
 // exp_bool gets 2 fetches (v1) + exposures control:1 treatment:1;
 // other_flag gets 1 fetch (v1) + 1 exposure (treatment). Env-wide that
 // is 3 fetches + 3 exposures = 6 total.
@@ -91,6 +93,19 @@ func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 		t.Fatalf("save releases collection: %v", err)
 	}
 
+	flags := core.NewBaseCollection("flags")
+	for _, f := range []string{
+		`{"type":"text","name":"project"}`,
+		`{"type":"text","name":"key"}`,
+	} {
+		if err := flags.Fields.AddMarshaledJSON([]byte(f)); err != nil {
+			t.Fatalf("add flags field %s: %v", f, err)
+		}
+	}
+	if err := app.Save(flags); err != nil {
+		t.Fatalf("save flags collection: %v", err)
+	}
+
 	// One unambiguous env row: no ?project= needed.
 	envCol, err := app.FindCollectionByNameOrId("environments")
 	if err != nil {
@@ -103,6 +118,25 @@ func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 		t.Fatalf("save env: %v", err)
 	}
 	envID := envRec.Id
+
+	// Flag records scoped to project p1: getStats resolves verbatim
+	// ?flag= keys to these IDs; events carry the IDs (relation model).
+	flagsCol, err := app.FindCollectionByNameOrId("flags")
+	if err != nil {
+		t.Fatalf("find flags: %v", err)
+	}
+	flagIDOf := func(key string) string {
+		t.Helper()
+		rec := core.NewRecord(flagsCol)
+		rec.Set("project", "p1")
+		rec.Set("key", key)
+		if err := app.Save(rec); err != nil {
+			t.Fatalf("save flag %s: %v", key, err)
+		}
+		return rec.Id
+	}
+	expBoolID := flagIDOf("exp_bool")
+	otherFlagID := flagIDOf("other_flag")
 
 	// Fresh rows far from the 7d cutoff, scoped to distinct flags.
 	// No userHash field: loadRows never reads it.
@@ -124,12 +158,12 @@ func flagIgnoranceApp(t *testing.T) (*tests.TestApp, string) {
 			t.Fatalf("save event: %v", err)
 		}
 	}
-	seed("exp_bool", "fetch", "", 1)
-	seed("exp_bool", "fetch", "", 1)
-	seed("exp_bool", "exposure", "control", 1)
-	seed("exp_bool", "exposure", "treatment", 1)
-	seed("other_flag", "fetch", "", 1)
-	seed("other_flag", "exposure", "treatment", 1)
+	seed(expBoolID, "fetch", "", 1)
+	seed(expBoolID, "fetch", "", 1)
+	seed(expBoolID, "exposure", "control", 1)
+	seed(expBoolID, "exposure", "treatment", 1)
+	seed(otherFlagID, "fetch", "", 1)
+	seed(otherFlagID, "exposure", "treatment", 1)
 
 	relCol, err := app.FindCollectionByNameOrId("releases")
 	if err != nil {

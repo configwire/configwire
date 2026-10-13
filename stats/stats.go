@@ -8,8 +8,12 @@
 //
 // SINCE GRAMMAR: ?since=<N>d (days), default 7d when absent, clamped to a
 // max of 90d. Malformed values (abc, -5d, 0d, 7h, bare numbers) -> 400.
-// FLAG FILTER: ?flag=<key> scopes counts to one flag (verbatim match,
-// max 64 chars, longer -> 400); absent/empty stays env-wide. Unknown
+// FLAG FILTER: ?flag=<key> scopes counts to one flag (max 64 chars,
+// longer -> 400); absent/empty stays env-wide. The verbatim key is
+// resolved once per request to the stored flag record ID scoped to the
+// env's project (key + project, never global key) and the ID — never
+// the verbatim key — is what rows/buckets are matched against, so
+// renamed/orphaned flags keep their history. Unknown
 // flags answer zeros with flagFound:false. Auth is superuser-only via
 // apis.RequireSuperuserAuth().
 //
@@ -311,6 +315,22 @@ func FlagFound(rows []EventRow, buckets []purge.Rollup, envID string, eventCutof
 	return false
 }
 
+// resolveFlagID maps a verbatim ?flag= key to its stored flag record ID,
+// scoped to the stats env's project (key + project, never global key).
+// Events and event_daily carry the flag relation ID, never the key, so
+// callers must match rows against the returned ID. ok=false reports an
+// unknown key, which answers zeros with flagFound:false (never 404).
+func resolveFlagID(app core.App, projectID, key string) (id string, ok bool, err error) {
+	recs, err := app.FindRecordsByFilter("flags", "project = {:project} && key = {:key}", "", 1, 0, dbx.Params{"project": projectID, "key": key})
+	if err != nil {
+		return "", false, err
+	}
+	if len(recs) == 0 {
+		return "", false, nil
+	}
+	return recs[0].Id, true, nil
+}
+
 // Register mounts the admin stats route (superuser-only; SDK keys -> 401).
 func Register(se *core.ServeEvent) {
 	se.Router.GET("/api/v1/admin/env/{env}/stats", getStats).Bind(apis.RequireSuperuserAuth())
@@ -339,23 +359,45 @@ func getStats(re *core.RequestEvent) error {
 	if ferr != nil {
 		return re.BadRequestError(ferr.Error(), nil)
 	}
+	// Resolve the verbatim ?flag= key once per request to the stored
+	// flag record ID scoped to the env's project. flag stays the
+	// verbatim request value for echo; flagFilter is the resolved ID
+	// passed to every aggregate. Unknown keys skip the row loads and
+	// fall through on empty inputs: zeros with flagFound:false.
+	flagFilter := ""
+	flagResolved := true
+	if flag != "" {
+		id, ok, rerr := resolveFlagID(re.App, env.GetString("project"), flag)
+		if rerr != nil {
+			return rerr
+		}
+		if !ok {
+			flagResolved = false
+		} else {
+			flagFilter = id
+		}
+	}
 	now := time.Now().UTC()
 	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
 	horizon := HorizonFor(now)
 	cutoffDay := purge.DayBucket(cutoff)
 
 	eventCutoff := EventCutoffFor(cutoff, horizon)
-	rows, err := loadRows(re.App, env.Id, eventCutoff)
-	if err != nil {
-		return err
+	var rows []EventRow
+	var buckets []purge.Rollup
+	if flagResolved {
+		var err error
+		rows, err = loadRows(re.App, env.Id, eventCutoff)
+		if err != nil {
+			return err
+		}
+		buckets, err = loadRollups(re.App, env.Id, cutoffDay, horizon)
+		if err != nil {
+			return err
+		}
 	}
-	stEvents := Aggregate(rows, env.Id, eventCutoff, flag)
-
-	buckets, err := loadRollups(re.App, env.Id, cutoffDay, horizon)
-	if err != nil {
-		return err
-	}
-	stRollups := AggregateRollups(buckets, env.Id, cutoffDay, horizon, flag)
+	stEvents := Aggregate(rows, env.Id, eventCutoff, flagFilter)
+	stRollups := AggregateRollups(buckets, env.Id, cutoffDay, horizon, flagFilter)
 	st := MergeStats(stEvents, stRollups)
 
 	eventsTotal := TotalFor(stEvents)
@@ -375,8 +417,8 @@ func getStats(re *core.RequestEvent) error {
 	// exactly one series day, so series sums equal totals (scoped to the
 	// flag too when ?flag= is set).
 	daysList := SeriesDays(cutoffDay, now)
-	evMap := BuildEventSeries(rows, env.Id, eventCutoff, flag)
-	roMap := BuildRollupSeries(buckets, env.Id, cutoffDay, horizon, flag)
+	evMap := BuildEventSeries(rows, env.Id, eventCutoff, flagFilter)
+	roMap := BuildRollupSeries(buckets, env.Id, cutoffDay, horizon, flagFilter)
 	series := MergeSeries(evMap, roMap, daysList)
 
 	resp := map[string]any{
@@ -393,7 +435,7 @@ func getStats(re *core.RequestEvent) error {
 		"series":      series,
 	}
 	if flag != "" {
-		resp["flagFound"] = FlagFound(rows, buckets, env.Id, eventCutoff, cutoffDay, horizon, flag)
+		resp["flagFound"] = FlagFound(rows, buckets, env.Id, eventCutoff, cutoffDay, horizon, flagFilter)
 	}
 	return re.JSON(http.StatusOK, resp)
 }
