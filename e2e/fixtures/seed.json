@@ -58,7 +58,8 @@
   },
   "sdkKey": { "fetchRps": 1667, "ingestRps": 1667 },
   "fetchCtx": {
-    "uid": "e2e-user-7",
+    "userHash": "bacd0e96cef6e162",
+    "_comment": "sha256hex16(e2e-user-7): printf %s e2e-user-7 | sha256sum | cut -c1-16; raw uid never sent",
     "platform": "ios",
     "appVersion": "2.1.0"
   },

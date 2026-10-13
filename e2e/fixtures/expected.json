@@ -4,6 +4,9 @@
     "welcome_text": "ios-hello",
     "max_items": 20,
     "home_config": { "a": 1 },
+    "userHash": "bacd0e96cef6e162",
+    "_variantComment": "oracle Bucket(userHash+e2e-seed-1)%10000=163 -> control (50/50); pinned for hashed identity, stickiness asserted live across fetch1/fetch2",
+    "exp_bool_variant": "control",
     "exp_bool_values_by_variant": { "control": false, "treatment": true }
   },
   "stage3_stats": {
