@@ -3,6 +3,53 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.9 — 2026-10-13
+
+### Added
+
+- Canonical fetch identity `?userHash=` with deprecated `?uid=` compat
+  window (`fetch/fetch.go`, `eval/eval.go`, `docs/CONTRACT.md`,
+  `docs/SECURITY.md`): `userHash` is strict `^[0-9a-f]{16}$`
+  (`hex(sha256(uid))[:16]` lowercase) when non-empty; `eval.Context.UserID`
+  renamed to `UserHash` (bucket formula unchanged:
+  `fnv64a(userHash + seed) % 10000`). During the window the server
+  hashes a trimmed non-empty `uid` to `userHash` semantics when
+  `userHash` is absent/empty, `userHash` wins when valid, malformed
+  `userHash` answers `400` even with `uid` present, and every `200`/`304`
+  with non-empty trimmed `uid` stamps `X-CW-Deprecated-uid: true`
+  (plus PII-free log/counter) so callers can find legacy senders. At
+  sunset (next server major) any raw `?uid=` presence answers `400`.
+  Requires Dart `^0.3.0` / Flutter `^0.2.0` (hash-only clients);
+  **upgrade the server first** — pre-window servers treat hash-only
+  fetches as anonymous. E2E Stage 2N covers dual-accept
+  (`scripts/e2e.sh`).
+- Docs: compat window, precedence, and sunset wording plus
+  `userHash` examples (`docs/CONTRACT.md`, `docs/SECURITY.md`,
+  `docs/ROTATION.md`, `README.md`, `profile/README.md`,
+  `scripts/k6-fetch.js`, `website/guide.html`, `website/index.html`).
+
+### Fixed
+
+- Publish snapshot dropped all rules/experiments when flags existed
+  (`releases/snapshot.go`): `FindRecordsByFilter` stringified the
+  `[]string` flag-ID list into a single JSON-array literal and matched
+  zero rows. Both `rules` and `experiments` loads now use one indexed
+  `IN` via `dbx.In("flag", ...)` (`findFlagScopedRecords`).
+
+### Migration notes (0.1.x → 0.1.9)
+
+1. Upgrade the server first (dual-accept window keeps old `?uid=`
+   clients working with the deprecation header); then upgrade Dart to
+   `^0.3.0` / Flutter to `^0.2.0`.
+2. Key rules off `UserHash`, not raw `uid`; compute migration-side as
+   `hex(sha256(uid))[:16]` lowercase (trim spaces before hashing).
+3. Watch `X-CW-Deprecated-uid: true` to find callers still sending
+   `uid` and switch them to `userHash`.
+4. Go callers: rename `UserID` → `UserHash` and handle the new `bool`
+   (deprecated-`uid`-used) return from `BuildContext`; never send both
+   expecting a merge — valid `userHash` wins, bad `userHash` never
+   falls back.
+
 ## v0.1.8 — 2026-10-13
 
 ### Changed
