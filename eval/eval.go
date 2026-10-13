@@ -14,14 +14,14 @@
 //	    (unknown field/op, bad semver, missing seed, unknown attr)
 //	    makes that condition false -> fallthrough to default.
 //
-//	Assign(exp Experiment, userID string) string
-//	  - Sticky by construction: pure function of (userID, exp.Seed).
-//	  - Empty userID or empty Variants -> exp.DefaultVariant.
-//	  - Else variant = cumulative weightBps mapping of Bucket(userID, Seed).
+//	Assign(exp Experiment, userHash string) string
+//	  - Sticky by construction: pure function of (userHash, exp.Seed).
+//	  - Empty userHash or empty Variants -> exp.DefaultVariant.
+//	  - Else variant = cumulative weightBps mapping of Bucket(userHash, Seed).
 //
-//	Bucket(userID, seed string) int
-//	  - Formula: int(fnv64a(userID+seed) % 10000), range 0..9999.
-//	  - Empty userID or empty seed -> -1 (invalid; callers treat as false).
+//	Bucket(userHash, seed string) int
+//	  - Formula: int(fnv64a(userHash+seed) % 10000), range 0..9999.
+//	  - Empty userHash or empty seed -> -1 (invalid; callers treat as false).
 //
 // Condition JSON schema (field -> allowed ops):
 //
@@ -37,9 +37,9 @@
 //	{"field":"country","op":"==|!=|contains|regex","value":"US"}
 //	  == is exact (no implicit prefix: "en" != "en-US"; use contains).
 //	{"field":"percentile","op":"<=|between","value":5000| [lo,hi],"seed":"rollout-1"}
-//	  Bucketed via Bucket(ctx.UserID, cond.Seed or ctx.PercentileSeed).
+//	  Bucketed via Bucket(ctx.UserHash, cond.Seed or ctx.PercentileSeed).
 //	  <= is inclusive; between [lo,hi] is inclusive both ends.
-//	  Missing/empty seed or userID -> condition false.
+//	  Missing/empty seed or userHash -> condition false.
 //	{"field":"custom.<name>","op":"==|!=|<|<=|>|>=|contains|regex","value":...}
 //	  Flat lookup in ctx.CustomAttrs; missing key -> false; strict typed
 //	  compare (number/string/bool), type mismatch -> false (except
@@ -93,7 +93,7 @@ type Rule struct {
 
 // Context carries the request attributes Evaluate matches rules against.
 type Context struct {
-	UserID         string         `json:"userId"`
+	UserHash       string         `json:"userHash"`
 	Platform       string         `json:"platform"`
 	AppVersion     string         `json:"appVersion"`
 	Locale         string         `json:"locale"`
@@ -110,7 +110,7 @@ type Variant struct {
 	Values    map[string]any `json:"values,omitempty"`
 }
 
-// Experiment splits users across variants by Bucket(userID, Seed).
+// Experiment splits users across variants by Bucket(userHash, Seed).
 type Experiment struct {
 	ID             string    `json:"id"`
 	Seed           string    `json:"seed"`
@@ -132,13 +132,13 @@ func Evaluate(flag Flag, rules []Rule, ctx Context) any {
 	return flag.Default
 }
 
-// Assign returns the sticky variant for userID, or DefaultVariant when
-// userID is empty or Variants is empty.
-func Assign(exp Experiment, userID string) string {
-	if userID == "" || len(exp.Variants) == 0 {
+// Assign returns the sticky variant for userHash, or DefaultVariant when
+// userHash is empty or Variants is empty.
+func Assign(exp Experiment, userHash string) string {
+	if userHash == "" || len(exp.Variants) == 0 {
 		return exp.DefaultVariant
 	}
-	b := Bucket(userID, exp.Seed)
+	b := Bucket(userHash, exp.Seed)
 	if b < 0 || b > 9999 {
 		return exp.DefaultVariant
 	}
@@ -152,14 +152,14 @@ func Assign(exp Experiment, userID string) string {
 	return exp.DefaultVariant
 }
 
-// Bucket returns int(fnv64a(userID+seed)%10000) in 0..9999, or -1 when
-// userID or seed is empty.
-func Bucket(userID, seed string) int {
-	if userID == "" || seed == "" {
+// Bucket returns int(fnv64a(userHash+seed)%10000) in 0..9999, or -1 when
+// userHash or seed is empty.
+func Bucket(userHash, seed string) int {
+	if userHash == "" || seed == "" {
 		return -1
 	}
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(userID + seed))
+	_, _ = h.Write([]byte(userHash + seed))
 	return int(h.Sum64() % 10000)
 }
 
@@ -183,6 +183,7 @@ func ruleMatches(r Rule, ctx Context) (ok bool) {
 // matchCondition evaluates a single Condition against ctx. It never
 // panics: invalid input yields false, so ruleMatches treats the rule
 // as non-matching and evaluation falls through to the next rule.
+// NOTE: no uid/user branch exists — identity feeds only percentile/Assign; hashing changes no rule-equality semantics.
 func matchCondition(c Condition, ctx Context) (ok bool) {
 	defer func() {
 		if recover() != nil {
@@ -273,15 +274,15 @@ func matchVersionField(actual, op string, target any) bool {
 	}
 }
 
-// matchPercentile buckets via Bucket(ctx.UserID, cond.Seed or
-// ctx.PercentileSeed). Missing/empty seed or userID -> false.
+// matchPercentile buckets via Bucket(ctx.UserHash, cond.Seed or
+// ctx.PercentileSeed). Missing/empty seed or userHash -> false.
 // "<=" is inclusive; "between" [lo,hi] is inclusive on both ends.
 func matchPercentile(c Condition, ctx Context) bool {
 	seed := c.Seed
 	if seed == "" {
 		seed = ctx.PercentileSeed
 	}
-	b := Bucket(ctx.UserID, seed)
+	b := Bucket(ctx.UserHash, seed)
 	if b < 0 || b > 9999 {
 		return false
 	}

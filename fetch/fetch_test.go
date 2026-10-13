@@ -18,12 +18,12 @@ func query(raw string) url.Values {
 }
 
 func TestBuildContextFull(t *testing.T) {
-	q := query(`uid=u1&platform=android&appVersion=1.2.3&locale=en-US&country=US&attrs=%7B%22tier%22%3A%22pro%22%2C%22n%22%3A7%7D`)
-	ctx, err := BuildContext(q)
+	q := query(`userHash=0123456789abcdef&platform=android&appVersion=1.2.3&locale=en-US&country=US&attrs=%7B%22tier%22%3A%22pro%22%2C%22n%22%3A7%7D`)
+	ctx, _, err := BuildContext(q)
 	if err != nil {
 		t.Fatalf("BuildContext err = %v", err)
 	}
-	if ctx.UserID != "u1" || ctx.Platform != "android" || ctx.AppVersion != "1.2.3" ||
+	if ctx.UserHash != "0123456789abcdef" || ctx.Platform != "android" || ctx.AppVersion != "1.2.3" ||
 		ctx.Locale != "en-US" || ctx.Country != "US" {
 		t.Fatalf("scalar fields wrong: %+v", ctx)
 	}
@@ -33,11 +33,11 @@ func TestBuildContextFull(t *testing.T) {
 }
 
 func TestBuildContextEmpty(t *testing.T) {
-	ctx, err := BuildContext(query(``))
+	ctx, _, err := BuildContext(query(``))
 	if err != nil {
 		t.Fatalf("BuildContext err = %v", err)
 	}
-	if ctx.UserID != "" || len(ctx.CustomAttrs) != 0 {
+	if ctx.UserHash != "" || len(ctx.CustomAttrs) != 0 {
 		t.Fatalf("expected anonymous empty ctx, got %+v", ctx)
 	}
 }
@@ -53,7 +53,7 @@ func TestBuildContextAttrsEdges(t *testing.T) {
 		"empty-obj":  `attrs=%7B%7D`,
 		"nested-obj": `attrs=%7B%22a%22%3A%7B%22b%22%3A1%7D%7D`,
 	} {
-		ctx, err := BuildContext(query(raw))
+		ctx, _, err := BuildContext(query(raw))
 		switch name {
 		case "empty-obj", "nested-obj":
 			if err != nil {
@@ -70,7 +70,7 @@ func TestBuildContextAttrsEdges(t *testing.T) {
 func TestBuildContextAttrsOversized(t *testing.T) {
 	big := strings.Repeat("a", MaxAttrsBytes+1)
 	q := url.Values{"attrs": []string{`{"k":"` + big + `"}`}}
-	if _, err := BuildContext(q); err == nil {
+	if _, _, err := BuildContext(q); err == nil {
 		t.Fatalf("expected oversized error for %d-byte attrs", len(big))
 	} else if !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("oversized error should mention size, got %q", err)
@@ -80,7 +80,7 @@ func TestBuildContextAttrsOversized(t *testing.T) {
 	if len(at) != MaxAttrsBytes {
 		t.Fatalf("test setup wrong: len=%d", len(at))
 	}
-	if _, err := BuildContext(url.Values{"attrs": []string{at}}); err != nil {
+	if _, _, err := BuildContext(url.Values{"attrs": []string{at}}); err != nil {
 		t.Fatalf("at-bound attrs should parse, got %v", err)
 	}
 }
@@ -128,7 +128,7 @@ func fakeSnapshot() releases.Snapshot {
 
 func TestEvaluateSnapshotShaping(t *testing.T) {
 	snap := fakeSnapshot()
-	ctx := eval.Context{UserID: "user-42", Platform: "android"}
+	ctx := eval.Context{UserHash: "0123456789abcdef", Platform: "android"}
 	values, variants := EvaluateSnapshot(snap, ctx, "")
 
 	if values["welcome"] != "hello-android" {
@@ -140,7 +140,7 @@ func TestEvaluateSnapshotShaping(t *testing.T) {
 			{Name: "control", WeightBps: 5000},
 			{Name: "treatment", WeightBps: 5000},
 		},
-	}, "user-42")
+	}, "0123456789abcdef")
 	if variants["new_ui"] != wantVariant {
 		t.Errorf("variant = %q, want Assign %q", variants["new_ui"], wantVariant)
 	}
@@ -168,7 +168,7 @@ func TestEvaluateSnapshotControlPaths(t *testing.T) {
 		t.Errorf("anonymous overlay value = %v, want base false", values["new_ui"])
 	}
 	// exp override forces the control path even for an assigned user.
-	values, variants = EvaluateSnapshot(snap, eval.Context{UserID: "user-42"}, "draft")
+	values, variants = EvaluateSnapshot(snap, eval.Context{UserHash: "0123456789abcdef"}, "draft")
 	if values["new_ui"] != false {
 		t.Errorf("draft override value = %v, want base false", values["new_ui"])
 	}
@@ -247,7 +247,7 @@ func TestEvaluateSnapshotCorruptRulesFailClosed(t *testing.T) {
 			},
 		},
 	}
-	values, _ := EvaluateSnapshot(snap, eval.Context{Platform: "android", UserID: "u1"}, "")
+	values, _ := EvaluateSnapshot(snap, eval.Context{Platform: "android", UserHash: "0123456789abcdef"}, "")
 	if values["risky"] != false {
 		t.Errorf("corrupt rules must match nobody (fail closed), got %v", values["risky"])
 	}

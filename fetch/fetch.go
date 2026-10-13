@@ -1,6 +1,6 @@
 // Package fetch implements the SDK delivery endpoint.
 //
-//	GET /api/v1/env/:env/config?platform=&appVersion=&locale=&country=&uid=&attrs=<json>&exp=<status>
+//	GET /api/v1/env/:env/config?platform=&appVersion=&locale=&country=&userHash=&attrs=<json>&exp=<status>
 //
 // FETCH CONTRACT:
 //   - Auth: X-ConfigWire-Key via ingest.RequireSDKKey reuse. Unknown, missing,
@@ -29,11 +29,13 @@
 //     {"version","etag","values":{key:typed},"variants":{key:variant},
 //     "fetchAt":rfc3339}. A flag whose snapshot default has an unexpected
 //     shape is served as-is (publish-time validation already coerced it).
-//   - Context: uid->UserID (absent -> anonymous: rules still evaluate,
+//   - Context: userHash->UserHash (absent -> anonymous: rules still evaluate,
 //     Assign falls back to DefaultVariant), platform/appVersion/locale/
 //     country passed through (appVersion=not-semver -> condition false ->
 //     defaults fallthrough, still 200, never 400), attrs=<json> parsed as a
-//     flat map for custom.* conditions.
+//     flat map for custom.* conditions. Canonical ?userHash= wins (16
+//     lowercase hex when present); legacy ?uid= is hashed server-side as
+//     fallback, flagged deprecated (Task 2 header owns the wire).
 //   - attrs error policy: malformed attrs (invalid JSON, or valid JSON that
 //     is not an object) -> 400 documented; attrs longer than 8192 bytes ->
 //     414 documented. Missing attrs -> empty custom map (anonymous attrs).
@@ -51,10 +53,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/configwire/configwire/eval"
@@ -74,6 +78,19 @@ const MaxAttrsBytes = 8192
 const emptyReleaseEtag = "none"
 
 const allowHeaders = "X-ConfigWire-Key, If-None-Match"
+
+// deprecatedUidFallbackTotal counts process-local ?uid= fallback uses.
+var deprecatedUidFallbackTotal atomic.Uint64
+
+// markDeprecatedUid stamps the compat header + PII-free log/counter.
+// It takes the header (not the request event) so the shared stamping logic
+// stays unit-testable; callers pass re.Response.Header(). Never logs
+// uid/hash values.
+func markDeprecatedUid(h http.Header) {
+	h.Set("X-CW-Deprecated-uid", "true")
+	deprecatedUidFallbackTotal.Add(1)
+	log.Printf("fetch: deprecated ?uid= fallback used (compat window; send userHash)")
+}
 
 // setFetchCacheHeaders stamps private cache headers on fetch 200/304
 // responses. Private because responses vary per SDK key + encoding.
@@ -108,15 +125,45 @@ func optionsConfig(re *core.RequestEvent) error {
 	return re.NoContent(http.StatusNoContent)
 }
 
+// isValidUserHash reports whether s matches ^[0-9a-f]{16}$.
+func isValidUserHash(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // BuildContext maps fetch query params onto an eval.Context purely (no I/O),
-// so it is unit-testable. uid->UserID; platform/appVersion/locale/country
-// pass through untouched (invalid values evaluate to false downstream, never
-// 400 here); attrs must be absent or a JSON object (flat map for custom.*);
-// malformed attrs or attrs over MaxAttrsBytes -> error (caller maps to
-// 400/414). Missing uid/attrs -> anonymous context (empty UserID/customs).
-func BuildContext(q url.Values) (eval.Context, error) {
+// so it is unit-testable. Precedence: canonical ?userHash= wins when valid
+// (16 lowercase hex); legacy ?uid= is hashed server-side via
+// eval.HashUserID as fallback when userHash is absent/empty (spaces-trimmed);
+// both absent/empty -> anonymous context (empty UserHash/customs).
+// It also reports deprecatedUidUsed (true when trimmed ?uid= is non-empty,
+// even when canonical userHash wins). An invalid (non-empty, non-16-hex)
+// ?userHash= is an error even with ?uid= present.
+// platform/appVersion/locale/country pass through untouched (invalid values
+// evaluate to false downstream, never 400 here); missing/empty userHash ->
+// anonymous context (empty UserHash/customs); malformed userHash, malformed
+// attrs, or attrs over MaxAttrsBytes -> error (caller maps to 400/414).
+// Missing userHash/attrs -> anonymous context (empty UserHash/customs).
+func BuildContext(q url.Values) (eval.Context, bool, error) {
+	h := strings.TrimSpace(q.Get("userHash"))
+	if h != "" && !isValidUserHash(h) {
+		return eval.Context{}, false, fmt.Errorf("invalid userHash: must be 16 lowercase hex.")
+	}
+	uid := strings.TrimSpace(q.Get("uid"))
+	deprecatedUidUsed := uid != ""
+	if h == "" && uid != "" {
+		h = eval.HashUserID(uid)
+	}
 	ctx := eval.Context{
-		UserID:      q.Get("uid"),
+		UserHash:    h,
 		Platform:    q.Get("platform"),
 		AppVersion:  q.Get("appVersion"),
 		Locale:      q.Get("locale"),
@@ -125,22 +172,22 @@ func BuildContext(q url.Values) (eval.Context, error) {
 	}
 	raw := q.Get("attrs")
 	if raw == "" {
-		return ctx, nil
+		return ctx, deprecatedUidUsed, nil
 	}
 	if len(raw) > MaxAttrsBytes {
-		return ctx, fmt.Errorf("attrs too large: max %d bytes", MaxAttrsBytes)
+		return ctx, false, fmt.Errorf("attrs too large: max %d bytes", MaxAttrsBytes)
 	}
 	var m map[string]any
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.UseNumber()
 	if err := dec.Decode(&m); err != nil {
-		return ctx, fmt.Errorf("malformed attrs: not a JSON object")
+		return ctx, false, fmt.Errorf("malformed attrs: not a JSON object")
 	}
 	if m == nil {
-		return ctx, fmt.Errorf("malformed attrs: not a JSON object")
+		return ctx, false, fmt.Errorf("malformed attrs: not a JSON object")
 	}
 	ctx.CustomAttrs = m
-	return ctx, nil
+	return ctx, deprecatedUidUsed, nil
 }
 
 // expOverride returns ?exp= only when CONFIGWIRE_ENABLE_EXP_OVERRIDE==1, else "".
@@ -320,7 +367,7 @@ func getConfig(re *core.RequestEvent) error {
 		return err
 	}
 
-	ctx, cerr := BuildContext(re.Request.URL.Query())
+	ctx, deprecatedUid, cerr := BuildContext(re.Request.URL.Query())
 	if cerr != nil {
 		if len(re.Request.URL.Query().Get("attrs")) > MaxAttrsBytes {
 			return re.JSON(http.StatusRequestURITooLong, map[string]any{"message": cerr.Error(), "status": http.StatusRequestURITooLong})
@@ -334,6 +381,9 @@ func getConfig(re *core.RequestEvent) error {
 	}
 	if rel == nil {
 		setFetchCacheHeaders(re)
+		if deprecatedUid {
+			markDeprecatedUid(re.Response.Header())
+		}
 		return re.JSON(http.StatusOK, map[string]any{
 			"version":  0,
 			"etag":     emptyReleaseEtag,
@@ -347,6 +397,9 @@ func getConfig(re *core.RequestEvent) error {
 	re.Response.Header().Set("ETag", etag)
 	if EtagMatches(re.Request.Header.Get("If-None-Match"), etag) {
 		setFetchCacheHeaders(re)
+		if deprecatedUid {
+			markDeprecatedUid(re.Response.Header())
+		}
 		return re.NoContent(http.StatusNotModified)
 	}
 
@@ -358,6 +411,9 @@ func getConfig(re *core.RequestEvent) error {
 
 	values, variants := EvaluateSnapshot(snap, ctx, expOverride(re.Request.URL.Query()))
 	setFetchCacheHeaders(re)
+	if deprecatedUid {
+		markDeprecatedUid(re.Response.Header())
+	}
 	return re.JSON(http.StatusOK, map[string]any{
 		"version":  rel.GetInt("version"),
 		"etag":     etag,

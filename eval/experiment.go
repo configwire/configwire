@@ -38,7 +38,7 @@ func ValidateExperiment(exp Experiment) error {
 // Lookup rule: base = Evaluate(flag, rules, ctx). When status != "running"
 // the base is returned untouched with variant = exp.DefaultVariant
 // (covers draft, stopped, empty, and any unknown status string).
-// When running, variant = Assign(exp, ctx.UserID); the assigned Variant's
+// When running, variant = Assign(exp, ctx.UserHash); the assigned Variant's
 // Values map is consulted by flag key: Values[flag.Key] present -> coerced
 // to flag.Type via coerce and returned on success; absent or wrong-type ->
 // base rule value unchanged (fallthrough, never an error).
@@ -50,7 +50,7 @@ func EvaluateWithExperiment(flag Flag, rules []Rule, ctx Context, exp Experiment
 	if status != StatusRunning {
 		return base, exp.DefaultVariant
 	}
-	variant = Assign(exp, ctx.UserID)
+	variant = Assign(exp, ctx.UserHash)
 	for _, v := range exp.Variants {
 		if v.Name != variant {
 			continue

@@ -19,19 +19,19 @@ import (
 )
 
 // oracleBucket duplicates the contract formula so vectors stay
-// self-consistent: int(fnv64a(userID+seed) % 10000), identical to Bucket.
-func oracleBucket(userID, seed string) int {
+// self-consistent: int(fnv64a(userHash+seed) % 10000), identical to Bucket.
+func oracleBucket(userHash, seed string) int {
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(userID + seed))
+	_, _ = h.Write([]byte(userHash + seed))
 	return int(h.Sum64() % 10000)
 }
 
 // oracleVariant maps a bucket onto cumulative weightBps, mirroring Assign.
-func oracleVariant(exp Experiment, userID string) string {
-	if userID == "" || len(exp.Variants) == 0 {
+func oracleVariant(exp Experiment, userHash string) string {
+	if userHash == "" || len(exp.Variants) == 0 {
 		return exp.DefaultVariant
 	}
-	b := oracleBucket(userID, exp.Seed)
+	b := oracleBucket(userHash, exp.Seed)
 	if b < 0 || b > 9999 {
 		return exp.DefaultVariant
 	}
@@ -64,22 +64,22 @@ type vector struct {
 	rulesJSON      string
 	ctxJSON        string
 	experimentJSON string
-	userID         string
+	userHash       string
 	bucketUser     string
 	bucketSeed     string
 	wantJSON       string
 }
 
 const (
-	ctxAndroid   = `{"userId":"u-alex","platform":"android","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro","trial":true,"credits":120},"percentileSeed":"rollout-1"}`
-	ctxIOSPro    = `{"userId":"u-alex","platform":"ios","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro","trial":true,"credits":120},"percentileSeed":"rollout-1"}`
-	ctxIOSFreeEN = `{"userId":"u-alex","platform":"ios","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"free","trial":false,"credits":5},"percentileSeed":"rollout-1"}`
-	ctxIOSFreeFR = `{"userId":"u-alex","platform":"ios","appVersion":"9.9.9","locale":"fr-FR","country":"FR","customAttrs":{"tier":"free","trial":false,"credits":5},"percentileSeed":"rollout-1"}`
-	ctxBadVer    = `{"userId":"u-alex","platform":"android","appVersion":"not-semver","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
-	ctxUnknownPl = `{"userId":"u-alex","platform":"windowsphone","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
-	ctxCasePlat  = `{"userId":"u-alex","platform":"Android","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
-	ctxFR        = `{"userId":"u-alex","platform":"android","appVersion":"1.2.3","locale":"fr-FR","country":"FR","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
-	ctxNoSeed    = `{"userId":"u-alex","platform":"android","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":""}`
+	ctxAndroid   = `{"userHash":"u-alex","platform":"android","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro","trial":true,"credits":120},"percentileSeed":"rollout-1"}`
+	ctxIOSPro    = `{"userHash":"u-alex","platform":"ios","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro","trial":true,"credits":120},"percentileSeed":"rollout-1"}`
+	ctxIOSFreeEN = `{"userHash":"u-alex","platform":"ios","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"free","trial":false,"credits":5},"percentileSeed":"rollout-1"}`
+	ctxIOSFreeFR = `{"userHash":"u-alex","platform":"ios","appVersion":"9.9.9","locale":"fr-FR","country":"FR","customAttrs":{"tier":"free","trial":false,"credits":5},"percentileSeed":"rollout-1"}`
+	ctxBadVer    = `{"userHash":"u-alex","platform":"android","appVersion":"not-semver","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
+	ctxUnknownPl = `{"userHash":"u-alex","platform":"windowsphone","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
+	ctxCasePlat  = `{"userHash":"u-alex","platform":"Android","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
+	ctxFR        = `{"userHash":"u-alex","platform":"android","appVersion":"1.2.3","locale":"fr-FR","country":"FR","customAttrs":{"tier":"pro"},"percentileSeed":"rollout-1"}`
+	ctxNoSeed    = `{"userHash":"u-alex","platform":"android","appVersion":"1.2.3","locale":"en-US","country":"US","customAttrs":{"tier":"pro"},"percentileSeed":""}`
 	fStr         = `{"key":"welcome_msg","type":"string","default":"hello"}`
 	fNum         = `{"key":"credits","type":"number","default":0}`
 	fBool        = `{"key":"new_ui","type":"bool","default":false}`
@@ -135,10 +135,10 @@ func TestVectors(t *testing.T) {
 		{name: "unknown_attr/missing_custom_key", kind: "eval", flagJSON: fOld, rulesJSON: `[{"id":"r1","conditions":[{"field":"custom.vip","op":"==","value":true}],"value":"new"}]`, ctxJSON: ctxAndroid, wantJSON: `"old"`},
 		{name: "unknown_attr/unknown_op", kind: "eval", flagJSON: fOld, rulesJSON: `[{"id":"r1","conditions":[{"field":"platform","op":"FROBNICATE","value":"android"}],"value":"new"}]`, ctxJSON: ctxAndroid, wantJSON: `"old"`},
 		{name: "unknown_attr/empty_rules_default", kind: "eval", flagJSON: fOld, rulesJSON: `[]`, ctxJSON: ctxAndroid, wantJSON: `"old"`},
-		{name: "experiment/sticky_same_user_oracle", kind: "assign", experimentJSON: exp5050, userID: "sticky-sam", wantJSON: `$ORACLE`},
-		{name: "experiment/known_bucket_variant", kind: "assign", experimentJSON: exp5050, userID: "exp-rita", wantJSON: `$ORACLE`},
-		{name: "experiment/empty_user_fallthrough", kind: "assign", experimentJSON: exp5050, userID: "", wantJSON: `"control"`},
-		{name: "experiment/empty_variants_fallthrough", kind: "assign", experimentJSON: expEmpty, userID: "u-alex", wantJSON: `"control"`},
+		{name: "experiment/sticky_same_user_oracle", kind: "assign", experimentJSON: exp5050, userHash: "sticky-sam", wantJSON: `$ORACLE`},
+		{name: "experiment/known_bucket_variant", kind: "assign", experimentJSON: exp5050, userHash: "exp-rita", wantJSON: `$ORACLE`},
+		{name: "experiment/empty_user_fallthrough", kind: "assign", experimentJSON: exp5050, userHash: "", wantJSON: `"control"`},
+		{name: "experiment/empty_variants_fallthrough", kind: "assign", experimentJSON: expEmpty, userHash: "u-alex", wantJSON: `"control"`},
 		{name: "bucket/oracle_spot_check", kind: "bucket", bucketUser: "u-alex", bucketSeed: "rollout-1", wantJSON: `$BUCKETNUM`},
 	}
 	if len(table) < 40 {
@@ -168,15 +168,15 @@ func TestVectors(t *testing.T) {
 			case "assign":
 				var exp Experiment
 				mustJSON(t, tc.experimentJSON, &exp)
-				want := strings.ReplaceAll(tc.wantJSON, "$ORACLE", strconv.Quote(oracleVariant(exp, tc.userID)))
+				want := strings.ReplaceAll(tc.wantJSON, "$ORACLE", strconv.Quote(oracleVariant(exp, tc.userHash)))
 				var wantStr string
 				mustJSON(t, want, &wantStr)
-				got := Assign(exp, tc.userID)
-				if again := Assign(exp, tc.userID); again != got {
+				got := Assign(exp, tc.userHash)
+				if again := Assign(exp, tc.userHash); again != got {
 					t.Errorf("vector %s: sticky re-check flapped: %q vs %q", tc.name, got, again)
 				}
 				if got != wantStr {
-					t.Errorf("vector %s: user %q: got %q want oracle %q", tc.name, tc.userID, got, wantStr)
+					t.Errorf("vector %s: user %q: got %q want oracle %q", tc.name, tc.userHash, got, wantStr)
 				}
 			case "bucket":
 				want := strings.ReplaceAll(tc.wantJSON, "$BUCKETNUM",
@@ -200,7 +200,7 @@ func TestVectors(t *testing.T) {
 		b0 := Bucket("det-fixed-user", seed)
 		for i := 0; i < n; i++ {
 			if got := Bucket("det-fixed-user", seed); got != b0 {
-				t.Errorf("same userId+seed flapped on run %d: %d vs %d", i, got, b0)
+				t.Errorf("same userHash+seed flapped on run %d: %d vs %d", i, got, b0)
 				break
 			}
 		}

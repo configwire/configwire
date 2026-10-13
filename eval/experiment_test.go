@@ -38,7 +38,7 @@ func TestExperimentValidateWeights(t *testing.T) {
 func TestExperimentStatusPaths(t *testing.T) {
 	flag := Flag{Key: "welcome_msg", Type: "string", Default: "hello"}
 	rules := []Rule{{ID: "r1", Value: "rule-value"}} // zero conditions: vacuously matches
-	ctx := Context{UserID: "test-user-042"}
+	ctx := Context{UserHash: "test-user-042"}
 	exp := testExp5050()
 
 	for _, status := range []string{"draft", "stopped", "bogus-status", ""} {
@@ -52,7 +52,7 @@ func TestExperimentStatusPaths(t *testing.T) {
 	}
 
 	got, variant := EvaluateWithExperiment(flag, rules, ctx, exp, "running")
-	wantVariant := Assign(exp, ctx.UserID)
+	wantVariant := Assign(exp, ctx.UserHash)
 	if variant != wantVariant {
 		t.Errorf("running: got variant %q want Assign %q", variant, wantVariant)
 	}
@@ -65,7 +65,7 @@ func TestExperimentStatusPaths(t *testing.T) {
 func TestExperimentOverlayFallthrough(t *testing.T) {
 	flag := Flag{Key: "welcome_msg", Type: "string", Default: "hello"}
 	rules := []Rule{{ID: "r1", Value: "rule-value"}}
-	ctx := Context{UserID: "test-user-042"}
+	ctx := Context{UserHash: "test-user-042"}
 
 	absent := Experiment{
 		ID: "e", Seed: "exp-seed-1", DefaultVariant: "control",
