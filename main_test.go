@@ -136,6 +136,88 @@ func TestProjectDeleteCascadesDespiteLastEnvGuard(t *testing.T) {
 	}
 }
 
+func countEnvReleases(t *testing.T, app *tests.TestApp, envID string) int {
+	t.Helper()
+	recs, err := app.FindAllRecords("releases")
+	if err != nil {
+		t.Fatalf("list releases: %v", err)
+	}
+	n := 0
+	for _, r := range recs {
+		if r.GetString("env") == envID {
+			n++
+		}
+	}
+	return n
+}
+
+// seedRelease stores one releases row for env. Callers seed before
+// registerConfigwireHooks: the publish-only create guard would reject a
+// direct save once the production hooks are bound.
+func seedRelease(t *testing.T, app *tests.TestApp, envID string, version int, etag string) *core.Record {
+	t.Helper()
+	col, err := app.FindCollectionByNameOrId("releases")
+	if err != nil {
+		t.Fatalf("find releases: %v", err)
+	}
+	rec := core.NewRecord(col)
+	rec.Set("version", version)
+	rec.Set("etag", etag)
+	rec.Set("snapshot", `{"flags":[],"experiments":[]}`)
+	rec.Set("author", "test")
+	rec.Set("note", "test")
+	rec.Set("env", envID)
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save release: %v", err)
+	}
+	return rec
+}
+
+// TestProjectDeleteCascadesReleases pins the releases delete carve-out:
+// deleting a project that has environments AND releases succeeds (the
+// cascaded release deletes pass the publish-only guard once the parent
+// env row is gone), while a direct release delete with a live parent
+// env stays rejected as publish-only.
+func TestProjectDeleteCascadesReleases(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("NewTestApp: %v", err)
+	}
+	t.Cleanup(func() { app.Cleanup() })
+	pid := seedProject(t, app, "release-cascade")
+	env := seedEnv(t, app, pid, "dev")
+	seedRelease(t, app, env.Id, 1, "etag-1")
+	kept := seedRelease(t, app, env.Id, 2, "etag-2")
+	registerConfigwireHooks(app)
+
+	fresh, err := app.FindRecordById("releases", kept.Id)
+	if err != nil {
+		t.Fatalf("reload release: %v", err)
+	}
+	if err := app.Delete(fresh); err == nil {
+		t.Fatal("direct release delete succeeded, want publish-only refusal")
+	} else if lowered := strings.ToLower(err.Error()); !strings.Contains(lowered, "publish-only") {
+		t.Fatalf("delete error = %q, want it to mention publish-only", err)
+	}
+	if got := countEnvReleases(t, app, env.Id); got != 2 {
+		t.Fatalf("after blocked delete: %d releases, want both kept", got)
+	}
+
+	proj, err := app.FindRecordById("projects", pid)
+	if err != nil {
+		t.Fatalf("reload project: %v", err)
+	}
+	if err := app.Delete(proj); err != nil {
+		t.Fatalf("deleting the project: unexpected error %v", err)
+	}
+	if n := countProjectEnvs(t, app, pid); n != 0 {
+		t.Fatalf("after project delete: %d envs, want 0 (cascaded)", n)
+	}
+	if got := countEnvReleases(t, app, env.Id); got != 0 {
+		t.Fatalf("after project delete: %d releases, want 0 (cascaded)", got)
+	}
+}
+
 func TestCheckRuleRegexConditions(t *testing.T) {
 	if err := checkRuleRegexConditions(nil); err != nil {
 		t.Fatalf("nil condition should pass (shape is publish's gate): %v", err)

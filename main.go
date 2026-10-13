@@ -239,6 +239,12 @@ func registerConfigwireHooks(app core.App) {
 		if releases.IsInternalSaveCtx(e.Context) {
 			return e.Next()
 		}
+		// Cascaded deletes run after the parent env row is gone, so
+		// they pass through. Direct data-API deletes with a live
+		// parent env stay publish-only.
+		if _, err := e.App.FindRecordById("environments", e.Record.GetString("env")); err != nil {
+			return e.Next()
+		}
 		return releasesPublishOnly
 	})
 	app.OnRecordUpdate("releases").BindFunc(func(e *core.RecordEvent) error {
