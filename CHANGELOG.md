@@ -3,6 +3,39 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.8 — 2026-10-13
+
+### Changed
+
+- Per-flag attribution now stores the flags record ID scoped to the
+  event env's project instead of the verbatim key (`ingest/handler.go`,
+  `ingest/batcher.go`, `ingest/ingest.go`, `stats/stats.go`,
+  `purge/purge.go`): ingest resolves each distinct non-empty `flag`
+  key once per batch via one indexed `flags` lookup
+  (`project + key`, never global key) and stores the record ID; empty
+  keys stay env-wide with no lookup. Unknown keys, a missing `flags`
+  collection, or any lookup error degrade to an unset flag relation
+  (kind/variant preserved, counted env-wide) instead of failing the
+  batch. Stats `GET /api/v1/admin/env/{env}/stats?flag=X` resolves the
+  verbatim `?flag=` key once per request to the same project-scoped ID
+  and matches rows/buckets against the ID, so renamed flags keep their
+  history; unknown keys skip the row loads and answer zeros with
+  `flagFound: false`. No wire shape changes (`echo.flag` still echoes
+  the verbatim key, `>64 chars` still `400`).
+- Fresh installs start with PocketBase request/app logs (`_logs`)
+  disabled (`main.go`): `Logs.MaxDays = 0` is applied to the in-memory
+  defaults before start only when settings are new (first bootstrap
+  save); existing installs load the stored value and keep whatever the
+  superuser chose in `/_/` settings.
+
+### Fixed
+
+- Deleting a project that has environments with releases now succeeds
+  (`main.go`): the releases delete guard passes cascaded deletes
+  through once the parent env row is gone, while direct data-API
+  release deletes with a live parent env stay publish-only
+  (`main_test.go` covers both paths).
+
 ## v0.1.7 — 2026-10-12
 
 ### Added
