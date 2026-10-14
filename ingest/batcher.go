@@ -60,6 +60,10 @@ type Batcher struct {
 	// interleave and overflow the channel. The background drain only
 	// frees space, so it needs no lock.
 	admitMu sync.Mutex
+	// chunkHook is a test seam invoked once per flush chunk before its
+	// transaction; nil in production. Tests count chunks and inject a
+	// one-off chunk-transaction failure through it.
+	chunkHook func(chunk []StoredEvent) error
 }
 
 // NewBatcher builds (but does not start) a Batcher bound to app.
@@ -143,38 +147,85 @@ func (b *Batcher) run() {
 	}
 }
 
-// flush persists one batch with individual app.Save calls (per contract:
-// "via e.App saves"). A failed row is logged and skipped — one poison row
-// must not wedge the whole batch.
+// flushChunkSize bounds one flush transaction; a FlushSize batch lands in
+// at most two chunk transactions.
+const flushChunkSize = 250
+
+// flush persists one batch in per-250 RunInTransaction chunks (via
+// e.App saves on the tx app). A failed row is logged and skipped — one
+// poison row must not wedge the batch. On chunk-transaction failure the
+// chunk's rows are retried individually outside the transaction so the
+// good rows still commit; a whole 250-chunk is never skipped.
 func (b *Batcher) flush(items []StoredEvent) {
+	if len(items) == 0 {
+		return
+	}
 	col, err := b.app.FindCollectionByNameOrId("events")
 	if err != nil {
 		log.Printf("ingest: flush of %d events skipped: find events collection: %v", len(items), err)
 		return
 	}
 	failed := 0
-	for _, it := range items {
-		rec := core.NewRecord(col)
-		if it.EnvID != "" {
-			rec.Set("env", it.EnvID)
+	for _, chunk := range SplitBatch(items, 250) {
+		n, err := b.flushChunk(col, chunk)
+		if err != nil {
+			n = 0
+			for _, it := range chunk {
+				if serr := saveStoredEvent(b.app, col, it); serr != nil {
+					n++
+					log.Printf("ingest: save event failed (kind=%s variant=%s): %v", it.Kind, it.Variant, serr)
+				}
+			}
 		}
-		rec.Set("kind", it.Kind)
-		if it.Flag != "" {
-			rec.Set("flag", it.Flag)
-		}
-		rec.Set("variant", it.Variant)
-		rec.Set("userHash", it.UserHash)
-		rec.Set("version", it.Version)
-		rec.Set("ts", it.Ts)
-		if err := b.app.Save(rec); err != nil {
-			failed++
-			log.Printf("ingest: save event failed (kind=%s variant=%s): %v", it.Kind, it.Variant, err)
-		}
+		failed += n
 	}
 	b.total += int64(len(items) - failed)
 	if failed > 0 {
 		log.Printf("ingest: flushed %d events, %d failed", len(items), failed)
 	}
+}
+
+// flushChunk persists one chunk inside a single transaction, skipping
+// poison rows inline (logged) and committing the rest. It reports the
+// skipped-row count; a transaction error rolls the chunk back and the
+// caller retries rows individually.
+func (b *Batcher) flushChunk(col *core.Collection, chunk []StoredEvent) (int, error) {
+	if b.chunkHook != nil {
+		if err := b.chunkHook(chunk); err != nil {
+			return 0, err
+		}
+	}
+	failed := 0
+	if err := b.app.RunInTransaction(func(txApp core.App) error {
+		for _, it := range chunk {
+			if serr := saveStoredEvent(txApp, col, it); serr != nil {
+				failed++
+				log.Printf("ingest: save event failed (kind=%s variant=%s): %v", it.Kind, it.Variant, serr)
+			}
+		}
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	return failed, nil
+}
+
+// saveStoredEvent writes one validated event via the given app (process
+// app for retries, tx app inside a chunk transaction).
+func saveStoredEvent(app core.App, col *core.Collection, it StoredEvent) error {
+	rec := core.NewRecord(col)
+	if it.EnvID != "" {
+		rec.Set("env", it.EnvID)
+	}
+	rec.Set("kind", it.Kind)
+	if it.Flag != "" {
+		rec.Set("flag", it.Flag)
+	}
+	rec.Set("variant", it.Variant)
+	rec.Set("userHash", it.UserHash)
+	rec.Set("version", it.Version)
+	rec.Set("ts", it.Ts)
+	return app.Save(rec)
 }
 
 // SplitBatch bounds flush work; size <= 0 returns items as a single chunk.
