@@ -354,11 +354,20 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 	return n, nil
 }
 
-// CountOlderThan reports how many rows PurgeOlderThan would delete with
-// the same cutoff, with zero writes (dry-run path). It walks the same
-// indexed candidate sets with the same (ts,id)/(day,id) cursor paging and
-// applies the same exact predicates, so dry-count == live-deleted
-// structurally — and it never loads a whole collection into heap.
+// CountOlderThan reports how many PRE-EXISTING rows PurgeOlderThan would
+// delete with the same cutoff, with zero writes (dry-run path): doomed raw
+// rows (ShouldDelete) plus pre-existing stale event_daily rows (day
+// strictly before cutoff minus 60d). It walks the same indexed candidate
+// sets with the same (ts,id)/(day,id) cursor paging and applies the same
+// exact predicates — and it never loads a whole collection into heap.
+//
+// Live-run delta: PurgeOlderThan rolls each doomed raw page BEFORE deleting
+// it, and its trailing phase then deletes stale daily rows — including
+// buckets just rolled stale in THIS same run. So when doomed raw rows
+// predate the rollup cutoff (older than 90d when cutoff is now-30d),
+// live == dry + #new-stale-buckets swept same-run; when doomed raw rows
+// fall inside the rollup window their buckets stay fresh and live == dry
+// exactly.
 func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 	n := 0
 	eventBase, _ := eventPageParams(cutoff)

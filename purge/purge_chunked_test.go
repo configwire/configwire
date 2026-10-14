@@ -194,6 +194,69 @@ func TestCountOlderThanChunked(t *testing.T) {
 	}
 }
 
+// TestDryLiveDivergence pins the exact dry/live contract documented on
+// CountOlderThan: in-window doomed raw rows roll into FRESH buckets (kept),
+// so dry == live exactly; raw rows predating the rollup cutoff roll STALE
+// and are swept in the same run, so live == dry + #new-stale-buckets. Both
+// cases assert EXACT counts, and each live run converges to 0 on rerun.
+func TestDryLiveDivergence(t *testing.T) {
+	cutoff := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC) // ms-aligned
+
+	// Case A — in-window: 2 raw rows 35d old roll into a FRESH bucket.
+	inWindow := parityTestApp(t)
+	oldFresh := cutoff.AddDate(0, 0, -35)
+	seedEvent(t, inWindow, "e1", "fetch", "", oldFresh, true)
+	seedEvent(t, inWindow, "e1", "fetch", "", oldFresh.Add(time.Millisecond), true)
+	dryA, err := CountOlderThan(inWindow, cutoff)
+	if err != nil {
+		t.Fatalf("in-window CountOlderThan: %v", err)
+	}
+	if dryA != 2 {
+		t.Fatalf("in-window dry = %d, want exactly 2 (pre-existing doomed raw rows)", dryA)
+	}
+	liveA, err := PurgeOlderThan(inWindow, cutoff)
+	if err != nil {
+		t.Fatalf("in-window PurgeOlderThan: %v", err)
+	}
+	if liveA != dryA {
+		t.Fatalf("in-window live = %d, dry = %d; want live == dry exactly (fresh bucket kept)", liveA, dryA)
+	}
+	if rows := mustAllDaily(t, inWindow); len(rows) != 1 {
+		t.Fatalf("in-window event_daily rows = %d, want exactly 1 (fresh just-rolled bucket kept)", len(rows))
+	}
+	if rerun, err := PurgeOlderThan(inWindow, cutoff); err != nil || rerun != 0 {
+		t.Fatalf("in-window rerun = %d, err=%v; want 0 (converges)", rerun, err)
+	}
+
+	// Case B — pre-rollup-cutoff: 2 raw rows 100d old share one bucket, so
+	// exactly 1 new stale bucket is swept same-run: live == dry + 1.
+	stale := parityTestApp(t)
+	oldStale := cutoff.AddDate(0, 0, -100)
+	seedEvent(t, stale, "e1", "fetch", "", oldStale, true)
+	seedEvent(t, stale, "e1", "fetch", "", oldStale.Add(time.Millisecond), true)
+	dryB, err := CountOlderThan(stale, cutoff)
+	if err != nil {
+		t.Fatalf("stale CountOlderThan: %v", err)
+	}
+	if dryB != 2 {
+		t.Fatalf("stale dry = %d, want exactly 2 (pre-existing doomed raw rows only)", dryB)
+	}
+	liveB, err := PurgeOlderThan(stale, cutoff)
+	if err != nil {
+		t.Fatalf("stale PurgeOlderThan: %v", err)
+	}
+	const wantNewStaleBuckets = 1
+	if liveB != dryB+wantNewStaleBuckets {
+		t.Fatalf("stale live = %d, dry = %d; want live == dry + %d exactly (just-rolled stale bucket swept same-run)", liveB, dryB, wantNewStaleBuckets)
+	}
+	if rows := mustAllDaily(t, stale); len(rows) != 0 {
+		t.Fatalf("stale event_daily rows = %d, want 0 (just-rolled stale bucket swept same-run)", len(rows))
+	}
+	if rerun, err := PurgeOlderThan(stale, cutoff); err != nil || rerun != 0 {
+		t.Fatalf("stale rerun = %d, err=%v; want 0 (converges)", rerun, err)
+	}
+}
+
 // TestPurgeConverge pins crash-rerun convergence with per-page atomicity:
 // aborting mid-run (after page 1 commits) leaves partial progress on disk;
 // the rerun finishes the rest with no rollup double-count, and a further
