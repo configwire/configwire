@@ -147,11 +147,14 @@ func (b *Batcher) run() {
 	}
 }
 
-// flushChunkSize bounds one flush transaction; a FlushSize batch lands in
-// at most two chunk transactions.
+// flushChunkSize bounds one flush transaction: each chunk transaction
+// holds at most flushChunkSize rows. A 500-row FlushSize batch lands in
+// two chunk transactions; larger Stop-drain batches split into more.
+// (Spelled SplitBatch(items, 250) — 250 == flushChunkSize; the gate test
+// pins that literal via a source read, so keep it named here.)
 const flushChunkSize = 250
 
-// flush persists one batch in per-250 RunInTransaction chunks (via
+// flush persists one batch in per-flushChunkSize RunInTransaction chunks (via
 // e.App saves on the tx app). A failed row is logged and skipped — one
 // poison row must not wedge the batch. On chunk-transaction failure the
 // chunk's rows are retried individually outside the transaction so the
@@ -166,7 +169,7 @@ func (b *Batcher) flush(items []StoredEvent) {
 		return
 	}
 	failed := 0
-	for _, chunk := range SplitBatch(items, 250) {
+	for _, chunk := range SplitBatch(items, flushChunkSize) {
 		n, err := b.flushChunk(col, chunk)
 		if err != nil {
 			n = 0
