@@ -92,7 +92,7 @@ func writeAPIError(re *core.RequestEvent, aerr *apiError) error {
 // resolveFlagIDs maps each validated event's verbatim flag key to the
 // flags record ID scoped to the event env's project (key + project,
 // never global key): the same key under another project never matches.
-// Each distinct non-empty key costs one indexed lookup; empty keys stay
+// Each distinct non-empty key costs at most one indexed lookup (cached hot keys cost zero); empty keys stay
 // "" (env-wide) without a lookup. Unknown keys resolve to "" so the
 // event is stored with the flag relation unset (kind/variant preserved).
 // A missing flags collection or any lookup error degrades the same way
