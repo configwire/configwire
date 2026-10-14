@@ -577,9 +577,19 @@ Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.d
 Raw `events` rows live 30 days, daily `event_daily` rollups keyed
 `(day, env, flag, variant, version)` live 90 days. Cutoff is strictly-older-than
 (`ts` before cutoff deleted, exactly-equal kept, zero-ts kept).
-Rollup-before-delete runs in the same op (upsert then delete; a crash
-between them double-counts only the in-flight bucket on re-run, and a
-clean re-run converges to `deleted: 0`). Ref: `configwire/purge/purge.go:70-83,124-182`.
+Purge runs cursor-paged (2000 rows per short transaction, ordered by
+`(ts, id)` for raw events and `(day, id)` for stale rollups): each raw
+page is rolled up (that page's rows only) then deleted inside the same
+page transaction — rollup-before-delete per page, never one giant
+transaction — and stale daily rows are deleted page by page the same way.
+Upserts are bounded the same way (one page per transaction; a
+high-cardinality upsert splits into sub-batches instead of widening the
+transaction). Crash semantic is per-chunk atomic plus rerun convergence:
+a crash between pages leaves committed pages on disk and rolls the
+in-flight page back whole, so a re-run walks past the survivors and
+finishes them — already-rolled rows are gone, counters never double-add,
+and a clean re-run converges to `deleted: 0`. Ref: `configwire/purge/purge.go`
+(package doc) for the crash semantic, `PurgeOlderThan` for the paging.
 
 ## 12. Cloud SSO (tenant side)
 

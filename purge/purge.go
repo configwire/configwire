@@ -8,14 +8,20 @@
 // RawRetentionDays) are deleted too. Raw releases/rollups collections are
 // never touched — events only.
 //
-// CRASH SEMANTIC: the whole run (rollup upserts + raw deletes + stale
-// rollup deletes) commits atomically in one transaction, so a crash or a
-// mid-run failure can neither lose data nor double-count: partial upserts
-// never become visible, and a re-run simply retries the full batch.
-// Rollup-before-delete order is preserved inside the transaction. The
-// (day,env,flag,variant,version) KEY stays idempotent (one row per key, never
-// duplicates); re-running the purge converges (second run finds nothing
-// to delete).
+// CRASH SEMANTIC: each page commits atomically in its own short
+// transaction — raw pages as (rollup upserts of that page's rows +
+// deletes of those rows), stale-rollup pages as (deletes of that page's
+// rows) — so a crash or a mid-run failure can neither lose data nor
+// double-count: the aborted page rolls back whole (its rollup never
+// becomes visible without its deletes), committed pages stay on disk, and
+// a re-run walks past them via the same (ts,id)/(day,id) cursor and
+// finishes the rest. Already-rolled rows are gone, so counters never
+// double-add. Rollup-before-delete order is preserved inside every page
+// transaction. The (day,env,flag,variant,version) KEY stays idempotent
+// (one row per key, never duplicates); re-running the purge converges
+// (second run finds nothing to delete). On error PurgeOlderThan returns
+// (0, err) even though earlier pages may already be committed — rerun to
+// converge.
 //
 // DELETION NOTE (no GDPR export UI by design): purged raw rows carry only
 // userHash (never raw user ids — see ingest), and event_daily rows carry
@@ -161,6 +167,10 @@ func eventRangeExpr(cutoff time.Time) dbx.Expression {
 // (uses the event_daily(day) index). Same superset contract as
 // eventRangeExpr: callers re-apply the exact non-zero strict-before
 // verdict, so the deletion set matches the old full scan exactly.
+//
+// The paged path (dailyPageParams + pageFilter, LIMIT purgePageSize) is the
+// string-filter twin of this expression with the same superset contract;
+// this dbx form is kept as the contract reference.
 func rollupRangeExpr(rollupCutoff time.Time) dbx.Expression {
 	floor := rollupCutoff.UTC().Truncate(time.Millisecond)
 	return dbx.NewExp("day != '' AND day <= {:rc}", dbx.Params{"rc": dateParam(floor)})
@@ -269,7 +279,10 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 			if err := app.RunInTransaction(func(txApp core.App) error {
 				// Rollup BEFORE delete: no data-loss window beyond a crash
 				// (the aborted page rolls back whole — see Crash semantic).
-				if err := upsertRollups(txApp, BuildRollups(doomedRows)); err != nil {
+				// applyRollupBatch runs inside this page txn: its bucket
+				// count is bounded by the page's row count (<= purgePageSize),
+				// so the txn is never widened beyond the page.
+				if err := applyRollupBatch(txApp, BuildRollups(doomedRows)); err != nil {
 					return err
 				}
 				for _, r := range doomed {
@@ -289,26 +302,54 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 	}
 	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
 
-	if err := app.RunInTransaction(func(txApp core.App) error {
-		// Stale aggregates: event_daily rows older than 90d die too.
-		// (Paged delete loop lands with todo 3; logic untouched here.)
-		daily, err := txApp.FindAllRecords("event_daily", rollupRangeExpr(rollupCutoff))
+	// Stale aggregates: event_daily rows older than 90d die too, paged by
+	// (day, id) with LIMIT purgePageSize — the same keyset discipline as
+	// the raw path (dailyPageParams + pageFilter), one txn per page, with
+	// the per-row day recheck preserved exactly.
+	dailyBase, _ := dailyPageParams(rollupCutoff)
+	rcParam := dateParam(rollupCutoff.UTC().Truncate(time.Millisecond))
+	cursorVal, cursorID = "", ""
+	hasCursor = false
+	for {
+		params := dbx.Params{"rc": rcParam}
+		filter, params := pageFilter(dailyBase, params, "day", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("event_daily", filter, "day,id", purgePageSize, 0, params)
 		if err != nil {
-			return err
+			return 0, err
 		}
-		for _, r := range daily {
+		if len(page) == 0 {
+			break
+		}
+		var doomed []*core.Record
+		for _, r := range page {
 			day := r.GetDateTime("day").Time()
-			if day.IsZero() || !day.Before(rollupCutoff) {
-				continue
+			if !day.IsZero() && day.Before(rollupCutoff) {
+				doomed = append(doomed, r)
 			}
-			if err := txApp.Delete(r); err != nil {
-				return err
-			}
-			n++
 		}
-		return nil
-	}); err != nil {
-		return 0, err
+		last := page[len(page)-1]
+		cursorVal = dateParam(last.GetDateTime("day").Time())
+		cursorID = last.Id
+		hasCursor = true
+		if len(doomed) > 0 {
+			pageDeleted := 0
+			if err := app.RunInTransaction(func(txApp core.App) error {
+				for _, r := range doomed {
+					if err := txApp.Delete(r); err != nil {
+						return err
+					}
+					pageDeleted++
+				}
+				return nil
+			}); err != nil {
+				return 0, err
+			}
+			n += pageDeleted
+			log.Printf("purge: daily page deleted %d rows (cutoff %s)", pageDeleted, rollupCutoff.Format(time.RFC3339))
+		}
+		if len(page) < purgePageSize {
+			break
+		}
 	}
 	return n, nil
 }
@@ -379,15 +420,37 @@ func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 	return n, nil
 }
 
-// upsertRollups adds each bucket's counts onto the matching event_daily
+// upsertRollups adds buckets in purgePageSize sub-batches, each in its own
+// transaction, so a high-cardinality call never lands in one giant write
+// set. Callers already inside a page transaction use applyRollupBatch
+// directly so the page txn is never widened beyond the page.
+func upsertRollups(app core.App, buckets []Rollup) error {
+	for start := 0; start < len(buckets); start += purgePageSize {
+		end := start + purgePageSize
+		if end > len(buckets) {
+			end = len(buckets)
+		}
+		chunk := buckets[start:end]
+		if err := app.RunInTransaction(func(txApp core.App) error {
+			return applyRollupBatch(txApp, chunk)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyRollupBatch adds each bucket's counts onto the matching event_daily
 // row — found per bucket with an indexed find on (day,env,flag,variant,version)
 // (day as a [midnight,midnight+24h) range, which is exactly the old
 // Format("2006-01-02") equality for any stored time-of-day; env and flag match
 // ”-or-NULL exactly like the old GetString comparison) — or creates the
 // row when absent. Re-running with the same buckets converges to one row
 // per key — the upsert key is idempotent even though counters add (see
-// CRASH SEMANTIC).
-func upsertRollups(app core.App, buckets []Rollup) error {
+// CRASH SEMANTIC). Runs in the caller's transaction scope (a page txn via
+// PurgeOlderThan, or one sub-batch txn via upsertRollups) — it never opens
+// its own transaction, so it never widens the write set.
+func applyRollupBatch(app core.App, buckets []Rollup) error {
 	if len(buckets) == 0 {
 		return nil
 	}
