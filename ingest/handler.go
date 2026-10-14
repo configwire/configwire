@@ -15,9 +15,12 @@ var module struct {
 }
 
 // Register mounts the events ingest route and starts the flush pipeline.
+// It also registers the flag-ID cache eviction hooks so flag writes in
+// this process invalidate cached (project,key)->flagID mappings.
 func Register(se *core.ServeEvent) {
 	module.batcher = NewBatcher(se.App)
 	module.batcher.Start()
+	RegisterFlagCacheHooks(se.App)
 	se.Router.POST("/api/v1/env/{env}/events", postEvents)
 	se.App.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
 		module.batcher.Stop()
@@ -107,12 +110,19 @@ func resolveFlagIDs(app core.App, projectID string, events []EventIn) map[string
 		if _, done := out[ev.Flag]; done {
 			continue
 		}
+		if id, ok := flagCacheGet(projectID, ev.Flag); ok {
+			out[ev.Flag] = id
+			continue
+		}
+		flagLookupCalls.Add(1)
 		recs, err := app.FindRecordsByFilter("flags", "project = {:p} && key = {:k}", "", 1, 0, dbx.Params{"p": projectID, "k": ev.Flag})
 		if err != nil || len(recs) == 0 {
 			out[ev.Flag] = ""
+			flagCachePut(projectID, ev.Flag, "")
 			continue
 		}
 		out[ev.Flag] = recs[0].Id
+		flagCachePut(projectID, ev.Flag, recs[0].Id)
 	}
 	return out
 }
