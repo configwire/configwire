@@ -198,20 +198,22 @@ func countProjectFlags(app core.App, project string) (int64, error) {
 // are snapshot identity downstream (envresolve.MatchFlag is
 // first-match-wins), so two rows with the same key make evaluation
 // order-dependent. Same key in a different project stays allowed.
-// O(n) scan like checkEnvSlug; flag writes are rare admin ops.
+// Indexed pre-check (idx_flags_key_project) like countProjectFlags; flag
+// writes are rare admin ops. The Go hook stays authoritative — the
+// migration-16 UNIQUE index is a backstop only.
 func checkFlagKeyTaken(app core.App, rec *core.Record) error {
-	recs, err := app.FindAllRecords("flags")
+	dupes, err := app.FindRecordsByFilter("flags",
+		"project = {:p} && key = {:k} && id != {:id}", "", 1, 0,
+		dbx.Params{
+			"p":  rec.GetString("project"),
+			"k":  rec.GetString("key"),
+			"id": rec.Id,
+		})
 	if err != nil {
 		return err
 	}
-	for _, r := range recs {
-		if r.Id == rec.Id {
-			continue
-		}
-		if r.GetString("project") == rec.GetString("project") &&
-			r.GetString("key") == rec.GetString("key") {
-			return apis.NewBadRequestError("flag key already exists for this project", nil)
-		}
+	if len(dupes) > 0 {
+		return apis.NewBadRequestError("flag key already exists for this project", nil)
 	}
 	return nil
 }
