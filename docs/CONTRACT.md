@@ -375,6 +375,33 @@ Flush bound: buffered channel (cap 2048), flush every 1s or 500 rows;
 worst-case ingest lag about 1s plus write time (bounded at 2s).
 Ref: `configwire/ingest/ingest.go:25-28`.
 
+Flag-ID cache: `resolveFlagIDs` consults a process-local
+`(project, key) -> flags record ID` map before the indexed lookup, so
+each distinct hot key costs zero DB hits (one indexed
+`project = {:p} && key = {:k}` lookup per cold key at most).
+Ref: `configwire/ingest/flagcache.go:9-15` (header), `:53-84` (get/put),
+`configwire/ingest/handler.go:101-128` (`resolveFlagIDs`).
+
+- Cap 10000 entries, TTL 60s — same shape as the SDK-key fast cache,
+  separate map/mutex (never shared). Ref: `:27-34`.
+- Unknown keys are negative-cached as `""` with the same TTL, so
+  repeated unknown keys cost no DB hit; the event is stored with the
+  flag relation unset (env-wide attribution, kind/variant preserved).
+- Writes evict via `OnRecordAfterCreateSuccess` /
+  `OnRecordAfterUpdateSuccess` / `OnRecordAfterDeleteSuccess`
+  (after-success, so a concurrent request cannot repopulate a stale
+  entry pre-commit). Create evicts the `(project, key)` entry so a
+  previously-unknown key flips to the new flag ID immediately; update
+  and delete additionally scan-evict by record ID to cover renames and
+  project moves. Ref: `configwire/ingest/flagcache_hooks.go:16-31`.
+- Project-scoped: the cache key is `projectID + "\x00" + key`, so the
+  same key in two projects never shares an entry.
+- Cross-process convergence is bounded by one TTL (60s): after a flag
+  rename/recreate on another process, attribution on this process can
+  lag up to one TTL; single-binary deployments converge immediately on
+  the writing process via the hooks. Memory is bounded (cap 10000, a
+  few MB max at full cap).
+
 ## 5. Stats — `GET /api/v1/admin/env/{env}/stats?flag=X&since=7d`
 
 Ref: `configwire/stats/stats.go` (handler) (route + superuser-only). Superuser-only;
