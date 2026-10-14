@@ -50,6 +50,10 @@ const (
 	// rollupExtraDays derives the event_daily cutoff from the raw-events
 	// cutoff passed to PurgeOlderThan: 90d - 30d = 60d further back.
 	rollupExtraDays = RollupRetentionDays - RawRetentionDays
+	// purgePageSize bounds one cursor page: one page = one short
+	// transaction, so a 500k-row run holds at most this many rows in heap
+	// and never holds the write lock for the whole run.
+	purgePageSize = 2000
 )
 
 // EventRow is the minimal event projection the purge needs — pure and
@@ -144,6 +148,10 @@ func dateParam(t time.Time) string {
 // ShouldDelete on the read-back rows for the exact verdict — the retention
 // predicate itself is unchanged (FROZEN), so the deletion set is
 // bit-for-bit identical to the old full scan.
+//
+// The paged path (eventPageParams + pageFilter, LIMIT purgePageSize) is the
+// string-filter twin of this expression with the same superset contract;
+// this dbx form is kept as the contract reference.
 func eventRangeExpr(cutoff time.Time) dbx.Expression {
 	floor := cutoff.UTC().Truncate(time.Millisecond)
 	return dbx.NewExp("ts != '' AND ts <= {:cutoff}", dbx.Params{"cutoff": dateParam(floor)})
@@ -168,58 +176,122 @@ func emptyOrNull(col, val string) dbx.Expression {
 	return dbx.HashExp{col: val}
 }
 
+// pageFilter appends a keyset cursor clause to a base range filter so a
+// LIMIT-paged read walks the candidate set in total (orderCol, id) order
+// without OFFSET skips: rows are strictly after the last row of the
+// previous page, so concurrent deletes of already-passed rows cannot shift
+// later rows out of the walk. id is unique, so (orderCol, id) is total and
+// the walk terminates exactly at the end of the set. cursorVal must be the
+// dateParam-formatted order-column value of the previous page's last row.
+func pageFilter(base string, params dbx.Params, orderCol string, hasCursor bool, cursorVal, cursorID string) (string, dbx.Params) {
+	if !hasCursor {
+		return base, params
+	}
+	params["cursor"] = cursorVal
+	params["cursorID"] = cursorID
+	return base + " && (" + orderCol + " > {:cursor} || (" + orderCol + " = {:cursor} && id > {:cursorID}))", params
+}
+
+// eventPageParams builds the base indexed filter params for one raw-events
+// page: the string-filter twin of eventRangeExpr (same superset contract —
+// callers still re-apply ShouldDelete per row, so the deletion set is
+// bit-for-bit identical to the old full scan).
+func eventPageParams(cutoff time.Time) (string, dbx.Params) {
+	floor := cutoff.UTC().Truncate(time.Millisecond)
+	return "ts != '' && ts <= {:cutoff}", dbx.Params{"cutoff": dateParam(floor)}
+}
+
+// dailyPageParams builds the base indexed filter params for one
+// event_daily page: the string-filter twin of rollupRangeExpr.
+func dailyPageParams(rollupCutoff time.Time) (string, dbx.Params) {
+	floor := rollupCutoff.UTC().Truncate(time.Millisecond)
+	return "day != '' && day <= {:rc}", dbx.Params{"rc": dateParam(floor)}
+}
+
 // PurgeOlderThan rolls raw events with ts strictly before cutoff into
 // event_daily upserts, deletes those raw rows, then deletes event_daily
 // rows with day strictly before cutoff minus 60d (i.e. older than 90d
 // when cutoff is now-30d). It returns the total rows deleted
 // (raw events + stale rollups).
 //
-// Candidates come from indexed range queries (a point-in-time snapshot,
-// same as the old scan): rows ingested after the select are untouched by
-// this run and converge on the next run. All writes below commit
-// atomically in one transaction (see the package CRASH SEMANTIC note);
-// on error nothing was deleted, so the count is 0.
+// Raw reads are cursor-paged over the indexed candidate set ordered by
+// (ts, id) with LIMIT purgePageSize: each page is rolled up (that page's
+// rows only, rollup-before-delete) and deleted in its own transaction, so
+// heap stays flat and the write lock is held per page, not per run. The
+// per-row ShouldDelete recheck runs on every row exactly as before, so the
+// delete set is unchanged; cutoff/retention math is unchanged.
+//
+// Crash semantic: per-page atomic + rerun converges. A mid-run crash leaves
+// committed pages on disk (rollup + deletes together, never one without
+// the other — the aborted page rolls back whole); the next run walks past
+// the survivors via the same cursor and finishes them, and already-rolled
+// rows are gone so counters never double-add. On error this returns
+// (0, err) even though earlier pages may already be committed — rerun to
+// converge. (Package-level CRASH SEMANTIC note rewrite rides with todo 3.)
 func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
-	cands, err := app.FindAllRecords("events", eventRangeExpr(cutoff))
-	if err != nil {
-		return 0, err
-	}
-	var doomed []*core.Record
-	var doomedRows []EventRow
-	for _, r := range cands {
-		ts := r.GetDateTime("ts").Time()
-		if !ShouldDelete(ts, cutoff) {
-			continue
+	n := 0
+	base, _ := eventPageParams(cutoff)
+	cutoffParam := dateParam(cutoff.UTC().Truncate(time.Millisecond))
+	var cursorVal, cursorID string
+	hasCursor := false
+	for {
+		params := dbx.Params{"cutoff": cutoffParam}
+		filter, params := pageFilter(base, params, "ts", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("events", filter, "ts,id", purgePageSize, 0, params)
+		if err != nil {
+			return 0, err
 		}
-		doomed = append(doomed, r)
-		doomedRows = append(doomedRows, EventRow{
-			EnvID:   r.GetString("env"),
-			Flag:    r.GetString("flag"),
-			Kind:    r.GetString("kind"),
-			Variant: r.GetString("variant"),
-			Version: r.GetInt("version"),
-			Ts:      ts,
-		})
+		if len(page) == 0 {
+			break
+		}
+		var doomed []*core.Record
+		var doomedRows []EventRow
+		for _, r := range page {
+			ts := r.GetDateTime("ts").Time()
+			if !ShouldDelete(ts, cutoff) {
+				continue
+			}
+			doomed = append(doomed, r)
+			doomedRows = append(doomedRows, EventRow{
+				EnvID:   r.GetString("env"),
+				Flag:    r.GetString("flag"),
+				Kind:    r.GetString("kind"),
+				Variant: r.GetString("variant"),
+				Version: r.GetInt("version"),
+				Ts:      ts,
+			})
+		}
+		last := page[len(page)-1]
+		cursorVal = dateParam(last.GetDateTime("ts").Time())
+		cursorID = last.Id
+		hasCursor = true
+		if len(doomed) > 0 {
+			if err := app.RunInTransaction(func(txApp core.App) error {
+				// Rollup BEFORE delete: no data-loss window beyond a crash
+				// (the aborted page rolls back whole — see Crash semantic).
+				if err := upsertRollups(txApp, BuildRollups(doomedRows)); err != nil {
+					return err
+				}
+				for _, r := range doomed {
+					if err := txApp.Delete(r); err != nil {
+						return err
+					}
+					n++
+				}
+				return nil
+			}); err != nil {
+				return 0, err
+			}
+		}
+		if len(page) < purgePageSize {
+			break
+		}
 	}
 	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
 
-	n := 0
 	if err := app.RunInTransaction(func(txApp core.App) error {
-		// Rollup BEFORE delete: no data-loss window beyond a crash (see
-		// the package CRASH SEMANTIC note).
-		if len(doomedRows) > 0 {
-			if err := upsertRollups(txApp, BuildRollups(doomedRows)); err != nil {
-				return err
-			}
-		}
-		for _, r := range doomed {
-			if err := txApp.Delete(r); err != nil {
-				return err
-			}
-			n++
-		}
-
 		// Stale aggregates: event_daily rows older than 90d die too.
+		// (Paged delete loop lands with todo 3; logic untouched here.)
 		daily, err := txApp.FindAllRecords("event_daily", rollupRangeExpr(rollupCutoff))
 		if err != nil {
 			return err
@@ -242,29 +314,66 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 }
 
 // CountOlderThan reports how many rows PurgeOlderThan would delete with
-// the same cutoff, with zero writes (dry-run path). It reads the same
-// indexed candidate sets and applies the same exact predicates, so
-// dry-count == live-deleted structurally.
+// the same cutoff, with zero writes (dry-run path). It walks the same
+// indexed candidate sets with the same (ts,id)/(day,id) cursor paging and
+// applies the same exact predicates, so dry-count == live-deleted
+// structurally — and it never loads a whole collection into heap.
 func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 	n := 0
-	cands, err := app.FindAllRecords("events", eventRangeExpr(cutoff))
-	if err != nil {
-		return 0, err
-	}
-	for _, r := range cands {
-		if ShouldDelete(r.GetDateTime("ts").Time(), cutoff) {
-			n++
+	eventBase, _ := eventPageParams(cutoff)
+	cutoffParam := dateParam(cutoff.UTC().Truncate(time.Millisecond))
+	var cursorVal, cursorID string
+	hasCursor := false
+	for {
+		params := dbx.Params{"cutoff": cutoffParam}
+		filter, params := pageFilter(eventBase, params, "ts", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("events", filter, "ts,id", purgePageSize, 0, params)
+		if err != nil {
+			return 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, r := range page {
+			if ShouldDelete(r.GetDateTime("ts").Time(), cutoff) {
+				n++
+			}
+		}
+		last := page[len(page)-1]
+		cursorVal = dateParam(last.GetDateTime("ts").Time())
+		cursorID = last.Id
+		hasCursor = true
+		if len(page) < purgePageSize {
+			break
 		}
 	}
 	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
-	daily, err := app.FindAllRecords("event_daily", rollupRangeExpr(rollupCutoff))
-	if err != nil {
-		return n, err
-	}
-	for _, r := range daily {
-		day := r.GetDateTime("day").Time()
-		if !day.IsZero() && day.Before(rollupCutoff) {
-			n++
+	dailyBase, _ := dailyPageParams(rollupCutoff)
+	rcParam := dateParam(rollupCutoff.UTC().Truncate(time.Millisecond))
+	cursorVal, cursorID = "", ""
+	hasCursor = false
+	for {
+		params := dbx.Params{"rc": rcParam}
+		filter, params := pageFilter(dailyBase, params, "day", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("event_daily", filter, "day,id", purgePageSize, 0, params)
+		if err != nil {
+			return n, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, r := range page {
+			day := r.GetDateTime("day").Time()
+			if !day.IsZero() && day.Before(rollupCutoff) {
+				n++
+			}
+		}
+		last := page[len(page)-1]
+		cursorVal = dateParam(last.GetDateTime("day").Time())
+		cursorID = last.Id
+		hasCursor = true
+		if len(page) < purgePageSize {
+			break
 		}
 	}
 	return n, nil
