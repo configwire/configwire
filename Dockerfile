@@ -9,7 +9,7 @@
 # tag: github.com/pocketbase/pocketbase/ui/embed_no_ui.go leaves
 # ui.DistDirFS nil so /_/ routes never register. Our Admin UI at /
 # (./pb_public) and all /api/* routes are unaffected — still copied below.)
-FROM golang:1.27-alpine AS builder
+FROM golang:1.27.2-alpine AS builder
 ARG GO_TAGS=""
 WORKDIR /src
 COPY go.mod go.sum ./
