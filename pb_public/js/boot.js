@@ -151,6 +151,11 @@
     });
     window.addEventListener("hashchange", CW.route);
     CW.on("project-grid", "click", function (ev) {
+      var r = ev && ev.target && ev.target.closest ? ev.target.closest("[data-register-project]") : null;
+      if (r) {
+        if (CW.openProjectDialog) CW.openProjectDialog();
+        return;
+      }
       var t = ev && ev.target && ev.target.closest ? ev.target.closest("[data-project-id]") : null;
       if (!t) return;
       var id = t.getAttribute("data-project-id");
@@ -158,6 +163,12 @@
     });
     CW.on("project-grid", "keydown", function (ev) {
       if (ev.key !== "Enter" && ev.key !== " ") return;
+      var r = ev && ev.target && ev.target.closest ? ev.target.closest("[data-register-project]") : null;
+      if (r) {
+        ev.preventDefault();
+        if (CW.openProjectDialog) CW.openProjectDialog();
+        return;
+      }
       var t = ev && ev.target && ev.target.closest ? ev.target.closest("[data-project-id]") : null;
       if (!t) return;
       ev.preventDefault();
@@ -197,6 +208,10 @@
       CW.loadStats().catch(function () {});
     });
     CW.on("stats-since", "change", function () { CW.loadStats().catch(function () {}); });
+    CW.on("home-since", "change", function () {
+      CW.setHomeSince(CW.$("home-since").value);
+      CW.showHome();
+    });
     CW.on("stats-flag", "change", function () { CW.loadStats().catch(function () {}); });
     CW.on("stats-flag", "input", function () { CW.loadStats().catch(function () {}); });
     CW.on("stats-view", "click", function (ev) {
@@ -496,9 +511,6 @@
         if (typeof CW.closeDraftSnapshotDialog !== "function") return;
         CW.closeDraftSnapshotDialog();
       } catch (e) { CW.toast((e && e.message) || "Close failed."); }
-    });
-    CW.on("project-add-btn", "click", function () {
-      if (CW.openProjectDialog) CW.openProjectDialog();
     });
     CW.on("project-dialog-form", "submit", function (ev) {
       if (CW.saveProjectDialog) CW.saveProjectDialog(ev).catch(CW.toastErr);

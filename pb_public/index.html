@@ -131,7 +131,9 @@
             <div>
               <h2>Projects</h2>
             </div>
-            <button id="project-add-btn" type="button" class="btn primary">Add project</button>
+            <div class="home-head-actions">
+              <label class="home-range" for="home-since"><select id="home-since" aria-label="Date range"><option value="1d">Last 24 hours</option><option value="2d">Last 48 hours</option><option value="7d" selected>Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 3 months</option></select></label>
+            </div>
           </div>
           <p id="project-result" role="status"></p>
           <div id="project-grid" class="project-grid" role="list" aria-label="Projects"></div>
@@ -225,9 +227,11 @@
                 </div>
                 <form id="stats-filter-form" class="inline-form" aria-label="Stats filters">
                   <label for="stats-since">Since <select id="stats-since">
-                      <option value="7d" selected>7d</option>
-                      <option value="30d">30d</option>
-                      <option value="90d">90d</option>
+                      <option value="1d">Last 24 hours</option>
+                      <option value="2d">Last 48 hours</option>
+                      <option value="7d" selected>Last 7 days</option>
+                      <option value="30d">Last 30 days</option>
+                      <option value="90d">Last 3 months</option>
                     </select></label>
                   <label for="stats-flag">Flag <input id="stats-flag" type="text" placeholder="flag key" autocomplete="off" maxlength="64"></label>
                 </form>

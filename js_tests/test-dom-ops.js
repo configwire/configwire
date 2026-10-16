@@ -277,7 +277,7 @@ test("renderProjectCards: empty grid + populated stats strings", function () {
   reset();
   h.CW.state.projects = [];
   h.CW.renderProjectCards();
-  assert.equal(el("project-grid").innerHTML, "");
+  assert.ok(el("project-grid").innerHTML.indexOf("data-register-project") >= 0);
   assert.equal(el("project-empty").hidden, false);
   h.CW.state.projects = [{ id: "p1", name: "Alpha" }];
   h.CW.state.homeStats = { p1: { flags: 2, envs: 1, keys: 3 } };
@@ -286,6 +286,8 @@ test("renderProjectCards: empty grid + populated stats strings", function () {
   assert.ok(html.indexOf("Alpha") >= 0);
   assert.ok(html.indexOf("2 flags") >= 0);
   assert.ok(html.indexOf("1 envs") >= 0);
+  assert.ok(html.indexOf("data-register-project") >= 0);
+  assert.ok(html.indexOf("data-register-project") > html.indexOf("Alpha"));
   assert.equal(el("project-empty").hidden, true);
 });
 
