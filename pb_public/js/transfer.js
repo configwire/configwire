@@ -25,7 +25,6 @@
 
   var FLAG_KEY_RE = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
   var MAX_FLAG_KEY_LEN = 128;
-  var MAX_FLAGS = 1000;
   var VALID_FLAG_TYPES = { number: true, string: true, bool: true, json: true };
   var VALID_EXP_STATUS = { draft: true, running: true, stopped: true };
   var SHAPE_ERROR = "Expected {flags:[...], experiments:[...]}";
@@ -249,9 +248,6 @@
     var exps = snap.experiments === undefined ? [] : snap.experiments;
     if (!Array.isArray(flags) || !Array.isArray(exps)) return { ok: false, error: SHAPE_ERROR };
     if (!flags.length) return { ok: false, error: "Nothing to import: no flags." };
-    if (flags.length > MAX_FLAGS) {
-      return { ok: false, error: "Flag limit reached: max " + MAX_FLAGS + " flags per project." };
-    }
     var i, j, f;
     for (i = 0; i < flags.length; i++) {
       f = flags[i];
