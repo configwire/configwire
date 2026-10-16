@@ -9,6 +9,7 @@
   var LS_KEY = "cw_admin_token";
   var LS_PROJECT = "cw_admin_project";
   var LS_ENV = "cw_admin_env";
+  var LS_HOME_SINCE = "cw_home_since";
 
   var state = {
     token: null, // memory-first copy
@@ -27,6 +28,8 @@
     lastStatsText: "", // JSON text of lastStats for copy-JSON
     lastStatsError: "", // inline error line rendered under the numbers
     homeStats: {}, // projectId -> {flags, envs, keys} for the home grid
+    homeSeries: {}, // projectId -> {points, values, daily} home card activity
+    homeSince: "7d", // home range selector (?since= param), whitelisted in router.js
     view: "home", // "home" | "detail" (hash-routed)
     unpublishedChanges: false, // publish-global dirty (any unsaved/unpublished edit)
     unpublished: { flag: {}, rule: {}, experiment: {}, group: {} }, // kind -> id -> {label, at}
@@ -224,6 +227,8 @@
     try {
       state.projectId = localStorage.getItem(LS_PROJECT);
       state.envId = localStorage.getItem(LS_ENV);
+      var hs = localStorage.getItem(LS_HOME_SINCE);
+      if (hs) state.homeSince = hs;
     } catch (e) { /* private mode */ }
   }
 
@@ -233,6 +238,8 @@
       else localStorage.removeItem(LS_PROJECT);
       if (state.envId) localStorage.setItem(LS_ENV, state.envId);
       else localStorage.removeItem(LS_ENV);
+      if (state.homeSince) localStorage.setItem(LS_HOME_SINCE, state.homeSince);
+      else localStorage.removeItem(LS_HOME_SINCE);
     } catch (e) { /* private mode */ }
   }
 
@@ -452,6 +459,7 @@
   CW.LS_KEY = LS_KEY;
   CW.LS_PROJECT = LS_PROJECT;
   CW.LS_ENV = LS_ENV;
+  CW.LS_HOME_SINCE = LS_HOME_SINCE;
   CW.state = state;
   CW.$ = $;
   CW.on = on;
