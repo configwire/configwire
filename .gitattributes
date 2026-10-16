@@ -1,0 +1,6 @@
+# Keep Go the primary language on GitHub (github.com/configwire/configwire).
+# Third-party bundle (htmx), not project source.
+pb_public/vendor/** linguist-vendored
+
+# Node test harness for the admin console, not shipped product code.
+js_tests/** linguist-vendored
