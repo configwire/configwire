@@ -14,7 +14,8 @@
  * Tokens live here in :root only (no DESIGN.md per scope).
  * JS contract: every #id / .class referenced by js/*.js is styled below —
  *   toast(.ok), login-*, admin-section, view-home/detail, project-*
-  *   (.project-card, .project-card-stats), env-bar, flag-*
+ *   (.project-card(.has-spark), .project-card-stats, .pc-head/.pc-icon/.pc-name/
+  *   .pc-nums/.pc-daily/.pc-sub/.pc-meta/.pc-spark), env-bar, flag-*
  *   (.flag-default-label, #flag-rules-dialog/-list, #rule-dialog, #flag-rules-form, .rule-*), exp-*, experiment-*, key-* (#key-once),
  *   release-*, transfer-* (.diff-file/.diff-badge/.diff-hunk/.diff-line/.diff-stat,
  *   .diff-field/.diff-nest/.diff-flag-exps, .staged-list, #transfer-export/-import/-diff-dialog), publish-*, setup-*, account-*(#account-list/-create-form/-result,
@@ -651,6 +652,10 @@ main {
 }
 
 .project-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 180px;
+  padding-bottom: 0;
   cursor: pointer;
   margin-bottom: 0;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
@@ -683,9 +688,332 @@ main {
   font-size: 12px;
 }
 
+/* ---- Home project cards with activity sparkline ---- */
+.project-card.has-spark {
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+.pc-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pc-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.pc-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.pc-nums {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.pc-daily {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+}
+
+.pc-sub {
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pc-meta {
+  margin: var(--space-2) 0 0;
+  opacity: 0.8;
+}
+
+.pc-spark {
+  margin: var(--space-2) calc(var(--space-4) * -1) calc(var(--space-4) * -1);
+  line-height: 0;
+}
+
+.pc-spark-svg {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+
+/* Card chart redesign: header row, big average number, muted
+ * sublabels, full-bleed bottom chart. Renderer contract (router.js
+ * renderProjectCards): .pc-head > .pc-icon + .pc-name + .pc-nums
+ * (.pc-daily) + .pc-sub, .pc-meta legacy
+ * flags·envs·keys line, .pc-spark:last-child bleeds to card edges.
+ * Legacy .project-card h3 / .project-card-stats selectors above are kept
+ * so pre-spark markup still renders. */
+.project-card .pc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.project-card .pc-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.project-card .pc-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.project-card .pc-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 28px;
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card .pc-nums {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.project-card .pc-daily {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-card .pc-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.project-card .pc-meta {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--muted-dim);
+}
+
+.project-card .pc-spark {
+  margin: 12px -16px 0;
+  height: auto;
+  min-height: 0;
+  background: rgba(0, 0, 0, 0.18);
+  border-top: 1px solid var(--border-soft);
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 12px 12px 14px;
+  line-height: normal;
+  overflow: visible;
+}
+
+.project-card .pc-spark svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.project-card .pc-spark svg.stats-series {
+  height: auto;
+}
+
+/* Cloned full stats-series chart inside home cards: reuse the detail
+ * chart shape (legend + 560x220 axes svg + tip) on the .pc-spark band.
+ * Rendered HTML: .pc-spark.pc-full > .stats-series-wrap >
+ * .stats-series-legend + svg.stats-series + .stats-tip. */
+.project-card .stats-series-wrap {
+  margin: 0;
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-card .stats-series {
+  width: 100%;
+  height: auto;
+  display: block;
+  min-width: 0;
+}
+
+.project-card .stats-series-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.project-card .stats-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.project-card .stats-legend-item strong {
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-card .stats-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.project-card .stats-grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.project-card .stats-tick,
+.project-card .stats-x {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-card .stats-tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
+  width: max-content;
+  max-width: min(340px, 90%);
+  white-space: normal;
+  overflow-wrap: break-word;
+  transform: translateX(-50%);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+.project-card p.stats-series-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.project-card .pc-spark path.pc-spark-line,
+.project-card .pc-spark polyline.pc-spark-line,
+.project-card .pc-spark line.pc-spark-line {
+  stroke: #6ea8fe;
+  stroke: var(--accent);
+  fill: none;
+  stroke-width: 1.5;
+}
+
+/* Flat-zero state: thin baseline instead of a sparkline. */
+.project-card:not(.has-spark) .pc-spark {
+  border-top: 1px solid var(--border);
+  height: 1px;
+  min-height: 0;
+}
+
+.project-card .pc-spark.is-flat {
+  border-top: 1px solid var(--border);
+  height: 1px;
+  min-height: 0;
+}
+
+/* Dashed trailing card that opens the project dialog (grid stretches it
+ * to the row height, so it always matches its neighbours). */
+.project-card.register-card {
+  border-style: dashed;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--muted);
+}
+
+.project-card.register-card:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.project-card .register-icon {
+  display: inline-flex;
+  opacity: 0.8;
+}
+
+.project-card .register-icon svg {
+  display: block;
+}
+
+.project-card .register-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Full-chart band never collapses: the cloned series (or its muted
+ * empty line) always needs its own height, even on cards without
+ * legacy .has-spark. Placed after the flat rules so it wins ties. */
+.project-card .pc-spark.pc-full {
+  height: auto;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-card,
+  .project-card:hover {
+    transform: none;
+  }
+
+  .project-card .stats-series,
+  .project-card .stats-tip {
+    transition: none;
+    animation: none;
+  }
+}
+
 .home-head {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
@@ -697,6 +1025,39 @@ main {
 
 .home-head p {
   margin: 0;
+}
+
+.home-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.home-head .home-range {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.home-head #home-since {
+  height: var(--input-h);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 180px;
+}
+
+.home-head #home-since:focus-visible {
+  outline: none;
+  border-color: var(--mint);
+  box-shadow: var(--ring);
 }
 
 .detail-head {
@@ -4163,8 +4524,20 @@ dialog#json-editor-dialog h3 {
     align-items: stretch;
   }
 
+  .home-head-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    margin-left: 0;
+  }
+
   .home-head form button[type="submit"] {
     width: 100%;
+  }
+
+  .home-head #home-since {
+    width: 100%;
+    max-width: none;
   }
 
   dialog {
