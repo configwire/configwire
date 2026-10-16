@@ -170,12 +170,13 @@ Ref: `:21-27`.
 
 Publish validation failures then `400`: empty project
 (`nothing to publish`), bad key shape (`^[A-Za-z_][A-Za-z0-9_.-]*$`,
-1-128 chars), over 1000 flags/project, bad flag type (must be
+1-128 chars), bad flag type (must be
 `number|string|bool|json`), default or rule value not coercible to the
 flag type, bad rule condition shape (unknown field/op, missing value
 key, bare `custom`, empty or over-10 condition array, non-object array
 entry), bad experiment weights (must sum to exactly 10000
-bps). Ref: `configwire/releases/snapshot.go:396-436`.
+bps). Flag volume is unlimited: no per-project flag cap exists.
+Ref: `configwire/releases/snapshot.go:396-436`.
 
 ## 2a. Key minting — `POST /api/v1/admin/keys`
 

@@ -8,7 +8,8 @@ package migrations
 //   - releases rows are immutable enforced by hooks in main.go
 //     (OnRecordValidate + OnRecordUpdate deny any update;
 //     rollback creates new rows).
-//   - flags.key shape + 1000/project cap enforced by hooks in main.go.
+//   - flags.key shape enforced by hooks in main.go (no per-project
+//     flag cap; flag volume is unlimited).
 //   - experiments.variants JSON shape follows the T3 contract
 //     (configwire/eval/eval.go): [{name, weightBps (sum 10000), values}].
 //   - events carries userHash ONLY (no raw user id, no network address).
