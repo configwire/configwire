@@ -122,10 +122,7 @@ func setStaticCacheHeaders(re *core.RequestEvent) {
 
 var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 
-const (
-	maxFlagKeyLength   = 128
-	maxFlagsPerProject = 1000
-)
+const maxFlagKeyLength = 128
 
 func checkFlagKey(key string) error {
 	if len(key) == 0 || len(key) > maxFlagKeyLength || !flagKeyPattern.MatchString(key) {
@@ -185,20 +182,11 @@ var envDeleteMu sync.Mutex
 // writes are rare admin ops, so the serialization cost is negligible.
 var envSlugMu sync.Mutex
 
-// Exact count-query equivalent:
-//
-//	SELECT COUNT(*) FROM flags WHERE project = '<projectId>'
-//
-// Filtered COUNT(*) at the DB layer (no full-table scan by design).
-func countProjectFlags(app core.App, project string) (int64, error) {
-	return app.CountRecords("flags", dbx.HashExp{"project": project})
-}
-
 // checkFlagKeyTaken rejects a duplicate (key, project) flag: flag keys
 // are snapshot identity downstream (envresolve.MatchFlag is
 // first-match-wins), so two rows with the same key make evaluation
 // order-dependent. Same key in a different project stays allowed.
-// Indexed pre-check (idx_flags_key_project) like countProjectFlags; flag
+// Indexed pre-check (idx_flags_key_project); flag
 // writes are rare admin ops. The Go hook stays authoritative — the
 // migration-16 UNIQUE index is a backstop only.
 func checkFlagKeyTaken(app core.App, rec *core.Record) error {
@@ -265,13 +253,6 @@ func registerConfigwireHooks(app core.App) {
 		}
 		if err := checkFlagKeyTaken(e.App, e.Record); err != nil {
 			return err
-		}
-		n, err := countProjectFlags(e.App, e.Record.GetString("project"))
-		if err != nil {
-			return err
-		}
-		if n >= maxFlagsPerProject {
-			return errors.New("flag limit reached: max 1000 flags per project")
 		}
 		return e.Next()
 	})
