@@ -65,8 +65,7 @@ import (
 var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 
 const (
-	maxFlagKeyLength   = 128
-	maxFlagsPerProject = 1000
+	maxFlagKeyLength = 128
 )
 
 // Flag types accepted in a snapshot (mirrors the flags.type select).
@@ -478,9 +477,6 @@ func validateCondition(flagKey string, ruleIndex int, cond any) error {
 func ValidateSnapshot(snap Snapshot) error {
 	if len(snap.Flags) == 0 {
 		return errors.New("nothing to publish: no flags in this env's project")
-	}
-	if len(snap.Flags) > maxFlagsPerProject {
-		return fmt.Errorf("flag limit reached: max %d flags per project", maxFlagsPerProject)
 	}
 	for _, f := range snap.Flags {
 		if len(f.Key) == 0 || len(f.Key) > maxFlagKeyLength || !flagKeyPattern.MatchString(f.Key) {

@@ -3,6 +3,7 @@ package releases
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -167,13 +168,13 @@ func TestValidateSnapshotRejectsBadKey(t *testing.T) {
 	}
 }
 
-func TestValidateSnapshotRejectsCap(t *testing.T) {
+func TestValidateSnapshotAcceptsLargeFlagCount(t *testing.T) {
 	flags := make([]SnapshotFlag, 1001)
 	for i := range flags {
-		flags[i] = SnapshotFlag{Key: "k", Type: "bool", Default: true, Rules: []SnapshotRule{}}
+		flags[i] = SnapshotFlag{Key: fmt.Sprintf("bulk_%04d", i), Type: "bool", Default: true, Rules: []SnapshotRule{}}
 	}
-	if err := ValidateSnapshot(Snapshot{Flags: flags}); err == nil {
-		t.Fatal("1001 flags must breach the 1000/project cap")
+	if err := ValidateSnapshot(Snapshot{Flags: flags}); err != nil {
+		t.Fatalf("1001 flags must pass with no per-project cap, got: %v", err)
 	}
 }
 
