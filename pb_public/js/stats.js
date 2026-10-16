@@ -12,6 +12,7 @@
   var SERIES_PAD_B = 22;
 
   var lastGeom = null;
+  var seriesSeq = 0;
 
   function r1(v) {
     return Math.round(v * 10) / 10;
@@ -269,10 +270,20 @@
         '<text class="stats-tick" x="' + (SERIES_PAD_L - 6) + '" y="' + r1(y + 3) +
         '" text-anchor="end">' + CW.esc(v) + "</text>";
     }).join("");
-    var step = n <= 7 ? 1 : 7;
+    // Long windows crowd adjacent day labels on narrow home cards
+    // (seen as "07-18"/"07-25" overlap at 90d), so sparsify the tick
+    // step once the series outgrows a monthly view.
+    var step = n <= 7 ? 1 : (n > 60 ? 14 : 7);
     var xIdx = [];
     for (var xi = 0; xi < n; xi += step) xIdx.push(xi);
-    if (xIdx[xIdx.length - 1] !== n - 1) xIdx.push(n - 1);
+    // Trailing edge: appending the last day when it sits 1-3 days after
+    // the previous tick crowds the two labels (seen as "10-14"/"10-16"
+    // overlap on narrow home cards). Move the last tick to the final
+    // day instead so the edge stays labeled without overlap.
+    if (xIdx[xIdx.length - 1] !== n - 1) {
+      if (n - 1 - xIdx[xIdx.length - 1] < 4) xIdx[xIdx.length - 1] = n - 1;
+      else xIdx.push(n - 1);
+    }
     var xLabels = xIdx.map(function (i) {
       var anchor = (i === 0 && n > 1) ? "start" : (i === n - 1 && n > 1) ? "end" : "middle";
       return '<text class="stats-x" x="' + r1(sx(i)) + '" y="' + (SERIES_H - 6) +
@@ -285,13 +296,16 @@
     if (vKeys.length) aria += ", versions " + vKeys.map(function (k) { return "v" + k; }).join(", ");
     var dayWord = n === 1 ? " day" : " days";
     var hoverX = r1(sx(0));
+    seriesSeq++;
+    var fetchGradId = "cw-stat-fetch-grad-" + seriesSeq;
+    var expoGradId = "cw-stat-expo-grad-" + seriesSeq;
     var defs =
       '<defs>' +
-      '<linearGradient id="cw-stat-fetch-grad" x1="0" y1="0" x2="0" y2="1">' +
+      '<linearGradient id="' + fetchGradId + '" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0%" stop-color="#3b82f6" stop-opacity="0.35"/>' +
       '<stop offset="100%" stop-color="#3b82f6" stop-opacity="0.02"/>' +
       '</linearGradient>' +
-      '<linearGradient id="cw-stat-expo-grad" x1="0" y1="0" x2="0" y2="1">' +
+      '<linearGradient id="' + expoGradId + '" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0%" stop-color="#5eead4" stop-opacity="0.35"/>' +
       '<stop offset="100%" stop-color="#5eead4" stop-opacity="0.02"/>' +
       '</linearGradient>' +
@@ -313,9 +327,9 @@
     var svg = '<svg class="stats-series" role="img" aria-label="' + CW.esc(aria) +
       '" viewBox="0 0 ' + SERIES_W + " " + SERIES_H + '" preserveAspectRatio="xMidYMid meet">' +
       defs + grid + xLabels +
-      '<path class="stats-area-fetch" d="' + fetchD + '" fill="url(#cw-stat-fetch-grad)" stroke="none"><title>' +
+      '<path class="stats-area-fetch" d="' + fetchD + '" fill="url(#' + CW.esc(fetchGradId) + ')" stroke="none"><title>' +
       CW.esc("fetches " + sumF + " total over " + n + dayWord) + "</title></path>" +
-      '<path class="stats-area-exposure" d="' + expoD + '" fill="url(#cw-stat-expo-grad)" stroke="none"><title>' +
+      '<path class="stats-area-exposure" d="' + expoD + '" fill="url(#' + CW.esc(expoGradId) + ')" stroke="none"><title>' +
       CW.esc("exposures " + sumE + " total over " + n + dayWord) + "</title></path>" +
       '<path class="stats-line-fetch" d="' + fetchLine + '" fill="none" stroke="#3b82f6" stroke-width="1" opacity=".9"></path>' +
       '<path class="stats-line-exposure" d="' + topLine + '" fill="none" stroke="#5eead4" stroke-width="1" opacity="' + (sumE > 0 ? '.9' : '0') + '"></path>' +
@@ -624,6 +638,7 @@
 
   CW.bindStatsFilterForm = bindStatsFilterForm;
   CW.renderStats = renderStats;
+  CW.renderSeries = renderSeries;
   CW.bindSeriesTip = bindSeriesTip;
   CW.seriesTipText = seriesTipText;
   CW.seriesTipHTML = seriesTipHTML;

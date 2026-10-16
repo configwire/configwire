@@ -424,8 +424,9 @@ test("renderStats series sparse x labels on long windows; single day paints a ba
   }
   ctx.CW.renderStats(data);
   var html = statsHTML(ctx);
-  // 30d: every 7th + last -> 0,7,14,21,28,29 (6 labels, not 30).
-  assert.equal(html.split('class="stats-x"').length - 1, 6, "30d must sparsify x labels: " + html);
+  // 30d: every 7th, trailing tick moved to last day when the gap is < 4
+  // (0,7,14,21,29 — 5 labels, not 30; avoids 28/29 crowd).
+  assert.equal(html.split('class="stats-x"').length - 1, 5, "30d must sparsify x labels: " + html);
   assert.ok(html.indexOf(">08-01<") !== -1, "missing first x label: " + html);
   assert.ok(html.indexOf(">08-30<") !== -1, "missing last x label: " + html);
   var ctx2 = freshStats();
