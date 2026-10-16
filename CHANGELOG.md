@@ -3,6 +3,86 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.10 — 2026-10-15
+
+### Added
+
+- Flag-ID TTL cache (`ingest/flagcache.go`, `ingest/flagcache_hooks.go`,
+  `ingest/handler.go`, `docs/CONTRACT.md` §4): process-local
+  `(project, key) -> flags record ID` map in front of the indexed
+  lookup, so each distinct hot key costs zero DB hits (one indexed
+  `project = {:p} && key = {:k}` lookup per cold key at most). Cap
+  10000 entries, TTL 60s (same shape as the SDK-key fast cache, never
+  shared); unknown keys are negative-cached as `""` with the same TTL
+  and stored with the flag relation unset (env-wide attribution,
+  kind/variant preserved). Writes evict via
+  `OnRecordAfterCreateSuccess` / `OnRecordAfterUpdateSuccess` /
+  `OnRecordAfterDeleteSuccess` (after-success, so a concurrent request
+  cannot repopulate a stale entry pre-commit): create evicts the
+  `(project, key)` entry so a previously-unknown key flips immediately,
+  update/delete additionally scan-evict by record ID to cover renames
+  and project moves. Cache key is `projectID + "\x00" + key`, so the
+  same key in two projects never shares an entry; cross-process
+  convergence is bounded by one TTL (single-binary deployments
+  converge immediately on the writing process via the hooks).
+- Indexed flag-key uniqueness pre-check (`main.go`
+  `checkFlagKeyTaken`, `flag_uniqueness_test.go`):
+  `FindAllRecords` + Go loop becomes one indexed
+  `FindRecordsByFilter` (`project`/`key`/`id`-exclusion, limit 1 over
+  `idx_flags_key_project`). The Go hook stays authoritative and
+  migration-16 UNIQUE stays a backstop only; the `400 "flag key
+  already exists for this project"` text is unchanged.
+- Chunked ingest flush with poison-row isolation
+  (`ingest/batcher.go`): `flush()` splits via `SplitBatch(items, 250)`
+  and persists each chunk in one `RunInTransaction`. Poison rows skip
+  inline (logged); a chunk-transaction failure retries rows
+  individually — never a whole-chunk skip. `EnqueueAll` atomicity,
+  `202`/`503`, total accounting, and log lines are preserved.
+- Cursor-chunked purge (`purge/purge.go`): raw `events` deletes page at
+  2000 rows per short transaction ordered by `(ts, id)` — each page is
+  rolled up (that page's rows only) then deleted inside the same page
+  transaction, never one giant transaction — with a chunked dry count
+  on the same path. A crash between pages leaves committed pages on
+  disk and rolls the in-flight page back whole, so a re-run walks past
+  the survivors and a clean re-run converges to `deleted: 0`.
+- Chunked daily deletes with bounded upserts (`purge/purge.go`,
+  `docs/CONTRACT.md` retention): stale `event_daily` rows delete page
+  by page (one transaction per page, per-row day recheck, per-page
+  log) and `upsertRollups` splits into page-size sub-batches instead of
+  widening the transaction. `docs/CONTRACT.md` now states the crash
+  semantic as per-chunk atomic plus rerun convergence.
+
+### Changed
+
+- PocketBase `v0.40.4` → `v0.40.5` and Go `1.27` → `1.27.2`
+  (`go.mod`, `go.sum`, `Dockerfile` builder `golang:1.27.2-alpine`;
+  indirect bumps `go-humanize`, `go-colorable`, `go-strftime`).
+- Docs: `docs/SECURITY.md` clarifies the `?uid=` compat-current window
+  (deprecated alias until sunset in the next server major, not a
+  rejection), the rollup key `(day, env, flag, variant, version)`, and
+  `configwire/security` header ownership (`main.go` only calls the
+  helper globally as middleware); `docs/CONTRACT.md` documents the
+  flag-ID cache and the per-chunk purge crash semantic; ingest/purge
+  comments name the chunk sizes and eviction points.
+- Harness: `configwire/scripts/e2e.sh` synced to the canonical
+  `scripts/e2e.sh` coverage (`?userHash=` identity with Stage 2N `?uid=`
+  compat asserts, pinned variant arm, `sdk_keys` prefix+sha256 seed;
+  superseded Stage 1S stream-401 and Stage 4 SSE-push asserts dropped)
+  — the two copies now differ only in the cwd shim. Root
+  `scripts/k6-fetch.js` removed (ConfigWire-specific k6 gate;
+  canonical copy is `configwire/scripts/k6-fetch.js`).
+
+### Removed
+
+- Per-project flag cap (was max 1000 flags per project): flag
+  creates (`main.go`), publish validation
+  (`releases/snapshot.go:ValidateSnapshot`), and dashboard import
+  validation (`pb_public/js/transfer.js:validateTransferSnapshot`) no
+  longer reject on flag count. Flag volume is unlimited; key shape
+  (1-128 chars, `^[A-Za-z_][A-Za-z0-9_.-]*$`), type checks, and key
+  uniqueness per project are unchanged. Docs: `docs/CONTRACT.md` §2,
+  `website/guide.html` §5.
+
 ## v0.1.9 — 2026-10-13
 
 ### Added
