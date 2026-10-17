@@ -336,7 +336,7 @@
   // click/key handling via [data-register-project].
   function registerCardHTML() {
     return '<article class="card project-card register-card" role="listitem" tabindex="0" data-register-project aria-label="Add a new project">' +
-      '<span class="register-icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M11 2.5 18 6.5v7L11 17.5 4 13.5v-7Z"/><path d="M4 6.5l7 4 7-4M11 10.5v7"/><path d="M19 14v6M16 17h6"/></svg></span>' +
+      '<span class="register-icon" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6M9 13h6"/></svg></span>' +
       '<span class="register-text">Add a new project</span></article>';
   }
 
@@ -375,7 +375,7 @@
       return '<article class="card project-card has-spark" role="listitem" tabindex="0" data-project-id="' +
         CW.esc(p.id) + '" aria-label="' + CW.esc(label) + '">' +
         '<div class="pc-head">' +
-        '<span class="pc-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.5 14 4.8v6.4L8 14.5 2 11.2V4.8Z"/><path d="M2 4.8 8 8l6-3.2M8 8v6.5"/></svg></span>' +
+        '<span class="pc-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>' +
         '<span class="pc-name">' + CW.esc(p.name || p.id) + "</span>" +
         '<span class="pc-nums">' +
         '<span class="pc-daily">' + CW.esc(String(daily)) + "</span></span></div>" +
