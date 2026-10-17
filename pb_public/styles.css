@@ -935,8 +935,29 @@ main {
   line-height: 1.4;
 }
 
+/* Empty cards mirror the chart block above by construction (no magic px):
+ * the wrapper ::before spacer reproduces the single-row legend's exact line
+ * box (same 11px/normal metrics + 8px margin as .stats-series-legend), and
+ * the placeholder keeps the svg's 560x220 ratio (SERIES_W/H) at the same
+ * content width. X-axis labels live inside the svg, and .stats-tip is
+ * hidden, so there is no extra row to account for. Narrow cards stay exact
+ * too (no min-height floor fighting the fluid svg). */
+.project-card .pc-spark.pc-full:has(> p.stats-series-empty)::before {
+  content: " ";
+  display: block;
+  font-size: 11px;
+  line-height: normal;
+  margin-bottom: 8px;
+}
+
 .project-card p.stats-series-empty {
   margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+  aspect-ratio: 560 / 220;
   font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
