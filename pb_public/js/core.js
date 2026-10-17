@@ -17,7 +17,7 @@
     envs: [],
     projectId: null,
     envId: null,
-    envSlug: "dev",
+    envSlug: "production",
     flags: [],
     groups: {}, // group id -> name
     releases: [],
@@ -220,7 +220,7 @@
 
   function envSlug() {
     var e = selectedEnv();
-    return (e && e.slug) || state.envSlug || "dev";
+    return (e && e.slug) || state.envSlug || "production";
   }
 
   function loadPersistedScope() {

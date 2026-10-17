@@ -48,7 +48,7 @@
 
   function defaultEnvId() {
     for (var i = 0; i < CW.state.envs.length; i++) {
-      if (CW.state.envs[i].slug === "dev") return CW.state.envs[i].id;
+      if (CW.state.envs[i].slug === "production") return CW.state.envs[i].id;
     }
     return CW.state.envs.length ? CW.state.envs[0].id : "";
   }

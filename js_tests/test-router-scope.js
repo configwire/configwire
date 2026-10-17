@@ -101,16 +101,16 @@ test("projectById: empty list returns null", function () {
 
 // ---- defaultEnvId (scope.js:35-40) ----
 
-test("defaultEnvId: prefers the dev slug", function () {
+test("defaultEnvId: prefers the production slug", function () {
   var ctx = fresh();
   ctx.CW.state.envs = [
-    { id: "e-prod", slug: "prod" },
     { id: "e-dev", slug: "dev" },
+    { id: "e-prod", slug: "production" },
   ];
-  assert.equal(ctx.CW.defaultEnvId(), "e-dev");
+  assert.equal(ctx.CW.defaultEnvId(), "e-prod");
 });
 
-test("defaultEnvId: falls back to first env when no dev slug", function () {
+test("defaultEnvId: falls back to first env when no production slug", function () {
   var ctx = fresh();
   ctx.CW.state.envs = [
     { id: "e-staging", slug: "staging" },
