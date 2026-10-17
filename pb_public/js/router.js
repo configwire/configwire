@@ -539,6 +539,18 @@
           if (pos === "sticky" || pos === "fixed") off += bar.getBoundingClientRect().height || 0;
         }
       });
+      // Sticky project header (#view-detail .detail-head, position:sticky)
+      // floats over section cards in detail view — same live-measure
+      // pattern as above. Hidden views report height 0, so this is a
+      // no-op outside detail.
+      try {
+        var dh = document.querySelector ? document.querySelector("#view-detail .detail-head") : null;
+        if (dh && dh.getBoundingClientRect) {
+          var dpos = "";
+          if (window.getComputedStyle) dpos = window.getComputedStyle(dh).position || "";
+          if (dpos === "sticky" || dpos === "fixed") off += dh.getBoundingClientRect().height || 0;
+        }
+      } catch (e3) { /* best-effort: header stays uncovered by base+topbar */ }
     } catch (e2) { off = 212; }
     y = Math.max(0, y - off);
     try { window.scrollTo(0, y); }

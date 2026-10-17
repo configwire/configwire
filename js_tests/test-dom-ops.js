@@ -121,6 +121,7 @@ var ORIG = {
   loadFlags: h.CW.loadFlags,
   loadRules: h.CW.loadRules,
   loadExperiments: h.CW.loadExperiments,
+  loadDetailScope: h.CW.loadDetailScope,
   loadHomeStats: h.CW.loadHomeStats,
 };
 
@@ -155,6 +156,7 @@ function reset() {
   h.CW.loadFlags = ORIG.loadFlags;
   h.CW.loadRules = ORIG.loadRules;
   h.CW.loadExperiments = ORIG.loadExperiments;
+  h.CW.loadDetailScope = ORIG.loadDetailScope;
   h.CW.loadHomeStats = ORIG.loadHomeStats;
   // Builder rows accumulate in the stub (innerHTML="" never clears stub
   // children), so drop them plus volatile dialog/result fields explicitly.
@@ -937,6 +939,69 @@ test("publish state + dirty forms: mark/set/arm", function () {
   assert.equal(h.CW.state.dirtyForms["flag-form"], true);
   h.CW.markFormClean("flag-form");
   assert.equal(h.CW.state.dirtyForms["flag-form"], false);
+});
+
+test("route: sidebar anchor lands below sticky topbar + detail header", function () {
+  reset();
+  sidebar();
+  h.CW.state.projects = [{ id: "a", name: "A" }];
+  h.CW.state.view = "detail";
+  h.CW.state.projectId = "a";
+  h.context.location.hash = "#/p/a#flags";
+  var card = {
+    getBoundingClientRect: function () { return { top: 500 }; },
+  };
+  var anchor = el("flags");
+  var realClosest = anchor.closest;
+  anchor.closest = function () { return card; };
+  var topbar = { getBoundingClientRect: function () { return { height: 64 }; } };
+  var header = { getBoundingClientRect: function () { return { height: 68 }; } };
+  var realQS = h.document.querySelector;
+  h.document.querySelector = function (sel) {
+    if (sel === ".topbar") return topbar;
+    if (sel === "#view-detail .detail-head") return header;
+    return null;
+  };
+  h.context.getComputedStyle = function (n) {
+    return { position: n === header ? "sticky" : "" };
+  };
+  var scrolled = [];
+  h.context.scrollTo = function (x, y) { scrolled.push([x, y]); };
+  try {
+    h.CW.route(); // router.js scrollBelowSticky: same-project anchor hop
+  } finally {
+    anchor.closest = realClosest;
+    h.document.querySelector = realQS;
+    delete h.context.getComputedStyle;
+    delete h.context.scrollTo;
+  }
+  // 500 - (36 base + 64 topbar + 68 sticky detail-head) clears the header.
+  assert.deepEqual(scrolled, [[0, 332]]);
+});
+
+test("refreshAll: same-project detail reloads in place, preserves scroll", async function () {
+  reset();
+  sidebar();
+  DB.projects = [{ id: "p1", name: "One" }];
+  h.localStorage.setItem("cw_admin_project", "p1"); // loadPersistedScope keeps p1
+  h.CW.state.view = "detail";
+  h.CW.state.projectId = "p1";
+  h.context.location.hash = "#/p/p1";
+  h.document.documentElement.scrollTop = 0;
+  var detailLoads = 0;
+  h.CW.loadDetailScope = function () { detailLoads++; };
+  h.context.pageYOffset = 420;
+  try {
+    h.CW.refreshAll(); // scope.js: same-project branch reloads + restores
+    await tick(40);
+  } finally {
+    delete h.context.pageYOffset;
+  }
+  assert.equal(detailLoads, 1);
+  assert.equal(h.document.documentElement.scrollTop, 420);
+  assert.equal(h.CW.state.view, "detail");
+  assert.equal(h.CW.state.projectId, "p1");
+  assert.equal(h.context.location.hash, "#/p/p1"); // no focus steal / hash change
 });
 
 test("no stray network: fetch only where asserted", function () {

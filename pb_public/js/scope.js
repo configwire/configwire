@@ -397,12 +397,61 @@
   }
 
   function refreshAll() {
+    // The refresh button lives in the sticky detail header: preserve the
+    // page scroll across the reload so tapping it never jumps to top.
+    var scrollX = 0, scrollY = 0;
+    try {
+      scrollX = window.pageXOffset || 0;
+      scrollY = window.pageYOffset ||
+        (document.documentElement && document.documentElement.scrollTop) ||
+        (document.body && document.body.scrollTop) || 0;
+    } catch (e0) { scrollX = 0; scrollY = 0; }
+    function restoreScroll() {
+      try {
+        if (window.scrollTo) window.scrollTo(scrollX, scrollY);
+        else if (document.documentElement) document.documentElement.scrollTop = scrollY;
+      } catch (e1) { /* best-effort */ }
+    }
+    function restoreScrollSoon() {
+      // Sync restore covers the route() hop below; the queued restores
+      // cover the async re-render settling after (loadDetailScope fan-out).
+      restoreScroll();
+      try {
+        if (window.requestAnimationFrame) {
+          window.requestAnimationFrame(function () {
+            restoreScroll();
+            if (typeof setTimeout !== "undefined") setTimeout(restoreScroll, 0);
+          });
+        } else if (typeof setTimeout !== "undefined") setTimeout(restoreScroll, 0);
+      } catch (e2) { /* best-effort */ }
+    }
+    // Same-project refresh detection: route() only reloads via openProject
+    // when switching projects, so a same-project refresh must reload the
+    // detail scope in place here (and only then is restoring scroll right).
+    var preView = null, prePid = null, preHash = null;
+    try {
+      preView = CW.state.view;
+      prePid = CW.state.projectId;
+      preHash = window.location.hash || "";
+    } catch (e3) { /* best-effort */ }
     CW.bumpScopeGen();
     CW.loadPersistedScope();
     loadProjects().then(function () {
       renderProjectEnv();
       CW.route();
-      if (CW.state.view === "detail") return; // route()->openProject loads detail scope
+      if (CW.state.view === "detail") {
+        var sameProject = false;
+        try {
+          sameProject = preView === "detail" && !!prePid &&
+            CW.state.projectId === prePid && (window.location.hash || "") === preHash;
+        } catch (e4) { sameProject = false; }
+        if (sameProject) {
+          try { if (CW.loadDetailScope) CW.loadDetailScope(); } catch (e5) { /* loadDetailScope owns its toastErr */ }
+          restoreScrollSoon();
+          return;
+        }
+        return; // route()->openProject loads detail scope
+      }
       CW.loadHomeStats().catch(function () {});
       // Preload current scope in the background so a card click is instant.
       // Flags first: loadExperiments filters by CW.state.flags and

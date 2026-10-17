@@ -1076,7 +1076,31 @@ main {
   flex-wrap: wrap;
 }
 
+/* Sticky project-detail header: pins under the sticky topbar while the
+ * page (body scroller) scrolls. Scoped to #view-detail so home/settings
+ * pages are untouched. z-index 20 sits above cards/content (z auto / 5)
+ * but below topbar/sidebar/menus (z 30/40), toasts (100), tooltips
+ * (9999) and native <dialog> top-layer. .card supplies the solid
+ * var(--panel) background/border/radius/padding; background-color here
+ * re-asserts opacity so content never shows through. No position:fixed
+ * (keeps main's max-width), so no content jump. */
+#view-detail .detail-head {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-3));
+  z-index: 20;
+  background-color: var(--panel);
+}
+
+/* Stuck header (~68px tall) + topbar (64px) would cover jumped-to
+ * section titles: lift the detail view's scroll-margin above both. */
+#view-detail h2[id],
+#view-detail .card-head h2 {
+  scroll-margin-top: 168px;
+}
+
 .detail-head h2 {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
@@ -4652,6 +4676,22 @@ dialog#json-editor-dialog h3 {
   .detail-head {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* Stacked detail header is taller: keep a tighter top gap to save
+   * viewport height and lift anchor margins above the stuck bar. */
+  #view-detail .detail-head {
+    top: calc(var(--topbar-h) + var(--space-2));
+    gap: var(--space-2);
+  }
+
+  #view-detail h2[id],
+  #view-detail .card-head h2 {
+    scroll-margin-top: 220px;
+  }
+
+  .detail-head #refresh-scope {
+    margin-left: 0;
   }
 
   .home-head-actions {
