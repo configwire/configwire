@@ -1186,6 +1186,162 @@
     });
   });
 
+  // Global instant tooltip: replaces native title="" hover delay with a
+  // same-frame custom bubble. Document-level delegation (capture phase) so
+  // dynamically injected HTML (e.g. select[data-move-flag] rendered by
+  // flags.js folderRowHTML) is covered with no per-node init. Native title
+  // is stashed to data-cw-title on show and restored on hide, so no
+  // double tooltip. aria-label is never touched; the bubble carries
+  // role="tooltip". A fixed-position singleton sidesteps select::after
+  // (pseudo-elements never render on <select>) and .flag-menu clipping.
+  (function initCwTip() {
+    var TIP_ID = "cw-tip";
+    var tip = null;
+    var activeEl = null;
+    var describedSet = false;
+
+    function ensureTip() {
+      if (tip) return tip;
+      tip = document.getElementById(TIP_ID);
+      if (!tip) {
+        tip = document.createElement("div");
+        tip.id = TIP_ID;
+        tip.setAttribute("role", "tooltip");
+        tip.hidden = true;
+        (document.body || document.documentElement).appendChild(tip);
+      } else {
+        tip.setAttribute("role", "tooltip");
+      }
+      return tip;
+    }
+
+    function resolveTarget(node) {
+      if (!node || node === document || node === window) return null;
+      if (node.getAttribute && (node.getAttribute("data-cw-tip") || node.getAttribute("title") || node.getAttribute("data-cw-title"))) return node;
+      if (node.closest) {
+        try { return node.closest("[data-cw-tip],[title],[data-cw-title]"); } catch (e) { return null; }
+      }
+      return null;
+    }
+
+    function tipText(el) {
+      var t = el.getAttribute("data-cw-tip");
+      if (t) return t;
+      t = el.getAttribute("title");
+      if (t) return t;
+      return el.getAttribute("data-cw-title") || "";
+    }
+
+    function stashTitle(el) {
+      var t = el.getAttribute("title");
+      if (t !== null && t !== "") {
+        el.setAttribute("data-cw-title", t);
+        el.removeAttribute("title");
+      }
+    }
+
+    function restoreTitle(el) {
+      if (!el) return;
+      var stashed = el.getAttribute("data-cw-title");
+      if (stashed !== null) {
+        if (!el.getAttribute("title")) el.setAttribute("title", stashed);
+        el.removeAttribute("data-cw-title");
+      }
+    }
+
+    function place(el) {
+      var bubble = ensureTip();
+      var r;
+      try { r = el.getBoundingClientRect(); } catch (e) { return; }
+      bubble.hidden = false;
+      bubble.setAttribute("data-show", "");
+      var w = bubble.offsetWidth || 0;
+      var h = bubble.offsetHeight || 0;
+      var gap = 8;
+      var x = r.left + (r.width / 2) - (w / 2);
+      x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+      // Prefer below the anchor: above would overlap the preceding row
+      // (e.g. delete-project tooltip covering the rename button).
+      var y = r.bottom + gap;
+      if (y + h > window.innerHeight - 8) y = r.top - h - gap;
+      if (y < 8) y = 8;
+      if (y + h > window.innerHeight - 8) y = Math.max(8, window.innerHeight - h - 8);
+      bubble.style.left = Math.round(x) + "px";
+      bubble.style.top = Math.round(y) + "px";
+    }
+
+    function show(el) {
+      if (!el) return;
+      var text = tipText(el);
+      if (!text) return;
+      if (activeEl && activeEl !== el) hide();
+      stashTitle(el);
+      activeEl = el;
+      var bubble = ensureTip();
+      if (bubble.textContent !== text) bubble.textContent = text;
+      if (!el.hasAttribute("aria-describedby")) {
+        el.setAttribute("aria-describedby", TIP_ID);
+        describedSet = true;
+      } else {
+        describedSet = false;
+      }
+      place(el);
+    }
+
+    function hide() {
+      if (!tip) { activeEl = null; return; }
+      tip.hidden = true;
+      tip.removeAttribute("data-show");
+      if (activeEl) {
+        restoreTitle(activeEl);
+        if (describedSet) activeEl.removeAttribute("aria-describedby");
+        activeEl = null;
+      }
+      describedSet = false;
+    }
+
+    function onOver(ev) {
+      var t = ev && ev.target ? ev.target : null;
+      if (tip && (t === tip || (tip.contains && tip.contains(t)))) return;
+      var el = resolveTarget(t);
+      if (!el) {
+        if (activeEl && !(ev.relatedTarget && activeEl.contains && activeEl.contains(ev.relatedTarget))) hide();
+        return;
+      }
+      if (el !== activeEl) show(el);
+      else place(el);
+    }
+
+    function onOut(ev) {
+      if (!activeEl) return;
+      var to = ev && ev.relatedTarget ? ev.relatedTarget : null;
+      if (to && (to === activeEl || (activeEl.contains && activeEl.contains(to)))) return;
+      if (to && resolveTarget(to) === activeEl) return;
+      hide();
+    }
+
+    function onFocusIn(ev) {
+      var el = resolveTarget(ev && ev.target);
+      if (el) show(el);
+    }
+
+    function onFocusOut() { hide(); }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function init() { ensureTip(); });
+    } else {
+      ensureTip();
+    }
+    document.addEventListener("mouseover", onOver, true);
+    document.addEventListener("mouseout", onOut, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    document.addEventListener("focusout", onFocusOut, true);
+    document.addEventListener("scroll", hide, true);
+    document.addEventListener("keydown", function (ev) {
+      if (ev && ev.key === "Escape") hide();
+    });
+  })();
+
   // Exposed for QA/contract checks (what the UI sends).
   window.cwAdmin = {
     get state() { return CW.state; },

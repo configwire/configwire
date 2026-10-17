@@ -5329,3 +5329,42 @@ section[aria-labelledby="backups-s3"] .card-head {
     flex: 1 1 auto;
   }
 }
+
+/* ---- Global instant tooltip (replaces native title="" delay).
+ * Singleton #cw-tip is filled + positioned by js/boot.js delegation
+ * (mouseover/focusin, capture phase, so dynamically injected HTML such as
+ * select[data-move-flag] in .flag-menu is covered with no per-node init).
+ * Visuals mirror .field-info-bubble: var(--text) chip, var(--bg) ink,
+ * var(--radius-sm) corners, var(--space-2) spacing. No transition and
+ * zero transition-delay: shows the same frame the pointer/focus lands.
+ * position:fixed + high z-index escapes #flag-folders .flag-menu clipping
+ * (ancestors already overflow:visible) and works on <select>, where
+ * ::after/::before never render, without any per-select wrapper. */
+#cw-tip {
+  position: fixed;
+  z-index: 9999;
+  display: none;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+  white-space: normal;
+  overflow-wrap: break-word;
+  transition: none;
+}
+
+#cw-tip[data-show] {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #cw-tip {
+    transition: none;
+  }
+}
