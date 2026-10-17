@@ -2177,6 +2177,28 @@ td code {
   overflow: visible;
 }
 
+/* Group-card bottom edge: .folder/.table-wrap stay overflow:visible so
+ * bottom-row ⋯ menus aren't clipped, but the inner table's opaque
+ * var(--panel) background then paints over the card's curved 1px bottom
+ * border (descendants paint above ancestor borders). Separate model so
+ * radius applies to the table/row backgrounds (dividers unchanged: cells
+ * carry only border-bottom, no vertical borders); round the table and the
+ * last row's outer cells inside the card radius. The single bottom stroke
+ * stays the .folder border — last-row cells keep border-bottom:none. */
+#flag-folders .folder .table-wrap table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 0 0 calc(var(--radius-sm) - 1px) calc(var(--radius-sm) - 1px);
+}
+
+#flag-folders .folder .table-wrap table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: calc(var(--radius-sm) - 1px);
+}
+
+#flag-folders .folder .table-wrap table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: calc(var(--radius-sm) - 1px);
+}
+
 #flag-folders .flag-actions-cell {
   text-align: right;
   vertical-align: middle;
