@@ -5140,7 +5140,7 @@ dialog#promote-dialog {
   }
 }
 
-/* ---- S3 backup target polish (scoped to .backup-s3-*/#backup-s3-* only;
+/* ---- S3 backup target polish (scoped to .backup-s3-* and #backup-s3-* only;
  * reuses :root tokens, .btn treatments, and the #backup-result rhythm —
  * no other card is touched). */
 .backup-s3-head {
