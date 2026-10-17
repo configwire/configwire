@@ -186,18 +186,20 @@
                   <li>Loading…</li>
                 </ul>
                 <hr>
-                <h3 id="publish">Publish</h3>
-                <p id="publish-hint" class="muted" role="status">No unpublished changes</p>
-                <ul id="unpublished-list" aria-label="Unpublished changes" hidden></ul>
-                <form id="publish-form">
-                  <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
-                  <label>Base version <input id="publish-base" name="baseVersion" type="number" min="0"
-                      required></label>
-                  <button type="submit" class="btn primary" disabled>Publish</button>
-                  <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View changes</button>
-                  <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard drafts</button>
-                </form>
-                <p id="publish-result" role="status"></p>
+                <div class="sub-card">
+                  <h3 id="publish">Publish</h3>
+                  <p id="publish-hint" class="muted" role="status">No unpublished changes</p>
+                  <ul id="unpublished-list" aria-label="Unpublished changes" hidden></ul>
+                  <form id="publish-form">
+                    <label>Note (optional) <input id="publish-note" name="note" type="text" maxlength="500"></label>
+                    <label>Base version <input id="publish-base" name="baseVersion" type="number" min="0"
+                        required></label>
+                    <button type="submit" class="btn primary" disabled>Publish</button>
+                    <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View changes</button>
+                    <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard drafts</button>
+                  </form>
+                  <p id="publish-result" role="status"></p>
+                </div>
               </section>
 
               <section class="card" aria-labelledby="keys">
@@ -207,17 +209,19 @@
                 <ul id="key-list" aria-label="SDK keys">
                   <li>Loading…</li>
                 </ul>
-                <h3>New key</h3>
-                <form id="key-form" aria-label="SDK key create">
-                  <label>Fetch limit (req/s) <input id="key-fetch-rps" type="number" min="1" max="10000" placeholder="Global 100/s"></label>
-                  <label>Ingest limit (req/s) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
-                  <button type="submit" class="btn primary">Create key</button>
-                </form>
-                <p id="key-result" role="status"></p>
-                <div id="key-once" hidden>
-                  <p><strong>Shown once — copy now:</strong></p>
-                  <code id="key-once-value"></code>
-                  <button id="key-copy" type="button" class="btn secondary">Copy</button>
+                <div class="sub-card">
+                  <h3>New key</h3>
+                  <form id="key-form" aria-label="SDK key create">
+                    <label>Fetch limit (req/s) <input id="key-fetch-rps" type="number" min="1" max="10000" placeholder="Global 100/s"></label>
+                    <label>Ingest limit (req/s) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
+                    <button type="submit" class="btn primary">Create key</button>
+                  </form>
+                  <p id="key-result" role="status"></p>
+                  <div id="key-once" hidden>
+                    <p><strong>Shown once — copy now:</strong></p>
+                    <code id="key-once-value"></code>
+                    <button id="key-copy" type="button" class="btn secondary">Copy</button>
+                  </div>
                 </div>
               </section>
 

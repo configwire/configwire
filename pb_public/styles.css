@@ -1099,6 +1099,78 @@ main {
   overflow: hidden;
 }
 
+/* ---- Nested sub-card (Publish + New key sections): same 1px/border-radius
+ * discipline as sibling nested surfaces (#release-list/#key-list li,
+ * .limit-field, .stats-count/.stats-tile). Panel-elevated so the block reads
+ * as carded against the parent .card. Layout inside unchanged (forms keep
+ * their own flex/grid); overflow clips children to the radius. */
+.sub-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sub-card>h3:first-child {
+  margin-top: 0;
+}
+
+.sub-card input,
+.sub-card select {
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .sub-card {
+    padding: var(--space-3);
+  }
+}
+
+/* ---- Publish form: Note stretches to leftover width, Base version stays
+ * compact, buttons keep auto size. Row wraps under 640px (inherits the
+ * generic form flex-wrap). Scoped to #publish-form only; ids unchanged. */
+#publish-form {
+  min-width: 0;
+  align-items: end;
+}
+
+#publish-form label {
+  min-width: 0;
+}
+
+#publish-form label:has(#publish-note) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#publish-form #publish-note {
+  width: 100%;
+  min-width: 0;
+}
+
+#publish-form label:has(#publish-base) {
+  flex: 0 0 calc(var(--space-8) * 4);
+  min-width: 0;
+}
+
+#publish-form #publish-base {
+  width: 100%;
+  min-width: 0;
+}
+
+#publish-form button {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  #publish-form label:has(#publish-note),
+  #publish-form label:has(#publish-base) {
+    flex: 1 1 100%;
+  }
+}
+
 .settings-row {
   display: flex;
   align-items: center;
