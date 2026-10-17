@@ -719,6 +719,111 @@ test("mixed-merge diff: mixed snap agrees with its true-merge normalized form", 
   assert.equal(d.counts.experimentsUnchanged, 2, "s1 + s2 unchanged");
 });
 
+// --- getAllExperiments: shared tolerant reader (legacy/nested/dual) ---
+// Single exported helper every out-of-band JS consumer reads through,
+// mirroring Go fetch/fetch.go:flattenForEval: nested per-flag entries
+// first with the parent flag stamped (parent wins), then legacy
+// top-level entries whose flag matches a snapshot flag, deduped (record
+// id wins when present, else parent flag + seed with name fallback for
+// seedless rows), orphans dropped. Deterministic order: per-flag order,
+// then legacy order.
+
+function shapeFixtures() {
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  var keep = { name: "E1", seed: "s1", variants: vv(), status: "running" };
+  var other = { name: "E2", seed: "s2", variants: vv(), status: "draft" };
+  function withFlag(row, flag) {
+    var c = clone(row);
+    c.flag = flag;
+    return c;
+  }
+  return {
+    nestedOnly: {
+      flags: [
+        { key: "keep", experiments: [clone(keep)] },
+        { key: "other", experiments: [clone(other)] },
+      ],
+    },
+    legacyOnly: {
+      flags: [{ key: "keep" }, { key: "other" }],
+      experiments: [withFlag(keep, "keep"), withFlag(other, "other")],
+    },
+    dual: {
+      flags: [
+        { key: "keep", experiments: [clone(keep)] },
+        { key: "other", experiments: [clone(other)] },
+      ],
+      experiments: [withFlag(keep, "keep"), withFlag(other, "other")],
+    },
+  };
+}
+
+test("getAllExperiments: legacy-only vs nested-only flatten to the same set", function () {
+  var fx = shapeFixtures();
+  var legacyFlat = plain(h.CW.getAllExperiments(fx.legacyOnly));
+  var nestedFlat = plain(h.CW.getAllExperiments(fx.nestedOnly));
+  assert.equal(legacyFlat.length, 2, "one row per experiment either way");
+  assert.deepEqual(legacyFlat, nestedFlat, "either shape alone folds to the same set");
+  assert.deepEqual(
+    legacyFlat.map(function (e) { return e.flag; }),
+    ["keep", "other"],
+    "parent flag stamped in per-flag order"
+  );
+});
+
+test("getAllExperiments: dual shape flattens to the same set with no dupes", function () {
+  var fx = shapeFixtures();
+  var dualFlat = plain(h.CW.getAllExperiments(fx.dual));
+  assert.equal(dualFlat.length, 2, "nested + top-level twins fold to one row each");
+  assert.deepEqual(
+    dualFlat,
+    plain(h.CW.getAllExperiments(fx.nestedOnly)),
+    "dual agrees with nested-only"
+  );
+});
+
+test("getAllExperiments: dual shape with shared ids dedupes on id, nested wins", function () {
+  var fx = shapeFixtures();
+  fx.dual.flags[0].experiments[0].id = "x1";
+  fx.dual.flags[0].experiments[0].flag = "stale"; // must not survive: parent wins
+  fx.dual.experiments[0].id = "x1";
+  fx.dual.experiments[0].name = "Stale"; // top-level twin carries stale content
+  var flat = plain(h.CW.getAllExperiments(fx.dual));
+  assert.equal(flat.length, 2, "shared id folds to one row");
+  assert.equal(flat[0].name, "E1", "nested row wins on shared id");
+  assert.equal(flat[0].flag, "keep", "parent flag stamped (parent wins)");
+  assert.equal(flat[0].id, "x1", "record id preserved");
+});
+
+test("getAllExperiments: orphan top-level entry dropped", function () {
+  var fx = shapeFixtures();
+  fx.dual.experiments.push({ name: "Ghost", flag: "ghost", seed: "g", variants: vv(), status: "draft" });
+  assert.deepEqual(
+    plain(h.CW.getAllExperiments(fx.dual)),
+    plain(h.CW.getAllExperiments(fx.nestedOnly)),
+    "orphan targeting no snapshot flag drops out"
+  );
+});
+
+test("parseTransferSnapshot: dual shape folds to one row per experiment without double-counting", function () {
+  var fx = shapeFixtures();
+  var dualOut = plain(h.CW.parseTransferSnapshot(JSON.stringify(fx.dual)));
+  assert.equal(dualOut.ok, true);
+  assert.equal(dualOut.snap.flags[0].experiments.length, 1, "keep folds to one row");
+  assert.equal(dualOut.snap.flags[1].experiments.length, 1, "other folds to one row");
+  assert.deepEqual(
+    dualOut.snap,
+    plain(h.CW.parseTransferSnapshot(JSON.stringify(fx.nestedOnly)).snap),
+    "dual parses to the nested-only form"
+  );
+  assert.deepEqual(
+    dualOut.snap,
+    plain(h.CW.parseTransferSnapshot(JSON.stringify(fx.legacyOnly)).snap),
+    "dual parses to the legacy-only form"
+  );
+  assert.ok(!Object.prototype.hasOwnProperty.call(dualOut.snap, "experiments"), "no top-level experiments surfaced");
+});
+
 // --- isLegacyTopLevelSnap: pure legacy-shape detector (no notice wiring) ---
 
 test("isLegacyTopLevelSnap detects a non-empty top-level experiments array", function () {
@@ -737,6 +842,13 @@ test("isLegacyTopLevelSnap returns false for missing/empty/nested-only snaps", f
   );
   assert.equal(h.CW.isLegacyTopLevelSnap(null), false, "null snap");
   assert.equal(h.CW.isLegacyTopLevelSnap({ flags: [], experiments: "nope" }), false, "non-array experiments");
+});
+
+test("isLegacyTopLevelSnap is false for dual-emit rows (new row, not legacy)", function () {
+  var fx = shapeFixtures();
+  assert.equal(h.CW.isLegacyTopLevelSnap(fx.dual), false, "dual carries nested rows: not legacy");
+  assert.equal(h.CW.isLegacyTopLevelSnap(fx.legacyOnly), true, "legacy-only still detected");
+  assert.equal(h.CW.isLegacyTopLevelSnap(fx.nestedOnly), false, "nested-only still false");
 });
 
 // --- stageImportFromDialog: legacy deprecation notice gated on isLegacyTopLevelSnap ---

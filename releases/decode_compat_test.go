@@ -75,8 +75,28 @@ func TestCanonicalNestedEtag(t *testing.T) {
 	if err := json.Unmarshal(canonical, &top); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := top["experiments"]; ok {
-		t.Fatalf("canonical must emit nested shape only, got %s", canonical)
+	topExps, ok := top["experiments"].([]any)
+	if !ok || len(topExps) != 1 {
+		t.Fatalf("canonical must dual-emit one top-level experiment, got %s", canonical)
+	}
+	topRow, ok := topExps[0].(map[string]any)
+	if !ok || topRow["id"] != "exp1" || topRow["flag"] != "a" || topRow["seed"] != "s" {
+		t.Fatalf("dual top-level row must stamp parent flag key, got %s", canonical)
+	}
+	var wire struct {
+		Flags []struct {
+			Key         string           `json:"key"`
+			Experiments []map[string]any `json:"experiments"`
+		} `json:"flags"`
+	}
+	if err := json.Unmarshal(canonical, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.Flags) != 1 || len(wire.Flags[0].Experiments) != 1 {
+		t.Fatalf("canonical must keep nested per-flag experiments, got %s", canonical)
+	}
+	if _, hasFlag := wire.Flags[0].Experiments[0]["flag"]; hasFlag {
+		t.Fatalf("nested experiment must not carry parent key field: %s", canonical)
 	}
 	again, err := MarshalCanonical(snap)
 	if err != nil {
@@ -90,5 +110,38 @@ func TestCanonicalNestedEtag(t *testing.T) {
 	}
 	if e1, e2 := EtagFor(3, canonical), EtagFor(4, canonical); e1 == e2 {
 		t.Fatalf("etag must differ across versions for identical canonical bytes")
+	}
+}
+
+func TestDualEmitDecodesIdenticalAndNotLegacy(t *testing.T) {
+	nestedRaw := []byte(`{"flags":[{"key":"a","type":"bool","default":true,"group":"","rules":[],"experiments":[{"id":"exp1","seed":"s","variants":[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}],"status":"draft"}]}]}`)
+	legacyRaw := []byte(`{"flags":[{"key":"a","type":"bool","default":true,"group":"","rules":[]}],"experiments":[{"id":"exp1","flag":"a","seed":"s","variants":[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}],"status":"draft"}]}`)
+	var nested Snapshot
+	if err := json.Unmarshal(nestedRaw, &nested); err != nil {
+		t.Fatalf("nested decode: %v", err)
+	}
+	dual, err := MarshalCanonical(nested)
+	if err != nil {
+		t.Fatalf("dual marshal: %v", err)
+	}
+	var fromDual Snapshot
+	if err := json.Unmarshal(dual, &fromDual); err != nil {
+		t.Fatalf("dual decode: %v", err)
+	}
+	dflat, _ := json.Marshal(fromDual.Experiments)
+	nflat, _ := json.Marshal(nested.Experiments)
+	if string(dflat) != string(nflat) {
+		t.Fatalf("dual flattened set differs from nested-only:\ndual %s\nnested %s", dflat, nflat)
+	}
+	dnest, _ := json.Marshal(fromDual.Flags)
+	nnest, _ := json.Marshal(nested.Flags)
+	if string(dnest) != string(nnest) {
+		t.Fatalf("dual per-flag rows differ from nested-only:\ndual %s\nnested %s", dnest, nnest)
+	}
+	if IsLegacyTopLevel(dual) {
+		t.Fatalf("dual-emitted bytes must not detect as legacy: %s", dual)
+	}
+	if !IsLegacyTopLevel(legacyRaw) {
+		t.Fatalf("legacy-only bytes must detect as legacy: %s", legacyRaw)
 	}
 }

@@ -121,13 +121,18 @@ func TestSnapshotShapeFrozenKeys(t *testing.T) {
 		}
 	}
 	// Experiments live nested per flag (parent key implicit, no "flag"
-	// field); legacy top-level rows fold on read only (decode_compat_test.go,
-	// old_compat_test.go) and are never emitted by MarshalCanonical.
-	if _, hasTop := top["experiments"]; hasTop {
-		t.Fatalf("canonical snapshot must be nested-only, no top-level experiments: %s", raw)
+	// field); MarshalCanonical additionally dual-emits the derived legacy
+	// top-level rows (same rows, flag key stamped) for old out-of-band
+	// readers; IsLegacyTopLevel reports false for dual rows, true only
+	// for legacy-only rows.
+	if _, hasTop := top["experiments"]; !hasTop {
+		t.Fatalf("canonical snapshot must dual-emit top-level experiments: %s", raw)
 	}
-	if len(decoded.Exps) != 0 {
-		t.Fatalf("canonical snapshot must not carry top-level experiments: %s", raw)
+	if len(decoded.Exps) != 1 {
+		t.Fatalf("canonical snapshot must carry one derived top-level experiment: %s", raw)
+	}
+	if decoded.Exps[0]["flag"] != "hero_button" || decoded.Exps[0]["id"] != "exp1" {
+		t.Fatalf("derived top-level row must stamp parent flag key: %s", raw)
 	}
 	nested, ok := decoded.Flags[0]["experiments"].([]any)
 	if !ok || len(nested) == 0 {
@@ -152,10 +157,10 @@ func TestMarshalCanonicalEmptyIsArrayNotNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Canonical empty is exactly {"flags":[]} (nested-only, no top-level key);
-	// legacy {"flags":[],"experiments":[]} stays readable on the decode path
-	// (decode_compat_test.go, old_compat_test.go).
-	if s := string(raw); s != `{"flags":[]}` {
+	// Canonical empty is exactly {"flags":[],"experiments":[]} (dual-emit
+	// with no rows; top-level [] never null); legacy empty stays readable
+	// on the decode path (decode_compat_test.go, old_compat_test.go).
+	if s := string(raw); s != `{"flags":[],"experiments":[]}` {
 		t.Fatalf("empty snapshot must marshal with [] (not null): %s", raw)
 	}
 }

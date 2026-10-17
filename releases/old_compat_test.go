@@ -37,8 +37,13 @@ func TestOldTopLevelCompatParseValidate(t *testing.T) {
 	if err := json.Unmarshal(out, &canon); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := canon["experiments"]; ok {
-		t.Fatalf("canonical must emit nested shape only, got %s", out)
+	topExps, ok := canon["experiments"].([]any)
+	if !ok || len(topExps) != 1 {
+		t.Fatalf("canonical must dual-emit one top-level experiment, got %s", out)
+	}
+	topRow, ok := topExps[0].(map[string]any)
+	if !ok || topRow["id"] != "exp1" || topRow["flag"] != "hero_button" || topRow["seed"] != "seed-1" {
+		t.Fatalf("dual top-level row must stamp parent flag key, got %s", out)
 	}
 }
 

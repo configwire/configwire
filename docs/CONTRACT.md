@@ -152,7 +152,14 @@ remain readable — on read each old experiment folds to its parent flag
 by `flag` key (entries without a `flag` field are nested already),
 orphans targeting no parent flag are dropped, and validation runs over
 the folded shape. Legacy top-level `experiments[]` is deprecated but
-honored within the compat window; new publishers emit nested-only.
+honored within the compat window. During the dual-emit window new rows
+carry BOTH shapes (each experiment nested per flag and duplicated
+top-level with the same id): readers MUST prefer nested and fall back
+to top-level, deduping on id (else flag + seed, orphans dropped), so
+legacy-only, nested-only, and dual rows all fold to the same set.
+Out-of-band JS consumers share one tolerant reader
+(`getAllExperiments` in `pb_public/js/transfer.js`) with exactly that
+discipline.
 
 Rule condition is either one `{field, op, value[, seed]}` object or a
 non-empty array (max 10) of such objects, AND-ed at eval

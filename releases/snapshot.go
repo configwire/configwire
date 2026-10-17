@@ -23,7 +23,16 @@
 //	    {"flags":[...],"experiments":[{"id","flag","seed",...}]} still
 //	    unmarshal via Snapshot.UnmarshalJSON, which folds legacy top-level
 //	    experiments into their owning flag by flag key and drops orphans
-//	    (unknown flag key). MarshalCanonical always emits the nested shape.
+//	    (unknown flag key). Legacy duplicates already present nested are
+//	    skipped (dual-emit fold dedupes by id, flag+seed fallback) so all
+//	    three stored shapes (legacy-only, nested-only, dual) fold to
+//	    identical in-memory sets.
+//	  - WRITE COMPAT (dual-emit): MarshalCanonical emits BOTH the nested
+//	    per-flag experiments AND a derived legacy top-level experiments[]
+//	    duplicate (same rows, parent flag key stamped, sorted by
+//	    flag+seed+id) so old out-of-band direct-snapshot parsers keep
+//	    working after republish. The top-level array is always present
+//	    ([] when no experiments) and never null.
 //
 // ETAG RULE (T10/T13/T17 contract):
 //
@@ -128,8 +137,9 @@ type SnapshotExperiment struct {
 // Snapshot is the FROZEN publish payload stored on releases.snapshot.
 // Experiments is the in-memory flattened eval-ready set (every nested
 // entry with Flag stamped, flag order, orphans dropped); never marshaled
-// (json:"-") — the wire shape is nested-only. Populated by BuildSnapshot
-// and UnmarshalJSON; prefer per-flag Experiments for new code.
+// (json:"-") — the wire shape is dual-emit (nested plus derived
+// top-level). Populated by BuildSnapshot and UnmarshalJSON; prefer
+// per-flag Experiments for new code.
 // Experiments must only ever come from flattenNested via UnmarshalJSON /
 // BuildSnapshot and never be set literally, since ValidateSnapshot only
 // checks per-flag nested entries.
@@ -149,9 +159,10 @@ func (s Snapshot) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(c))
 }
 
-// Deprecated (kept for back-compat): one legacy top-level experiment row —
-// the linked flag's KEY plus the experiment fields. Read-only: used solely
-// to parse rows stored under the pre-nesting shape; never marshaled.
+// snapshotCompatExperiment is one legacy top-level experiment row — the
+// linked flag's KEY plus the experiment fields. Read path: parses rows
+// stored under the pre-nesting shape; write path: MarshalCanonical derives
+// the same rows from the nested per-flag set (dual-emit).
 type snapshotCompatExperiment struct {
 	ID       string `json:"id"`
 	Flag     string `json:"flag"`
@@ -168,12 +179,24 @@ type snapshotCompat struct {
 	Experiments []snapshotCompatExperiment `json:"experiments"`
 }
 
-// IsLegacyTopLevel reports whether raw carries a non-empty top-level
-// experiments array (the pre-nesting stored shape). It returns false for
-// missing, empty, nested-only, or malformed payloads. Pure: no I/O,
-// no logging, payload contents never retained.
+// IsLegacyTopLevel reports whether raw is a legacy-only snapshot: a
+// non-empty top-level experiments array with NO nested per-flag
+// experiments. Dual-emitted rows (nested plus derived top-level, the
+// current MarshalCanonical shape) report false so republished snapshots
+// do not stamp the deprecated-snapshot header; only unmigrated
+// legacy-only rows stamp. Missing, empty, nested-only, or malformed
+// payloads report false. Pure: no I/O, no logging, payload contents never
+// retained.
+//
+// Detector choice (a): gate on nested presence rather than an explicit
+// version marker. A marker would require a schema bump every reader must
+// understand; presence-gating keeps old parsers (which ignore unknown
+// fields anyway) working and needs no migration.
 func IsLegacyTopLevel(raw []byte) bool {
 	var probe struct {
+		Flags []struct {
+			Experiments json.RawMessage `json:"experiments"`
+		} `json:"flags"`
 		Experiments json.RawMessage `json:"experiments"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
@@ -186,13 +209,30 @@ func IsLegacyTopLevel(raw []byte) bool {
 	if err := json.Unmarshal(probe.Experiments, &arr); err != nil {
 		return false
 	}
-	return len(arr) > 0
+	if len(arr) == 0 {
+		return false
+	}
+	for _, f := range probe.Flags {
+		if len(f.Experiments) == 0 {
+			continue
+		}
+		var nested []json.RawMessage
+		if err := json.Unmarshal(f.Experiments, &nested); err != nil {
+			continue
+		}
+		if len(nested) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
-// UnmarshalJSON reads both the nested shape and the legacy top-level shape.
-// Legacy top-level experiments fold into their owning flag by flag key;
-// orphans (unknown flag key) are dropped. Nested experiments sort by seed
-// (id tiebreak) so post-fold order is deterministic.
+// UnmarshalJSON reads all three stored shapes (legacy-only, nested-only,
+// dual-emit): legacy top-level experiments fold into their owning flag by
+// flag key; orphans (unknown flag key) are dropped; rows already present
+// nested (same id, or same flag+seed when id-less) are skipped so dual
+// bytes fold to the identical in-memory set as nested-only. Nested
+// experiments sort by seed (id tiebreak) so post-fold order is deterministic.
 func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	var compat snapshotCompat
 	if err := json.Unmarshal(data, &compat); err != nil {
@@ -214,6 +254,12 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 			byKey[flags[i].Key] = &flags[i]
 		}
 	}
+	seen := make(map[string]bool)
+	for _, f := range flags {
+		for _, e := range f.Experiments {
+			seen[dedupeKey(f.Key, e.ID, e.Seed)] = true
+		}
+	}
 	// Deprecated (kept for back-compat): fold legacy top-level experiments
 	// into their owning flag by flag key; orphans (unknown flag key) drop.
 	for _, e := range compat.Experiments {
@@ -221,6 +267,11 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 		if !ok {
 			continue
 		}
+		k := dedupeKey(e.Flag, e.ID, e.Seed)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
 		f.Experiments = append(f.Experiments, SnapshotExperiment{
 			ID:       e.ID,
 			Seed:     e.Seed,
@@ -239,6 +290,16 @@ func (s *Snapshot) UnmarshalJSON(data []byte) error {
 	s.Flags = flags
 	s.Experiments = flattenNested(flags)
 	return nil
+}
+
+// dedupeKey identifies one experiment row for the dual-fold skip and
+// mirrors fetch.flattenForEval: record ids are globally unique so id wins;
+// id-less rows fall back to parent flag + seed.
+func dedupeKey(flag, id, seed string) string {
+	if id != "" {
+		return "id\x00" + id
+	}
+	return "seed\x00" + flag + "\x00" + seed
 }
 
 // flattenNested returns the in-memory eval-ready set: every nested entry
@@ -274,6 +335,10 @@ func CheckBaseVersion(baseVersion, currentMax int) bool {
 }
 
 // MarshalCanonical renders canonical bytes; the etag is computed over exactly these bytes.
+// Dual-emit: nested per-flag experiments plus a derived legacy top-level
+// experiments[] duplicate (same rows, parent flag key stamped) sorted by
+// flag+seed+id so old out-of-band readers keep parsing after republish.
+// The top-level array is always emitted ([] when empty, never null).
 func MarshalCanonical(snap Snapshot) ([]byte, error) {
 	if snap.Flags == nil {
 		snap.Flags = []SnapshotFlag{}
@@ -286,7 +351,35 @@ func MarshalCanonical(snap Snapshot) ([]byte, error) {
 			snap.Flags[i].Experiments = []SnapshotExperiment{}
 		}
 	}
-	return json.Marshal(snap)
+	legacy := []snapshotCompatExperiment{}
+	for _, f := range snap.Flags {
+		for _, e := range f.Experiments {
+			legacy = append(legacy, snapshotCompatExperiment{
+				ID:       e.ID,
+				Flag:     f.Key,
+				Seed:     e.Seed,
+				Variants: e.Variants,
+				Status:   e.Status,
+			})
+		}
+	}
+	sort.SliceStable(legacy, func(i, j int) bool {
+		if legacy[i].Flag != legacy[j].Flag {
+			return legacy[i].Flag < legacy[j].Flag
+		}
+		if legacy[i].Seed != legacy[j].Seed {
+			return legacy[i].Seed < legacy[j].Seed
+		}
+		return legacy[i].ID < legacy[j].ID
+	})
+	wire := struct {
+		Flags       []SnapshotFlag             `json:"flags"`
+		Experiments []snapshotCompatExperiment `json:"experiments"`
+	}{
+		Flags:       snap.Flags,
+		Experiments: legacy,
+	}
+	return json.Marshal(wire)
 }
 
 func jsonAny(v any) any {

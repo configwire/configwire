@@ -187,15 +187,123 @@
     return { flags: outFlags };
   }
 
+  // --- getAllExperiments (shared tolerant snapshot reader) ---
+  // Out-of-band JS consumers (parse, diff, export-normalize) read all
+  // three snapshot shapes through this one helper, mirroring Go
+  // fetch/fetch.go:flattenForEval: per-flag nested entries first with the
+  // parent flag stamped (parent wins), then legacy top-level
+  // snap.experiments[] rows whose flag matches a snapshot flag key
+  // (legacy fallback; orphans dropped). Deduped: record id wins when
+  // present, else parent flag + seed (name fallback for seedless rows).
+  // Deterministic order preserved (per-flag order, then legacy order);
+  // no sorting here — per-flag seed/name sorting stays in
+  // parseTransferSnapshot.
+  function expIdentity(e, flag) {
+    var id = e ? e.id : undefined;
+    if (id !== undefined && id !== null && id !== "") return "id\0" + String(id);
+    var f = typeof flag === "string" ? flag : "";
+    var seed = e ? e.seed : undefined;
+    if (seed !== undefined && seed !== null && seed !== "") return "seed\0" + f + "\0" + String(seed);
+    var nm = (e && e.name !== undefined && e.name !== null) ? String(e.name) : "";
+    return "seed\0" + f + "\0" + nm;
+  }
+
+  function getAllExperiments(snap) {
+    var out = [];
+    if (!snap || typeof snap !== "object" || Array.isArray(snap)) return out;
+    var flags = Array.isArray(snap.flags) ? snap.flags : [];
+    var seen = {};
+    var flagKeys = {};
+    var i, j;
+    for (i = 0; i < flags.length; i++) {
+      var fk = flags[i];
+      if (fk && typeof fk === "object" && !Array.isArray(fk) && typeof fk.key === "string") flagKeys[fk.key] = true;
+    }
+    function pushStamped(e, parentKey) {
+      if (!e || typeof e !== "object" || Array.isArray(e)) return;
+      var id = expIdentity(e, parentKey);
+      if (hasOwn(seen, id)) return;
+      seen[id] = true;
+      var row = {};
+      for (var k in e) {
+        if (hasOwn(e, k) && k !== "flag") row[k] = e[k];
+      }
+      row.flag = parentKey;
+      out.push(row);
+    }
+    for (i = 0; i < flags.length; i++) {
+      var fl = flags[i];
+      if (!fl || typeof fl !== "object" || Array.isArray(fl)) continue;
+      var parentKey = typeof fl.key === "string" ? fl.key : "";
+      var nested = Array.isArray(fl.experiments) ? fl.experiments : [];
+      for (j = 0; j < nested.length; j++) pushStamped(nested[j], parentKey);
+    }
+    var top = Array.isArray(snap.experiments) ? snap.experiments : [];
+    for (i = 0; i < top.length; i++) {
+      var t = top[i];
+      if (!t || typeof t !== "object" || Array.isArray(t)) continue;
+      if (typeof t.flag !== "string" || !hasOwn(flagKeys, t.flag)) continue; // orphans dropped
+      pushStamped(t, t.flag);
+    }
+    return out;
+  }
+
   // --- isLegacyTopLevelSnap ---
   // Pure legacy-shape detector (no notice wiring): true iff the snapshot
-  // carries a non-empty top-level experiments array.
+  // carries a non-empty top-level experiments array AND no flag carries a
+  // non-empty nested experiments array. Dual-emit rows (both shapes with
+  // the same ids) are new rows, not legacy, so they read false here and
+  // the import dialog shows no deprecation suffix for them.
   function isLegacyTopLevelSnap(snap) {
-    return !!(snap && typeof snap === "object" && !Array.isArray(snap) &&
-      Array.isArray(snap.experiments) && snap.experiments.length);
+    if (!snap || typeof snap !== "object" || Array.isArray(snap)) return false;
+    if (!Array.isArray(snap.experiments) || !snap.experiments.length) return false;
+    var flags = Array.isArray(snap.flags) ? snap.flags : [];
+    for (var i = 0; i < flags.length; i++) {
+      var fl = flags[i];
+      if (fl && typeof fl === "object" && !Array.isArray(fl) &&
+        Array.isArray(fl.experiments) && fl.experiments.length) return false;
+    }
+    return true;
   }
 
   // --- parseTransferSnapshot ---
+
+  // Canonical experiment row for the parse path: fixed key order (id
+  // first when present, then name first when present, then seed,
+  // variants, status, then any extra keys sorted) so nested rows,
+  // legacy rows, and dual-emit twins with identical content compare
+  // equal regardless of author key order in the source file. Lossless:
+  // every non-flag field survives (the stamped flag is stripped here;
+  // the caller regroups by parent key).
+  function canonParseRow(x) {
+    var xe = {};
+    if (x.id !== undefined && x.id !== null && x.id !== "") xe.id = x.id;
+    var seed = x.seed === undefined || x.seed === null ? "" : x.seed;
+    var variants = x.variants === undefined ? [] : x.variants;
+    var status = x.status || "draft";
+    if (x.name !== undefined && x.name !== null) {
+      var withName = {};
+      if (hasOwn(xe, "id")) withName.id = xe.id;
+      withName.name = x.name;
+      withName.seed = seed;
+      withName.variants = variants;
+      withName.status = status;
+      xe = withName;
+    } else {
+      xe.seed = seed;
+      xe.variants = variants;
+      xe.status = status;
+    }
+    var rest = [];
+    var k;
+    for (k in x) {
+      if (hasOwn(x, k) && k !== "id" && k !== "name" && k !== "seed" &&
+        k !== "variants" && k !== "status" && k !== "flag") rest.push(k);
+    }
+    rest.sort();
+    for (k = 0; k < rest.length; k++) xe[rest[k]] = x[rest[k]];
+    return xe;
+  }
 
   function parseTransferSnapshot(text) {
     var v;
@@ -207,38 +315,28 @@
     if (!isObject(v) || !Array.isArray(v.flags)) {
       return { ok: false, error: SHAPE_ERROR };
     }
-    // Deprecated: legacy top-level experiments[] compat — folds into owning flags[].experiments.
     var topExps = v.experiments;
     if (topExps === undefined) topExps = [];
     if (!Array.isArray(topExps)) {
       return { ok: false, error: SHAPE_ERROR };
     }
-    // Normalize to the nested shape: every flag carries experiments:[...].
-    // True merge (mirrors Go Snapshot.UnmarshalJSON append + orphan drop):
-    // each flag keeps its nested experiments array (non-array normalizes to
-    // []) and matching old top-level entries (x.flag === f.key, flag field
-    // dropped) append after them — even on duplicate seed. Orphans (flag key
-    // matching no snapshot flag) append nowhere and are dropped. The merged
-    // per-flag list sorts seed asc, then name asc.
+    // Normalize to the nested shape via the shared tolerant reader:
+    // nested-first, legacy fallback, deduped (id, else flag+seed/name),
+    // orphans dropped — so a dual-emit file (same ids nested +
+    // top-level) folds to one row per experiment while legacy-only and
+    // nested-only files read exactly as before. Regrouped per flag and
+    // sorted seed asc, then name asc (unchanged discipline).
+    var flat = getAllExperiments({ flags: v.flags, experiments: topExps });
+    var byFlag = {};
+    flat.forEach(function (e) {
+      var fk = (e && typeof e.flag === "string") ? e.flag : "";
+      if (!hasOwn(byFlag, fk)) byFlag[fk] = [];
+      byFlag[fk].push(canonParseRow(e));
+    });
     var flags = v.flags.map(function (f) {
       if (!isObject(f)) return f;
-      var nested = Array.isArray(f.experiments) ? f.experiments.slice() : [];
-      var extras = (typeof f.key === "string" ? topExps.filter(function (x) {
-        return x && typeof x === "object" && !Array.isArray(x) &&
-          typeof x.flag === "string" && x.flag === f.key;
-      }).map(function (x) {
-        var xe = {
-          seed: x.seed === undefined || x.seed === null ? "" : x.seed,
-          variants: x.variants === undefined ? [] : x.variants,
-          status: x.status || "draft",
-        };
-        if (x.name !== undefined && x.name !== null) {
-          xe = { name: x.name, seed: xe.seed, variants: xe.variants, status: xe.status };
-        }
-        return xe;
-      }) : []);
-      var merged = nested.concat(extras);
-      merged.sort(function (a, b) {
+      var rows = (typeof f.key === "string" && hasOwn(byFlag, f.key)) ? byFlag[f.key] : [];
+      rows.sort(function (a, b) {
         var sa = String(a.seed), sb = String(b.seed);
         if (sa !== sb) return sa < sb ? -1 : 1;
         var na = String(a.name || ""), nb = String(b.name || "");
@@ -249,7 +347,7 @@
       for (k in f) {
         if (hasOwn(f, k) && k !== "experiments") out[k] = f[k];
       }
-      out.experiments = merged;
+      out.experiments = rows;
       return out;
     });
     // No top-level experiments are surfaced: output is {flags:[...]} with
@@ -665,21 +763,17 @@
     return flag + "\0" + seed;
   }
 
-  // Deprecated: legacy top-level experiments[] compat — nested-first fold, first-wins.
-  // Flatten experiments from both snapshot shapes into one list, nested
-  // first (mirrors Go flattenForEval except empty-seed identity: JS keys
-  // flag + seed||name, Go keys id else flag+seed): nested flag.experiments[] with the
-  // parent flag key stamped (parent wins), then legacy top-level
-  // snap.experiments[] only when expDiffId (flag\0seed||name) is unseen.
-  // First occurrence wins, so nested wins on duplicate identity and diff
-  // on mixed snapshots agrees with diff on normalized-nested snapshots.
-  // Orphans (top-level rows whose flag matches no snapshot flag key) are
-  // DROPPED to match import (parseTransferSnapshot compat + import drop
-  // untargeted rows); expDiffId/expFlagKey/expDisplayLabel unchanged.
-  // Canonical experiment row for diff comparison: fixed key order (name,
-  // seed, variants, status, then any extra keys sorted, flag last) so old
-  // top-level rows and nested rows with identical content compare equal
-  // regardless of author key order in the source file.
+  // Flatten experiments from all three snapshot shapes into one list via
+  // the shared tolerant reader (nested first with parent flag stamped,
+  // legacy fallback, deduped, orphans dropped — mirrors Go flattenForEval
+  // except empty-seed identity: JS keys flag + seed||name, Go keys id else
+  // flag+seed). First occurrence wins, so nested wins on duplicate
+  // identity and diff on mixed snapshots agrees with diff on
+  // normalized-nested snapshots. Canonical experiment row for diff
+  // comparison: fixed key order (name, seed, variants, status, then any
+  // extra keys sorted, flag last) so old top-level rows and nested rows
+  // with identical content compare equal regardless of author key order
+  // in the source file.
   function canonExp(e, flag) {
     var copy = {};
     var k, rest = [];
@@ -699,41 +793,13 @@
   function collectExps(snap) {
     var out = [];
     var seen = {};
-    var i, j;
-    var flags = snap && Array.isArray(snap.flags) ? snap.flags : [];
-    var flagKeys = {};
-    for (i = 0; i < flags.length; i++) {
-      var fk = flags[i];
-      if (fk && typeof fk === "object" && !Array.isArray(fk) && typeof fk.key === "string") flagKeys[fk.key] = true;
-    }
-    for (i = 0; i < flags.length; i++) {
-      var fl = flags[i];
-      if (!fl || typeof fl !== "object" || Array.isArray(fl)) continue;
-      var parentKey = typeof fl.key === "string" ? fl.key : "";
-      var nested = Array.isArray(fl.experiments) ? fl.experiments : [];
-      for (j = 0; j < nested.length; j++) {
-        var ne = nested[j];
-        if (!ne || typeof ne !== "object" || Array.isArray(ne)) continue;
-        var copy = canonExp(ne, parentKey);
-        var nid = expDiffId(copy);
-        if (hasOwn(seen, nid)) continue;
-        seen[nid] = true;
-        out.push(copy);
-      }
-    }
-    // Deprecated: legacy top-level experiments[] compat — unseen ids only, orphans dropped.
-    if (snap && Array.isArray(snap.experiments)) {
-      for (i = 0; i < snap.experiments.length; i++) {
-        var e = snap.experiments[i];
-        if (!e || typeof e !== "object" || Array.isArray(e)) continue;
-        if (typeof e.flag !== "string" || !hasOwn(flagKeys, e.flag)) continue;
-        var row = canonExp(e, e.flag);
-        var id = expDiffId(row);
-        if (hasOwn(seen, id)) continue;
-        seen[id] = true;
-        out.push(row);
-      }
-    }
+    getAllExperiments(snap).forEach(function (e) {
+      var row = canonExp(e, (e && typeof e.flag === "string") ? e.flag : "");
+      var id = expDiffId(row);
+      if (hasOwn(seen, id)) return;
+      seen[id] = true;
+      out.push(row);
+    });
     return out;
   }
 
@@ -876,7 +942,9 @@
   // ({flags:[{..., experiments:[...]}]}). The frozen server payload is
   // nested-only (releases/snapshot.go); legacy top-level rows fold into
   // their parent flag on read via UnmarshalJSON, so they nest here under
-  // their parent flag key. Returns null when the row carries no parseable
+  // their parent flag key. Dual-emit rows (same id nested + top-level)
+  // fold to one row via the shared tolerant reader (nested-preferred).
+  // Returns null when the row carries no parseable
   // snapshot. Group ids resolve to names; everything else passes through
   // verbatim so the payload stays re-importable via importTransferSnapshot.
   function releaseSnapshotToTransfer(release) {
@@ -1343,6 +1411,7 @@
   }
 
   CW.isLegacyTopLevelSnap = isLegacyTopLevelSnap;
+  CW.getAllExperiments = getAllExperiments;
   CW.buildTransferSnapshot = buildTransferSnapshot;
   CW.parseTransferSnapshot = parseTransferSnapshot;
   CW.validateTransferSnapshot = validateTransferSnapshot;
