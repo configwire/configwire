@@ -162,7 +162,7 @@ test("selectedEnv hit and miss", function () {
   assert.equal(ctx.CW.selectedEnv(), null);
 });
 
-test("envSlug prefers selected env slug, falls back to state default then dev", function () {
+test("envSlug prefers selected env slug, falls back to state default then production", function () {
   var ctx = fresh();
   ctx.CW.state.envs = [{ id: "e1", slug: "staging" }];
   ctx.CW.state.envId = "e1";
@@ -172,9 +172,9 @@ test("envSlug prefers selected env slug, falls back to state default then dev", 
   ctx.CW.state.envSlug = "fallback";
   assert.equal(ctx.CW.envSlug(), "fallback");
   ctx.CW.state.envSlug = "";
-  assert.equal(ctx.CW.envSlug(), "dev");
+  assert.equal(ctx.CW.envSlug(), "production");
   ctx.CW.state.envSlug = null;
-  assert.equal(ctx.CW.envSlug(), "dev");
+  assert.equal(ctx.CW.envSlug(), "production");
 });
 
 // --- loadPersistedScope / persistScope (core.js:106-120) ---

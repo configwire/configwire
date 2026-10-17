@@ -236,7 +236,7 @@ test("loadStats shows Loading placeholder then stores lastStatsText on success",
   assert.equal(ctx.CW.state.lastStatsText, JSON.stringify(data, null, 2));
   assert.equal(ctx.CW.state.lastStatsError, "");
   assert.ok(
-    seenUrl === "/api/v1/admin/env/dev/stats?since=30d&project=p1",
+    seenUrl === "/api/v1/admin/env/production/stats?since=30d&project=p1",
     "unexpected stats url: " + seenUrl
   );
 });
