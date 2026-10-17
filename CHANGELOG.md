@@ -3,6 +3,100 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.11 — 2026-10-17
+
+### Added
+
+- Nested per-flag experiments shape (`releases/snapshot.go`
+  `SnapshotFlag.Experiments`, `docs/CONTRACT.md` §2): `BuildSnapshot`
+  groups experiments by flag key (sorted seed + id) and
+  `ValidateSnapshot` reports per-flag errors as `flag %q: experiment
+  %q`, so a bad experiment points at its flag instead of failing the
+  whole release with a bare index.
+- Tolerant snapshot fold (`releases/snapshot.go` `UnmarshalJSON`):
+  legacy-only, nested-only, and dual shapes decode to an identical set
+  (orphans dropped, empty stays `[]` never null), so old rows and
+  hand-written payloads load without a rewrite.
+- Canonical dual-emit (`releases/snapshot.go` `MarshalCanonical`):
+  nested `flags[].experiments` without the `flag` field plus a derived
+  top-level `experiments[]` with `flag` stamped (sorted flag + seed +
+  id), so new readers prefer nested while old readers keep reading
+  the top level unchanged.
+- Nested-first fetch flatten (`fetch/fetch.go` `flattenForEval`):
+  nested wins on merge, and legacy-only `200`s stamp
+  `X-CW-Deprecated-snapshot` (plus a counter) so operators can find
+  callers still serving the old shape.
+- Dashboard home range selector (`pb_public/index.html#home-since`,
+  `js/router.js`, `js/boot.js`, `js/core.js`): Last 24h/48h/7d/30d/3mo
+  persisted as `cw_home_since`, so the landing stats range survives a
+  reload instead of resetting to the default.
+- Project card sparkline + full activity chart + register-card Add
+  project entry (`js/router.js`, `styles.css`): cards show a compact
+  trend inline with the same data as the expanded chart, and an empty
+  slot offers project creation where the grid already is.
+- Instant tooltip singleton (`js/boot.js` `initCwTip`, `#cw-tip`):
+  one shared bubble replaces native `title`, so hover help appears
+  immediately with a single themed style instead of per-element
+  browser delays.
+- Publish/New-key sub-cards (`index.html`, `styles.css`): the two
+  forms render as side-by-side cards with Note full-width, so long
+  notes no longer squeeze the key inputs.
+- Nested-only transfer export with tolerant import (`js/transfer.js`):
+  exports write the nested shape only; imports accept
+  nested/legacy/dual and show a deprecation hint on legacy input, so
+  round-trips converge to the new shape without rejecting old files.
+
+### Changed
+
+- Eval winner order is now per-flag seed asc + id tiebreak
+  (`fetch/fetch.go`; was global id), so overlapping experiments on one
+  flag resolve deterministically by seed instead of creation order.
+- Docs: `docs/CONTRACT.md` §2 documents the nested schema and the
+  compat-window reader discipline (prefer nested, fallback top-level,
+  dedupe by id else flag + seed); §1a lists the shape variants in
+  nested-first order.
+- Detail header is a sticky float with anchor scroll-margin and a
+  live-measured offset (`styles.css`, `js/router.js`), so section
+  links land below the header instead of underneath it.
+- Project grid uses equal heights (`styles.css`, min-height 280px with
+  the chart pinned bottom), so cards in a row align instead of
+  staggering on content length.
+- Flag `...` menu reorder (`js/flags.js`, `index.html`): move-to-group
+  moves to the top with a divider, labels shorten to Flag/Group, and
+  folder icons mark group targets, so the most-used action is first.
+- Stats range labels read Last 24h wording (`js/router.js`), matching
+  the home selector instead of mixing relative phrasings.
+- Detail env defaults to the production slug (`js/core.js` `envSlug`,
+  `js/scope.js` `defaultEnvId`), so a fresh detail view opens on the
+  live env instead of the first row in id order.
+
+### Fixed
+
+- Refresh preserves scroll (`js/scope.js` `refreshAll` rAF restore),
+  so polling no longer jumps the page to the top.
+- Empty card height matches chart cards via a spacer (aspect
+  560/220), so an empty project does not collapse the grid row.
+- Group-card bottom border restored (separate model + last-row
+  radius), so grouped rows close with a clean edge again.
+- Tooltip follows the dark-menu theme (`styles.css`, `#cw-tip`), so
+  hover help stays readable in both themes.
+- Chart gradients use per-chart IDs with x-tick declutter (step
+  1/7/14), so overlapping charts no longer share a gradient and dense
+  ranges stay legible.
+- Dual-shape bytes no longer double-count via id/flag+seed dedupe, so
+  size guards measure the folded set instead of both copies.
+- Old empty rows decode via the compat fold (null/missing experiment
+  lists become `[]`), so legacy releases validate without a republish.
+
+### Migration notes
+
+No migration required: old readers ignore unknown
+`flags[].experiments` and keep reading the dual top level; new readers
+fold all three shapes identically. Republishing clears
+`IsLegacyTopLevel` (and the fetch deprecation header); rollback and
+promote re-validate the folded shape fail-closed. Sunset lands in the
+next server major (same window as the `?uid=` alias).
+
 ## v0.1.10 — 2026-10-15
 
 ### Added
