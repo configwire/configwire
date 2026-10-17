@@ -502,7 +502,7 @@ func TestPromoteHandlerDirectWritesDenied(t *testing.T) {
 	direct.Set("env", dev)
 	direct.Set("version", 99)
 	direct.Set("etag", "direct-etag")
-	direct.Set("snapshot", `{"flags":[],"experiments":[]}`)
+	direct.Set("snapshot", `{"flags":[]}`)
 	direct.Set("author", "direct")
 	direct.Set("note", "direct")
 	if err := app.Save(direct); err == nil || !strings.Contains(err.Error(), "publish-only") {

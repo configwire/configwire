@@ -29,20 +29,21 @@ func goodSnapshot() Snapshot {
 				Rules: []SnapshotRule{
 					{Priority: 1, Condition: map[string]any{"field": "platform", "op": "==", "value": "android"}, Value: "green"},
 				},
+				Experiments: []SnapshotExperiment{
+					{ID: "exp1", Seed: "seed-1", Variants: goodVariants(), Status: "draft"},
+				},
 			},
 			{
 				Key: "new_checkout", Type: "bool", Default: false, Group: "",
-				Rules: []SnapshotRule{},
+				Rules:       []SnapshotRule{},
+				Experiments: []SnapshotExperiment{},
 			},
-		},
-		Experiments: []SnapshotExperiment{
-			{ID: "exp1", Flag: "hero_button", Seed: "seed-1", Variants: goodVariants(), Status: "draft"},
 		},
 	}
 }
 
 func TestEtagDeterminism(t *testing.T) {
-	snap := []byte(`{"flags":[],"experiments":[]}`)
+	snap := []byte(`{"flags":[]}`)
 	if got := EtagFor(1, snap); got != EtagFor(1, snap) {
 		t.Fatalf("etag not deterministic: %q", got)
 	}
@@ -60,7 +61,7 @@ func TestEtagDeterminism(t *testing.T) {
 func TestEtagDiffersAcrossVersions(t *testing.T) {
 	// Rollback requirement: identical snapshot bytes MUST still yield a
 	// fresh etag on a new version.
-	snap := []byte(`{"flags":[{"key":"a","type":"bool","default":true,"group":"","rules":[]}],"experiments":[]}`)
+	snap := []byte(`{"flags":[{"key":"a","type":"bool","default":true,"group":"","rules":[],"experiments":[]}]}`)
 	if EtagFor(1, snap) == EtagFor(2, snap) {
 		t.Fatal("etag must differ across versions for identical snapshot bytes")
 	}
@@ -96,16 +97,11 @@ func TestSnapshotShapeFrozenKeys(t *testing.T) {
 	if err := json.Unmarshal(raw, &top); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"flags", "experiments"} {
-		if _, ok := top[k]; !ok {
-			t.Fatalf("snapshot missing top-level key %q: %s", k, raw)
-		}
+	// Nested contract: {"flags":[{"key":...,"experiments":[...]}]}.
+	// Compat window: old top-level "experiments" still accepted on read.
+	if _, ok := top["flags"]; !ok {
+		t.Fatalf("snapshot missing top-level key %q: %s", "flags", raw)
 	}
-	var flag map[string]any
-	if err := json.Unmarshal(raw, &flag); err != nil {
-		t.Fatal(err)
-	}
-	_ = flag
 	var decoded struct {
 		Flags []map[string]any `json:"flags"`
 		Exps  []map[string]any `json:"experiments"`
@@ -124,10 +120,30 @@ func TestSnapshotShapeFrozenKeys(t *testing.T) {
 			t.Fatalf("rule missing key %q: %s", rule, raw)
 		}
 	}
-	for _, want := range []string{"id", "flag", "seed", "variants", "status"} {
-		if _, ok := decoded.Exps[0][want]; !ok {
-			t.Fatalf("experiment missing key %q: %s", want, raw)
+	// Experiments live nested per flag (parent key implicit, no "flag"
+	// field); legacy top-level rows fold on read only (decode_compat_test.go,
+	// old_compat_test.go) and are never emitted by MarshalCanonical.
+	if _, hasTop := top["experiments"]; hasTop {
+		t.Fatalf("canonical snapshot must be nested-only, no top-level experiments: %s", raw)
+	}
+	if len(decoded.Exps) != 0 {
+		t.Fatalf("canonical snapshot must not carry top-level experiments: %s", raw)
+	}
+	nested, ok := decoded.Flags[0]["experiments"].([]any)
+	if !ok || len(nested) == 0 {
+		t.Fatalf("snapshot must carry experiments nested per flag: %s", raw)
+	}
+	var exps []map[string]any
+	for _, e := range nested {
+		exps = append(exps, e.(map[string]any))
+	}
+	for _, want := range []string{"id", "seed", "variants", "status"} {
+		if _, ok := exps[0][want]; !ok {
+			t.Fatalf("nested experiment missing key %q: %s", want, raw)
 		}
+	}
+	if _, hasFlag := exps[0]["flag"]; hasFlag {
+		t.Fatalf("nested experiment must not carry parent key field %q: %s", "flag", raw)
 	}
 }
 
@@ -136,7 +152,10 @@ func TestMarshalCanonicalEmptyIsArrayNotNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(raw) != `{"flags":[],"experiments":[]}` {
+	// Canonical empty is exactly {"flags":[]} (nested-only, no top-level key);
+	// legacy {"flags":[],"experiments":[]} stays readable on the decode path
+	// (decode_compat_test.go, old_compat_test.go).
+	if s := string(raw); s != `{"flags":[]}` {
 		t.Fatalf("empty snapshot must marshal with [] (not null): %s", raw)
 	}
 }
@@ -148,7 +167,7 @@ func TestValidateSnapshotAcceptsGood(t *testing.T) {
 }
 
 func TestValidateSnapshotRejectsEmpty(t *testing.T) {
-	err := ValidateSnapshot(Snapshot{Flags: []SnapshotFlag{}, Experiments: []SnapshotExperiment{}})
+	err := ValidateSnapshot(Snapshot{Flags: []SnapshotFlag{}})
 	if err == nil || !strings.Contains(err.Error(), "nothing to publish") {
 		t.Fatalf("empty snapshot must be rejected with 'nothing to publish', got %v", err)
 	}
@@ -194,7 +213,7 @@ func TestValidateSnapshotRejectsTypeMismatch(t *testing.T) {
 func TestValidateSnapshotRejectsBadExperiment(t *testing.T) {
 	// Reuses eval.ValidateExperiment: weights must sum to exactly 10000.
 	snap := goodSnapshot()
-	snap.Experiments[0].Variants = []any{
+	snap.Flags[0].Experiments[0].Variants = []any{
 		map[string]any{"name": "control", "weightBps": float64(9900)},
 	}
 	if err := ValidateSnapshot(snap); err == nil {

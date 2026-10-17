@@ -66,7 +66,7 @@ func newReleasesRecord(t *testing.T, app *tests.TestApp, version string) *core.R
 	rec := core.NewRecord(col)
 	rec.Set("version", version)
 	rec.Set("etag", "etag-"+version)
-	rec.Set("snapshot", `{"flags":[],"experiments":[]}`)
+	rec.Set("snapshot", `{"flags":[]}`)
 	rec.Set("author", "test")
 	rec.Set("note", "test")
 	rec.Set("env", "envA")

@@ -46,7 +46,7 @@ import (
 // promoteConcurrencySeed is a minimal valid snapshot for the dev source
 // row: one bool flag, no rules, no experiments. It must pass
 // ValidateSnapshot because promoteToNewRow re-validates the cloned bytes.
-const promoteConcurrencySeed = `{"flags":[{"key":"promo_flag","type":"bool","default":true,"group":"","rules":[]}],"experiments":[]}`
+const promoteConcurrencySeed = `{"flags":[{"key":"promo_flag","type":"bool","default":true,"group":"","rules":[],"experiments":[]}]}`
 
 // promoteConcurrencyApp builds a TestApp with the collections postPromoteEnv
 // touches: environments (slug/project, for envresolve.Resolve) and releases

@@ -1,22 +1,29 @@
 // Package releases implements the ConfigWire versioning heart.
 //
-// FROZEN SNAPSHOT SCHEMA (T10 contract — no deviations):
+// FROZEN SNAPSHOT SCHEMA (nested experiments shape):
 //
-//		{"flags":[{"key","type","default","group","rules":[{"priority","condition","value}]}],
-//		 "experiments":[{"id","flag","seed","variants","status"}]}
+//		{"flags":[{"key","type","default","group","rules":[{"priority","condition","value"}],
+//		 "experiments":[{"id","seed","variants","status"}]}]}
 //
-//	  - flags/rules are scoped to the publish target env's project
+//	  - flags/rules/experiments are scoped to the publish target env's project
 //	    (env.project relation). flags sorted by key, rules by priority
-//	    ascending so the canonical bytes (and therefore the etag) are
-//	    deterministic.
+//	    ascending, nested experiments by seed (id tiebreak) so the canonical
+//	    bytes (and therefore the etag) are deterministic.
 //	  - experiments are scoped to the publish target env's project via
 //	    their linked flag: rows targeting a flag of another project are
 //	    EXCLUDED (no cross-project leakage into snapshots, and therefore
 //	    into fetch overlays, stats, or ingest). Untargeted rows (flag
 //	    relation unset or dangling) are EXCLUDED (breaking change: the
-//	    legacy flag "" shape is removed). experiment.flag is the linked
-//	    flag's KEY, experiment.id is the record id.
+//	    legacy flag "" shape is removed). The parent flag key is implicit on
+//	    the wire (no per-experiment flag JSON field; the Go struct keeps an
+//	    in-memory-only stamped copy for eval, json:"-"). experiment.id is
+//	    the record id.
 //	  - flag.group is the linked groups record id ("" when unset).
+//	  - READ COMPAT: rows stored under the legacy shape
+//	    {"flags":[...],"experiments":[{"id","flag","seed",...}]} still
+//	    unmarshal via Snapshot.UnmarshalJSON, which folds legacy top-level
+//	    experiments into their owning flag by flag key and drops orphans
+//	    (unknown flag key). MarshalCanonical always emits the nested shape.
 //
 // ETAG RULE (T10/T13/T17 contract):
 //
@@ -85,15 +92,67 @@ type SnapshotRule struct {
 
 // SnapshotFlag is one flag entry in the frozen publish payload.
 type SnapshotFlag struct {
-	Key     string         `json:"key"`
-	Type    string         `json:"type"`
-	Default any            `json:"default"`
-	Group   string         `json:"group"`
-	Rules   []SnapshotRule `json:"rules"`
+	Key         string               `json:"key"`
+	Type        string               `json:"type"`
+	Default     any                  `json:"default"`
+	Group       string               `json:"group"`
+	Rules       []SnapshotRule       `json:"rules"`
+	Experiments []SnapshotExperiment `json:"experiments"`
 }
 
-// SnapshotExperiment is one experiment row in the frozen publish payload, scoped to the env project.
+// MarshalJSON guarantees Rules/Experiments encode as [] (never null).
+func (f SnapshotFlag) MarshalJSON() ([]byte, error) {
+	type plain SnapshotFlag
+	c := f
+	if c.Rules == nil {
+		c.Rules = []SnapshotRule{}
+	}
+	if c.Experiments == nil {
+		c.Experiments = []SnapshotExperiment{}
+	}
+	return json.Marshal(plain(c))
+}
+
+// SnapshotExperiment is one experiment nested under its parent flag in the
+// frozen publish payload. The parent flag key is implicit on the wire (no
+// "flag" JSON field); Flag carries it in memory only (json:"-") so fetch
+// eval and the handler fold keep working without a JSON round-trip.
 type SnapshotExperiment struct {
+	ID       string `json:"id"`
+	Flag     string `json:"-"`
+	Seed     string `json:"seed"`
+	Variants any    `json:"variants"`
+	Status   string `json:"status"`
+}
+
+// Snapshot is the FROZEN publish payload stored on releases.snapshot.
+// Experiments is the in-memory flattened eval-ready set (every nested
+// entry with Flag stamped, flag order, orphans dropped); never marshaled
+// (json:"-") — the wire shape is nested-only. Populated by BuildSnapshot
+// and UnmarshalJSON; prefer per-flag Experiments for new code.
+// Experiments must only ever come from flattenNested via UnmarshalJSON /
+// BuildSnapshot and never be set literally, since ValidateSnapshot only
+// checks per-flag nested entries.
+type Snapshot struct {
+	Flags       []SnapshotFlag       `json:"flags"`
+	Experiments []SnapshotExperiment `json:"-"`
+}
+
+// MarshalJSON guarantees Flags encodes as [] (never null); nested nil
+// slices are handled by SnapshotFlag.MarshalJSON.
+func (s Snapshot) MarshalJSON() ([]byte, error) {
+	type plain Snapshot
+	c := s
+	if c.Flags == nil {
+		c.Flags = []SnapshotFlag{}
+	}
+	return json.Marshal(plain(c))
+}
+
+// Deprecated (kept for back-compat): one legacy top-level experiment row —
+// the linked flag's KEY plus the experiment fields. Read-only: used solely
+// to parse rows stored under the pre-nesting shape; never marshaled.
+type snapshotCompatExperiment struct {
 	ID       string `json:"id"`
 	Flag     string `json:"flag"`
 	Seed     string `json:"seed"`
@@ -101,10 +160,101 @@ type SnapshotExperiment struct {
 	Status   string `json:"status"`
 }
 
-// Snapshot is the FROZEN publish payload stored on releases.snapshot.
-type Snapshot struct {
-	Flags       []SnapshotFlag       `json:"flags"`
-	Experiments []SnapshotExperiment `json:"experiments"`
+// Deprecated (kept for back-compat): the legacy stored shape
+// ({"flags":[...],"experiments":[...]}). The top-level experiments array is
+// optional; when present its entries fold into their owning flag.
+type snapshotCompat struct {
+	Flags       []SnapshotFlag             `json:"flags"`
+	Experiments []snapshotCompatExperiment `json:"experiments"`
+}
+
+// IsLegacyTopLevel reports whether raw carries a non-empty top-level
+// experiments array (the pre-nesting stored shape). It returns false for
+// missing, empty, nested-only, or malformed payloads. Pure: no I/O,
+// no logging, payload contents never retained.
+func IsLegacyTopLevel(raw []byte) bool {
+	var probe struct {
+		Experiments json.RawMessage `json:"experiments"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	if len(probe.Experiments) == 0 {
+		return false
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(probe.Experiments, &arr); err != nil {
+		return false
+	}
+	return len(arr) > 0
+}
+
+// UnmarshalJSON reads both the nested shape and the legacy top-level shape.
+// Legacy top-level experiments fold into their owning flag by flag key;
+// orphans (unknown flag key) are dropped. Nested experiments sort by seed
+// (id tiebreak) so post-fold order is deterministic.
+func (s *Snapshot) UnmarshalJSON(data []byte) error {
+	var compat snapshotCompat
+	if err := json.Unmarshal(data, &compat); err != nil {
+		return err
+	}
+	flags := compat.Flags
+	if flags == nil {
+		flags = []SnapshotFlag{}
+	}
+	byKey := make(map[string]*SnapshotFlag, len(flags))
+	for i := range flags {
+		if flags[i].Rules == nil {
+			flags[i].Rules = []SnapshotRule{}
+		}
+		if flags[i].Experiments == nil {
+			flags[i].Experiments = []SnapshotExperiment{}
+		}
+		if _, exists := byKey[flags[i].Key]; !exists {
+			byKey[flags[i].Key] = &flags[i]
+		}
+	}
+	// Deprecated (kept for back-compat): fold legacy top-level experiments
+	// into their owning flag by flag key; orphans (unknown flag key) drop.
+	for _, e := range compat.Experiments {
+		f, ok := byKey[e.Flag]
+		if !ok {
+			continue
+		}
+		f.Experiments = append(f.Experiments, SnapshotExperiment{
+			ID:       e.ID,
+			Seed:     e.Seed,
+			Variants: e.Variants,
+			Status:   e.Status,
+		})
+	}
+	for i := range flags {
+		sort.SliceStable(flags[i].Experiments, func(a, b int) bool {
+			if flags[i].Experiments[a].Seed != flags[i].Experiments[b].Seed {
+				return flags[i].Experiments[a].Seed < flags[i].Experiments[b].Seed
+			}
+			return flags[i].Experiments[a].ID < flags[i].Experiments[b].ID
+		})
+	}
+	s.Flags = flags
+	s.Experiments = flattenNested(flags)
+	return nil
+}
+
+// flattenNested returns the in-memory eval-ready set: every nested entry
+// with Flag stamped, in flag order (nested per-flag order preserved).
+// Orphans cannot occur here (fold drops them); the result feeds fetch eval
+// and the handler fold without a JSON round-trip.
+func flattenNested(flags []SnapshotFlag) []SnapshotExperiment {
+	out := []SnapshotExperiment{}
+	for i := range flags {
+		for _, e := range flags[i].Experiments {
+			c := e
+			c.Flag = flags[i].Key
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // EtagFor bumps the etag on every version bump even when snapshot bytes are identical (rollback requirement).
@@ -128,8 +278,13 @@ func MarshalCanonical(snap Snapshot) ([]byte, error) {
 	if snap.Flags == nil {
 		snap.Flags = []SnapshotFlag{}
 	}
-	if snap.Experiments == nil {
-		snap.Experiments = []SnapshotExperiment{}
+	for i := range snap.Flags {
+		if snap.Flags[i].Rules == nil {
+			snap.Flags[i].Rules = []SnapshotRule{}
+		}
+		if snap.Flags[i].Experiments == nil {
+			snap.Flags[i].Experiments = []SnapshotExperiment{}
+		}
 	}
 	return json.Marshal(snap)
 }
@@ -177,9 +332,9 @@ func jsonAny(v any) any {
 // rules, and experiments are scoped to env's project; experiments
 // targeting another project's flags are excluded (no cross-project
 // leakage). Returned flags are sorted by key, rules by priority
-// ascending, experiments by id.
+// ascending, nested experiments by seed (id tiebreak).
 func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
-	snap := Snapshot{Flags: []SnapshotFlag{}, Experiments: []SnapshotExperiment{}}
+	snap := Snapshot{Flags: []SnapshotFlag{}}
 	projectID := env.GetString("project")
 
 	flagRecs, err := app.FindRecordsByFilter("flags", "project = {:project}", "", 0, 0, dbx.Params{"project": projectID})
@@ -212,26 +367,6 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 		})
 	}
 
-	for id, fr := range byID {
-		rules := rulesByFlag[id]
-		if rules == nil {
-			rules = []SnapshotRule{}
-		}
-		sort.SliceStable(rules, func(i, j int) bool {
-			return rules[i].Priority < rules[j].Priority
-		})
-		snap.Flags = append(snap.Flags, SnapshotFlag{
-			Key:     flagKeys[id],
-			Type:    fr.GetString("type"),
-			Default: jsonAny(fr.Get("defaultValue")),
-			Group:   fr.GetString("group"),
-			Rules:   rules,
-		})
-	}
-	sort.SliceStable(snap.Flags, func(i, j int) bool {
-		return snap.Flags[i].Key < snap.Flags[j].Key
-	})
-
 	expRecs, err := findFlagScopedRecords(app, "experiments", flagIDs)
 	if err != nil {
 		return snap, err
@@ -240,22 +375,51 @@ func BuildSnapshot(app core.App, env *core.Record) (Snapshot, error) {
 	for _, fr := range flagRecs {
 		flagProjects[fr.Id] = fr.GetString("project")
 	}
+	expsByFlag := make(map[string][]SnapshotExperiment)
 	for _, er := range expRecs {
 		flagKey, include := ResolveExperimentFlag(projectID, er.GetString("flag"), flagProjects, flagKeys)
 		if !include {
 			continue
 		}
-		snap.Experiments = append(snap.Experiments, SnapshotExperiment{
+		expsByFlag[flagKey] = append(expsByFlag[flagKey], SnapshotExperiment{
 			ID:       er.Id,
-			Flag:     flagKey,
 			Seed:     er.GetString("seed"),
 			Variants: jsonAny(er.Get("variants")),
 			Status:   er.GetString("status"),
 		})
 	}
-	sort.SliceStable(snap.Experiments, func(i, j int) bool {
-		return snap.Experiments[i].ID < snap.Experiments[j].ID
+
+	for id, fr := range byID {
+		rules := rulesByFlag[id]
+		if rules == nil {
+			rules = []SnapshotRule{}
+		}
+		sort.SliceStable(rules, func(i, j int) bool {
+			return rules[i].Priority < rules[j].Priority
+		})
+		exps := expsByFlag[flagKeys[id]]
+		if exps == nil {
+			exps = []SnapshotExperiment{}
+		}
+		sort.SliceStable(exps, func(i, j int) bool {
+			if exps[i].Seed != exps[j].Seed {
+				return exps[i].Seed < exps[j].Seed
+			}
+			return exps[i].ID < exps[j].ID
+		})
+		snap.Flags = append(snap.Flags, SnapshotFlag{
+			Key:         flagKeys[id],
+			Type:        fr.GetString("type"),
+			Default:     jsonAny(fr.Get("defaultValue")),
+			Group:       fr.GetString("group"),
+			Rules:       rules,
+			Experiments: exps,
+		})
+	}
+	sort.SliceStable(snap.Flags, func(i, j int) bool {
+		return snap.Flags[i].Key < snap.Flags[j].Key
 	})
+	snap.Experiments = flattenNested(snap.Flags)
 
 	return snap, nil
 }
@@ -496,21 +660,18 @@ func ValidateSnapshot(snap Snapshot) error {
 				return err
 			}
 		}
-	}
-	for _, e := range snap.Experiments {
-		if e.Flag == "" {
-			return errors.New("experiment " + e.ID + ": flag is required")
-		}
-		raw, err := json.Marshal(e.Variants)
-		if err != nil {
-			return fmt.Errorf("experiment %q: variants are not valid JSON", e.ID)
-		}
-		var variants []eval.Variant
-		if err := json.Unmarshal(raw, &variants); err != nil {
-			return fmt.Errorf("experiment %q: variants shape invalid: %v", e.ID, err)
-		}
-		if err := eval.ValidateExperiment(eval.Experiment{Variants: variants}); err != nil {
-			return fmt.Errorf("experiment %q: %v", e.ID, err)
+		for _, e := range f.Experiments {
+			raw, err := json.Marshal(e.Variants)
+			if err != nil {
+				return fmt.Errorf("flag %q: experiment %q: variants are not valid JSON", f.Key, e.ID)
+			}
+			var variants []eval.Variant
+			if err := json.Unmarshal(raw, &variants); err != nil {
+				return fmt.Errorf("flag %q: experiment %q: variants shape invalid: %v", f.Key, e.ID, err)
+			}
+			if err := eval.ValidateExperiment(eval.Experiment{Variants: variants}); err != nil {
+				return fmt.Errorf("flag %q: experiment %q: %v", f.Key, e.ID, err)
+			}
 		}
 	}
 	return nil

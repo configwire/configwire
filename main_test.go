@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/configwire/configwire/releases"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
@@ -163,7 +165,7 @@ func seedRelease(t *testing.T, app *tests.TestApp, envID string, version int, et
 	rec := core.NewRecord(col)
 	rec.Set("version", version)
 	rec.Set("etag", etag)
-	rec.Set("snapshot", `{"flags":[],"experiments":[]}`)
+	rec.Set("snapshot", `{"flags":[]}`)
 	rec.Set("author", "test")
 	rec.Set("note", "test")
 	rec.Set("env", envID)
@@ -432,6 +434,31 @@ func TestFlagDuplicateKeyRejectedByHook(t *testing.T) {
 	free.Set("key", "launch_flag")
 	if err := app.Save(free); err == nil {
 		t.Fatal("flag rename onto a taken key saved, want hook refusal")
+	}
+}
+
+func TestOldTopLevelCompatSeedDecodes(t *testing.T) {
+	oldRaw := `{"flags":[{"key":"launch_flag","type":"bool","default":false,"group":"","rules":[]}],"experiments":[{"id":"exp1","flag":"launch_flag","seed":"seed-1","variants":[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}],"status":"draft"}]}`
+	var snap releases.Snapshot
+	if err := json.Unmarshal([]byte(oldRaw), &snap); err != nil {
+		t.Fatalf("old top-level seed must unmarshal: %v", err)
+	}
+	if len(snap.Flags) != 1 || len(snap.Flags[0].Experiments) != 1 {
+		t.Fatalf("old seed must fold to 1 flag with 1 nested exp, got %+v", snap.Flags)
+	}
+	if err := releases.ValidateSnapshot(snap); err != nil {
+		t.Fatalf("old top-level seed must validate ok: %v", err)
+	}
+	nestedRaw := `{"flags":[{"key":"launch_flag","type":"bool","default":false,"group":"","rules":[],"experiments":[{"id":"exp1","seed":"seed-1","variants":[{"name":"control","weightBps":5000},{"name":"treatment","weightBps":5000}],"status":"draft"}]}]}`
+	var nested releases.Snapshot
+	if err := json.Unmarshal([]byte(nestedRaw), &nested); err != nil {
+		t.Fatalf("nested seed must unmarshal: %v", err)
+	}
+	if len(nested.Flags) != 1 || nested.Flags[0].Key != "launch_flag" {
+		t.Fatalf("nested flags not preserved: %+v", nested.Flags)
+	}
+	if err := releases.ValidateSnapshot(nested); err != nil {
+		t.Fatalf("nested seed must validate ok: %v", err)
 	}
 }
 

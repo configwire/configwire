@@ -1,7 +1,9 @@
 package fetch
 
 import (
+	"encoding/json"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -108,19 +110,20 @@ func fakeSnapshot() releases.Snapshot {
 						Condition: map[string]any{"field": "platform", "op": "==", "value": "android"},
 						Value:     "hello-android"},
 				},
+				Experiments: []releases.SnapshotExperiment{},
 			},
-			{Key: "new_ui", Type: "bool", Default: false},
-		},
-		Experiments: []releases.SnapshotExperiment{
-			{
-				ID:   "exp1",
-				Flag: "new_ui",
-				Seed: "seed-1",
-				Variants: []any{
-					map[string]any{"name": "control", "weightBps": float64(5000), "values": map[string]any{"new_ui": false}},
-					map[string]any{"name": "treatment", "weightBps": float64(5000), "values": map[string]any{"new_ui": true}},
+			{Key: "new_ui", Type: "bool", Default: false,
+				Experiments: []releases.SnapshotExperiment{
+					{
+						ID:   "exp1",
+						Seed: "seed-1",
+						Variants: []any{
+							map[string]any{"name": "control", "weightBps": float64(5000), "values": map[string]any{"new_ui": false}},
+							map[string]any{"name": "treatment", "weightBps": float64(5000), "values": map[string]any{"new_ui": true}},
+						},
+						Status: "running",
+					},
 				},
-				Status: "running",
 			},
 		},
 	}
@@ -227,6 +230,30 @@ func TestEvaluateSnapshotMultiConditionAND(t *testing.T) {
 	values, _ = EvaluateSnapshot(snap, eval.Context{Platform: "android", Country: "FR"}, "")
 	if values["greet"] != "hello" {
 		t.Errorf("one condition fails: got %v, want default hello", values["greet"])
+	}
+}
+
+func TestOldTopLevelCompatDecodesSame(t *testing.T) {
+	oldRaw := `{"flags":[{"key":"greet","type":"string","default":"hello","group":"","rules":[{"priority":1,"condition":{"field":"platform","op":"==","value":"android"},"value":"hi"}]}],"experiments":[]}`
+	nestedRaw := `{"flags":[{"key":"greet","type":"string","default":"hello","group":"","rules":[{"priority":1,"condition":{"field":"platform","op":"==","value":"android"},"value":"hi"}],"experiments":[]}]}`
+	var oldSnap, nestedSnap releases.Snapshot
+	if err := json.Unmarshal([]byte(oldRaw), &oldSnap); err != nil {
+		t.Fatalf("unmarshal old: %v", err)
+	}
+	if err := json.Unmarshal([]byte(nestedRaw), &nestedSnap); err != nil {
+		t.Fatalf("unmarshal nested: %v", err)
+	}
+	if len(nestedSnap.Flags) != 1 || nestedSnap.Flags[0].Key != "greet" {
+		t.Fatalf("nested flags not preserved: %+v", nestedSnap.Flags)
+	}
+	ctx := eval.Context{Platform: "android", UserHash: "0123456789abcdef"}
+	oldValues, _ := EvaluateSnapshot(oldSnap, ctx, "")
+	nestedValues, _ := EvaluateSnapshot(nestedSnap, ctx, "")
+	if !reflect.DeepEqual(oldValues, nestedValues) {
+		t.Fatalf("old vs nested values differ: %v vs %v", oldValues, nestedValues)
+	}
+	if nestedValues["greet"] != "hi" {
+		t.Fatalf("rule must win for android, got %v", nestedValues["greet"])
 	}
 }
 

@@ -27,7 +27,7 @@
   var MAX_FLAG_KEY_LEN = 128;
   var VALID_FLAG_TYPES = { number: true, string: true, bool: true, json: true };
   var VALID_EXP_STATUS = { draft: true, running: true, stopped: true };
-  var SHAPE_ERROR = "Expected {flags:[...], experiments:[...]}";
+  var SHAPE_ERROR = "Expected {flags:[{key, experiments:[...]}]}";
 
   function hasOwn(o, k) {
     return Object.prototype.hasOwnProperty.call(o, k);
@@ -123,6 +123,46 @@
       }
     }
 
+    var keptIds = {};
+    for (i = 0; i < kept.length; i++) {
+      if (kept[i].id !== undefined && kept[i].id !== null && kept[i].id !== "") {
+        keptIds[String(kept[i].id)] = true;
+      }
+    }
+    // Experiments nest per flag (no top-level experiments array). The parent
+    // flag key is inferred, so nested entries carry {name?, seed, variants,
+    // status} only. Canonical key order: name first when present.
+    var expsByKey = {};
+    var x;
+    for (i = 0; i < exps.length; i++) {
+      x = exps[i];
+      if (!x || isDeletedRecord("experiment", x)) continue;
+      var xfid = x.flag === undefined || x.flag === null ? "" : String(x.flag);
+      if (!xfid || !hasOwn(keptIds, xfid)) continue;
+      var xkey = hasOwn(idToKey, xfid) ? idToKey[xfid] : "";
+      if (!xkey) continue;
+      var xe = {
+        seed: x.seed === undefined || x.seed === null ? "" : x.seed,
+        variants: x.variants === undefined ? [] : x.variants,
+        status: x.status || "draft",
+      };
+      if (x.name !== undefined && x.name !== null) {
+        xe = { name: x.name, seed: xe.seed, variants: xe.variants, status: xe.status };
+      }
+      if (!hasOwn(expsByKey, xkey)) expsByKey[xkey] = [];
+      expsByKey[xkey].push(xe);
+    }
+    for (fk in expsByKey) {
+      if (hasOwn(expsByKey, fk)) {
+        expsByKey[fk].sort(function (a, b) {
+          var sa = String(a.seed), sb = String(b.seed);
+          if (sa !== sb) return sa < sb ? -1 : 1;
+          var na = String(a.name || ""), nb = String(b.name || "");
+          return na < nb ? -1 : na > nb ? 1 : 0;
+        });
+      }
+    }
+
     var outFlags = kept.map(function (fl) {
       var gid = fl.group === undefined || fl.group === null ? "" : String(fl.group);
       var gname;
@@ -137,56 +177,22 @@
         rules: fl.id !== undefined && fl.id !== null && hasOwn(rulesByFlag, String(fl.id))
           ? rulesByFlag[String(fl.id)]
           : [],
+        experiments: hasOwn(expsByKey, fl.key) ? expsByKey[fl.key] : [],
       };
       if (typeof fl.description === "string" && fl.description) entry.description = fl.description;
       return entry;
     });
     outFlags.sort(function (a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; });
 
-    var keptIds = {};
-    for (i = 0; i < kept.length; i++) {
-      if (kept[i].id !== undefined && kept[i].id !== null && kept[i].id !== "") {
-        keptIds[String(kept[i].id)] = true;
-      }
-    }
-    var outExps = [];
-    var x;
-    for (i = 0; i < exps.length; i++) {
-      x = exps[i];
-      if (!x || isDeletedRecord("experiment", x)) continue;
-      var xfid = x.flag === undefined || x.flag === null ? "" : String(x.flag);
-      if (!xfid || !hasOwn(keptIds, xfid)) continue;
-      var xkey = hasOwn(idToKey, xfid) ? idToKey[xfid] : "";
-      if (!xkey) continue;
-      var xe = {
-        flag: xkey,
-        seed: x.seed === undefined || x.seed === null ? "" : x.seed,
-        variants: x.variants === undefined ? [] : x.variants,
-        status: x.status || "draft",
-      };
-      if (x.name !== undefined && x.name !== null) xe.name = x.name;
-      outExps.push(xe);
-    }
-    // Canonical order: name first when present (matches {"name","flag",...}
-    // shape), so reorder keys for deterministic pretty JSON.
-    outExps = outExps.map(function (e) {
-      var ordered = {};
-      if (hasOwn(e, "name")) ordered.name = e.name;
-      ordered.flag = e.flag;
-      ordered.seed = e.seed;
-      ordered.variants = e.variants;
-      ordered.status = e.status;
-      return ordered;
-    });
-    outExps.sort(function (a, b) {
-      if (a.flag !== b.flag) return a.flag < b.flag ? -1 : 1;
-      var sa = String(a.seed), sb = String(b.seed);
-      if (sa !== sb) return sa < sb ? -1 : 1;
-      var na = String(a.name || ""), nb = String(b.name || "");
-      return na < nb ? -1 : na > nb ? 1 : 0;
-    });
+    return { flags: outFlags };
+  }
 
-    return { flags: outFlags, experiments: outExps };
+  // --- isLegacyTopLevelSnap ---
+  // Pure legacy-shape detector (no notice wiring): true iff the snapshot
+  // carries a non-empty top-level experiments array.
+  function isLegacyTopLevelSnap(snap) {
+    return !!(snap && typeof snap === "object" && !Array.isArray(snap) &&
+      Array.isArray(snap.experiments) && snap.experiments.length);
   }
 
   // --- parseTransferSnapshot ---
@@ -201,12 +207,54 @@
     if (!isObject(v) || !Array.isArray(v.flags)) {
       return { ok: false, error: SHAPE_ERROR };
     }
-    var exps = v.experiments;
-    if (exps === undefined) exps = [];
-    if (!Array.isArray(exps)) {
+    // Deprecated: legacy top-level experiments[] compat — folds into owning flags[].experiments.
+    var topExps = v.experiments;
+    if (topExps === undefined) topExps = [];
+    if (!Array.isArray(topExps)) {
       return { ok: false, error: SHAPE_ERROR };
     }
-    var snap = { flags: v.flags, experiments: exps };
+    // Normalize to the nested shape: every flag carries experiments:[...].
+    // True merge (mirrors Go Snapshot.UnmarshalJSON append + orphan drop):
+    // each flag keeps its nested experiments array (non-array normalizes to
+    // []) and matching old top-level entries (x.flag === f.key, flag field
+    // dropped) append after them — even on duplicate seed. Orphans (flag key
+    // matching no snapshot flag) append nowhere and are dropped. The merged
+    // per-flag list sorts seed asc, then name asc.
+    var flags = v.flags.map(function (f) {
+      if (!isObject(f)) return f;
+      var nested = Array.isArray(f.experiments) ? f.experiments.slice() : [];
+      var extras = (typeof f.key === "string" ? topExps.filter(function (x) {
+        return x && typeof x === "object" && !Array.isArray(x) &&
+          typeof x.flag === "string" && x.flag === f.key;
+      }).map(function (x) {
+        var xe = {
+          seed: x.seed === undefined || x.seed === null ? "" : x.seed,
+          variants: x.variants === undefined ? [] : x.variants,
+          status: x.status || "draft",
+        };
+        if (x.name !== undefined && x.name !== null) {
+          xe = { name: x.name, seed: xe.seed, variants: xe.variants, status: xe.status };
+        }
+        return xe;
+      }) : []);
+      var merged = nested.concat(extras);
+      merged.sort(function (a, b) {
+        var sa = String(a.seed), sb = String(b.seed);
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        var na = String(a.name || ""), nb = String(b.name || "");
+        return na < nb ? -1 : na > nb ? 1 : 0;
+      });
+      var out = {};
+      var k;
+      for (k in f) {
+        if (hasOwn(f, k) && k !== "experiments") out[k] = f[k];
+      }
+      out.experiments = merged;
+      return out;
+    });
+    // No top-level experiments are surfaced: output is {flags:[...]} with
+    // experiments nested per flag only.
+    var snap = { flags: flags };
     return { ok: true, snap: snap, value: snap };
   }
 
@@ -242,11 +290,51 @@
     return null;
   }
 
+  function expVariantError(e, label) {
+    if (!Array.isArray(e.variants) || !e.variants.length) {
+      return "Experiment " + JSON.stringify(String(label)) + " has no variants.";
+    }
+    var seen = {};
+    var sum = 0;
+    var j;
+    for (j = 0; j < e.variants.length; j++) {
+      var vv = e.variants[j];
+      if (!isObject(vv)) {
+        return "Experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " must be an object.";
+      }
+      if (typeof vv.name !== "string" || !vv.name.trim()) {
+        return "Experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " has an empty name.";
+      }
+      var vn = vv.name.trim();
+      if (hasOwn(seen, vn)) {
+        return "Experiment " + JSON.stringify(String(label)) + ": Duplicate variant name: " + vn;
+      }
+      seen[vn] = true;
+      var w = vv.weightBps;
+      if (typeof w !== "number" || !isFinite(w) || Math.floor(w) !== w) {
+        return "Experiment " + JSON.stringify(String(label)) + ': Variant "' + vn + '" weightBps must be an integer.';
+      }
+      if (w < 0) {
+        return "Experiment " + JSON.stringify(String(label)) + ': Variant "' + vn + '" has negative weightBps.';
+      }
+      sum += w;
+    }
+    if (sum !== 10000) {
+      return "Experiment " + JSON.stringify(String(label)) + ": Weights sum " + sum + "/10000 — must total 10000.";
+    }
+    var st = e.status === undefined || e.status === null || e.status === "" ? "draft" : e.status;
+    if (!hasOwn(VALID_EXP_STATUS, st)) {
+      return "Experiment " + JSON.stringify(String(label)) + ": Invalid status " + JSON.stringify(e.status) + ": must be draft|running|stopped.";
+    }
+    return null;
+  }
+
   function validateTransferSnapshot(snap) {
     if (!isObject(snap)) return { ok: false, error: SHAPE_ERROR };
     var flags = snap.flags;
-    var exps = snap.experiments === undefined ? [] : snap.experiments;
-    if (!Array.isArray(flags) || !Array.isArray(exps)) return { ok: false, error: SHAPE_ERROR };
+    // Deprecated: legacy top-level experiments[] compat — validates like nested rows.
+    var topExps = snap.experiments === undefined ? [] : snap.experiments;
+    if (!Array.isArray(flags) || !Array.isArray(topExps)) return { ok: false, error: SHAPE_ERROR };
     if (!flags.length) return { ok: false, error: "Nothing to import: no flags." };
     var i, j, f;
     for (i = 0; i < flags.length; i++) {
@@ -278,48 +366,27 @@
           return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": rule " + j + " has invalid condition: " + cerr };
         }
       }
+      var fexps = f.experiments === undefined ? [] : f.experiments;
+      if (!Array.isArray(fexps)) {
+        return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": experiments must be an array." };
+      }
+      for (j = 0; j < fexps.length; j++) {
+        var fe = fexps[j];
+        if (!isObject(fe)) return { ok: false, error: "Flag " + JSON.stringify(f.key) + ": experiment " + j + " must be an object." };
+        var flabel = fe.name || (f.key + "/" + (fe.seed || ""));
+        var ferr = expVariantError(fe, flabel);
+        if (ferr) return { ok: false, error: ferr };
+      }
     }
-    for (i = 0; i < exps.length; i++) {
-      var e = exps[i];
+    for (i = 0; i < topExps.length; i++) {
+      var e = topExps[i];
       if (!isObject(e)) return { ok: false, error: "Experiment " + i + " must be an object." };
       if (typeof e.flag !== "string" || !e.flag) {
         return { ok: false, error: "Experiment " + (e.name || i) + ": Flag required." };
       }
       var label = e.name || e.flag + "/" + (e.seed || "");
-      if (!Array.isArray(e.variants) || !e.variants.length) {
-        return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + " has no variants." };
-      }
-      var seen = {};
-      var sum = 0;
-      for (j = 0; j < e.variants.length; j++) {
-        var vv = e.variants[j];
-        if (!isObject(vv)) {
-          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " must be an object." };
-        }
-        if (typeof vv.name !== "string" || !vv.name.trim()) {
-          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": variant " + (j + 1) + " has an empty name." };
-        }
-        var vn = vv.name.trim();
-        if (hasOwn(seen, vn)) {
-          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": Duplicate variant name: " + vn };
-        }
-        seen[vn] = true;
-        var w = vv.weightBps;
-        if (typeof w !== "number" || !isFinite(w) || Math.floor(w) !== w) {
-          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ': Variant "' + vn + '" weightBps must be an integer.' };
-        }
-        if (w < 0) {
-          return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ': Variant "' + vn + '" has negative weightBps.' };
-        }
-        sum += w;
-      }
-      if (sum !== 10000) {
-        return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": Weights sum " + sum + "/10000 — must total 10000." };
-      }
-      var st = e.status === undefined || e.status === null || e.status === "" ? "draft" : e.status;
-      if (!hasOwn(VALID_EXP_STATUS, st)) {
-        return { ok: false, error: "Experiment " + JSON.stringify(String(label)) + ": Invalid status " + JSON.stringify(e.status) + ": must be draft|running|stopped." };
-      }
+      var verr = expVariantError(e, label);
+      if (verr) return { ok: false, error: verr };
     }
     return { ok: true };
   }
@@ -493,11 +560,60 @@
       var xkey = idToKey[lefid] + "\0" + seedNorm(le.seed);
       if (!hasOwn(expIndex, xkey)) expIndex[xkey] = le;
     }
-    var importExps = Array.isArray(snap.experiments) ? snap.experiments : [];
+    // Experiments stage from nested flags[].experiments (parent flag key
+    // inferred). Compat: matching top-level entries merge into the owning
+    // flag (nested wins on parentKey+"\0"+seedNorm(seed), legacy extras
+    // appended sorted, orphans dropped); legacy orphans always count skipped.
+    // Deprecated: legacy top-level experiments[] compat — merges into owning flag, orphans skipped.
+    var topImportExps = Array.isArray(snap.experiments) ? snap.experiments : [];
+    var snapFlagKeys = {};
+    for (i = 0; i < snap.flags.length; i++) {
+      var sff = snap.flags[i] || {};
+      if (typeof sff.key === "string" && sff.key) snapFlagKeys[sff.key] = true;
+    }
+    var oi;
+    for (oi = 0; oi < topImportExps.length; oi++) {
+      var ox = topImportExps[oi] || {};
+      if (typeof ox.flag !== "string" || !ox.flag || !hasOwn(snapFlagKeys, ox.flag)) counts.skipped++;
+    }
+    var importExps = [];
+    for (i = 0; i < snap.flags.length; i++) {
+      var ff = snap.flags[i] || {};
+      if (typeof ff.key !== "string" || !ff.key) continue;
+      var nested = Array.isArray(ff.experiments) ? ff.experiments : [];
+      var seenKeys = {};
+      var ni;
+      for (ni = 0; ni < nested.length; ni++) {
+        var ne = nested[ni] || {};
+        seenKeys[ff.key + "\0" + seedNorm(ne.seed)] = true;
+      }
+      var merged = [];
+      for (ni = 0; ni < nested.length; ni++) {
+        merged.push(nested[ni] || {});
+      }
+      var ti;
+      for (ti = 0; ti < topImportExps.length; ti++) {
+        var te = topImportExps[ti];
+        if (!te || typeof te !== "object" || Array.isArray(te)) continue;
+        if (te.flag !== ff.key) continue;
+        if (hasOwn(seenKeys, ff.key + "\0" + seedNorm(te.seed))) continue;
+        merged.push(te);
+      }
+      merged.sort(function (a, b) {
+        var sa = seedNorm(a ? a.seed : ""), sb = seedNorm(b ? b.seed : "");
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        var na = String((a && a.name) || ""), nb = String((b && b.name) || "");
+        return na < nb ? -1 : na > nb ? 1 : 0;
+      });
+      for (var xi = 0; xi < merged.length; xi++) {
+        importExps.push({ parentKey: ff.key, exp: merged[xi] || {} });
+      }
+    }
     for (i = 0; i < importExps.length; i++) {
-      var xe = importExps[i] || {};
-      if (typeof xe.flag !== "string" || !xe.flag || !hasOwn(keyToId, xe.flag)) { counts.skipped++; continue; }
-      var xfid = keyToId[xe.flag];
+      var xe = importExps[i].exp;
+      var parentKey = importExps[i].parentKey;
+      if (!hasOwn(keyToId, parentKey)) { counts.skipped++; continue; }
+      var xfid = keyToId[parentKey];
       var xseed = seedNorm(xe.seed);
       var xbody = {
         flag: xfid,
@@ -506,8 +622,8 @@
         status: xe.status || "draft",
       };
       if (xe.name !== undefined) xbody.name = xe.name;
-      var xlabel = (typeof xe.name === "string" && xe.name) ? xe.name : xe.flag;
-      var matchKey = xe.flag + "\0" + xseed;
+      var xlabel = (typeof xe.name === "string" && xe.name) ? xe.name : parentKey;
+      var matchKey = parentKey + "\0" + xseed;
       if (hasOwn(expIndex, matchKey) && expIndex[matchKey].id !== undefined &&
           expIndex[matchKey].id !== null && expIndex[matchKey].id !== "") {
         var stagedExp = stage("experiment", { op: "update", body: xbody, baseId: String(expIndex[matchKey].id), label: xlabel });
@@ -549,6 +665,89 @@
     return flag + "\0" + seed;
   }
 
+  // Deprecated: legacy top-level experiments[] compat — nested-first fold, first-wins.
+  // Flatten experiments from both snapshot shapes into one list, nested
+  // first (mirrors Go flattenForEval except empty-seed identity: JS keys
+  // flag + seed||name, Go keys id else flag+seed): nested flag.experiments[] with the
+  // parent flag key stamped (parent wins), then legacy top-level
+  // snap.experiments[] only when expDiffId (flag\0seed||name) is unseen.
+  // First occurrence wins, so nested wins on duplicate identity and diff
+  // on mixed snapshots agrees with diff on normalized-nested snapshots.
+  // Orphans (top-level rows whose flag matches no snapshot flag key) are
+  // DROPPED to match import (parseTransferSnapshot compat + import drop
+  // untargeted rows); expDiffId/expFlagKey/expDisplayLabel unchanged.
+  // Canonical experiment row for diff comparison: fixed key order (name,
+  // seed, variants, status, then any extra keys sorted, flag last) so old
+  // top-level rows and nested rows with identical content compare equal
+  // regardless of author key order in the source file.
+  function canonExp(e, flag) {
+    var copy = {};
+    var k, rest = [];
+    if (hasOwn(e, "name")) copy.name = e.name;
+    if (hasOwn(e, "seed")) copy.seed = e.seed;
+    if (hasOwn(e, "variants")) copy.variants = e.variants;
+    if (hasOwn(e, "status")) copy.status = e.status;
+    for (k in e) {
+      if (hasOwn(e, k) && k !== "name" && k !== "seed" && k !== "variants" && k !== "status" && k !== "flag") rest.push(k);
+    }
+    rest.sort();
+    for (k = 0; k < rest.length; k++) copy[rest[k]] = e[rest[k]];
+    copy.flag = flag;
+    return copy;
+  }
+
+  function collectExps(snap) {
+    var out = [];
+    var seen = {};
+    var i, j;
+    var flags = snap && Array.isArray(snap.flags) ? snap.flags : [];
+    var flagKeys = {};
+    for (i = 0; i < flags.length; i++) {
+      var fk = flags[i];
+      if (fk && typeof fk === "object" && !Array.isArray(fk) && typeof fk.key === "string") flagKeys[fk.key] = true;
+    }
+    for (i = 0; i < flags.length; i++) {
+      var fl = flags[i];
+      if (!fl || typeof fl !== "object" || Array.isArray(fl)) continue;
+      var parentKey = typeof fl.key === "string" ? fl.key : "";
+      var nested = Array.isArray(fl.experiments) ? fl.experiments : [];
+      for (j = 0; j < nested.length; j++) {
+        var ne = nested[j];
+        if (!ne || typeof ne !== "object" || Array.isArray(ne)) continue;
+        var copy = canonExp(ne, parentKey);
+        var nid = expDiffId(copy);
+        if (hasOwn(seen, nid)) continue;
+        seen[nid] = true;
+        out.push(copy);
+      }
+    }
+    // Deprecated: legacy top-level experiments[] compat — unseen ids only, orphans dropped.
+    if (snap && Array.isArray(snap.experiments)) {
+      for (i = 0; i < snap.experiments.length; i++) {
+        var e = snap.experiments[i];
+        if (!e || typeof e !== "object" || Array.isArray(e)) continue;
+        if (typeof e.flag !== "string" || !hasOwn(flagKeys, e.flag)) continue;
+        var row = canonExp(e, e.flag);
+        var id = expDiffId(row);
+        if (hasOwn(seen, id)) continue;
+        seen[id] = true;
+        out.push(row);
+      }
+    }
+    return out;
+  }
+
+  // Flag rows compare the flag body only; nested experiments diff as
+  // their own rows (grouped under the parent flag at render time).
+  function flagWithoutExps(fl) {
+    if (!fl || typeof fl !== "object" || Array.isArray(fl)) return fl;
+    var copy = {};
+    for (var k in fl) {
+      if (hasOwn(fl, k) && k !== "experiments") copy[k] = fl[k];
+    }
+    return copy;
+  }
+
   function statusRank(s) {
     if (s === "added") return 0;
     if (s === "modified") return 1;
@@ -561,17 +760,17 @@
     var n = (newSnap && typeof newSnap === "object") ? newSnap : {};
     var of = Array.isArray(o.flags) ? o.flags : [];
     var nf = Array.isArray(n.flags) ? n.flags : [];
-    var oe = Array.isArray(o.experiments) ? o.experiments : [];
-    var ne = Array.isArray(n.experiments) ? n.experiments : [];
+    var oe = collectExps(o);
+    var ne = collectExps(n);
 
     var oByKey = {};
     var nByKey = {};
     var i;
     for (i = 0; i < of.length; i++) {
-      if (of[i] && typeof of[i].key === "string" && !hasOwn(oByKey, of[i].key)) oByKey[of[i].key] = of[i];
+      if (of[i] && typeof of[i].key === "string" && !hasOwn(oByKey, of[i].key)) oByKey[of[i].key] = flagWithoutExps(of[i]);
     }
     for (i = 0; i < nf.length; i++) {
-      if (nf[i] && typeof nf[i].key === "string" && !hasOwn(nByKey, nf[i].key)) nByKey[nf[i].key] = nf[i];
+      if (nf[i] && typeof nf[i].key === "string" && !hasOwn(nByKey, nf[i].key)) nByKey[nf[i].key] = flagWithoutExps(nf[i]);
     }
     var flagRows = [];
     var seen = {};
@@ -674,7 +873,10 @@
   }
 
   // Convert a stored release row's frozen snapshot into transfer shape
-  // ({flags, experiments}). Returns null when the row carries no parseable
+  // ({flags:[{..., experiments:[...]}]}). The frozen server payload is
+  // nested-only (releases/snapshot.go); legacy top-level rows fold into
+  // their parent flag on read via UnmarshalJSON, so they nest here under
+  // their parent flag key. Returns null when the row carries no parseable
   // snapshot. Group ids resolve to names; everything else passes through
   // verbatim so the payload stays re-importable via importTransferSnapshot.
   function releaseSnapshotToTransfer(release) {
@@ -688,7 +890,18 @@
     if (!snap || typeof snap !== "object" || Array.isArray(snap)) return null;
     var groups = (CW.state && CW.state.groups) || {};
     var flags = Array.isArray(snap.flags) ? snap.flags : [];
-    var exps = Array.isArray(snap.experiments) ? snap.experiments : [];
+    var expsByFlag = {};
+    collectExps(snap).forEach(function (x) {
+      if (!x || typeof x !== "object" || Array.isArray(x)) return;
+      var fk = typeof x.flag === "string" ? x.flag : "";
+      if (!fk) return;
+      if (!hasOwn(expsByFlag, fk)) expsByFlag[fk] = [];
+      var entry = {};
+      for (var k in x) {
+        if (hasOwn(x, k) && k !== "flag") entry[k] = x[k];
+      }
+      expsByFlag[fk].push(entry);
+    });
     return {
       flags: flags.map(function (fl) {
         if (!fl || typeof fl !== "object" || Array.isArray(fl)) return null;
@@ -699,11 +912,11 @@
           group: transferGroupName(groups,
             fl.group === undefined || fl.group === null ? "" : String(fl.group)),
           rules: Array.isArray(fl.rules) ? fl.rules : [],
+          experiments: hasOwn(expsByFlag, fl.key) ? expsByFlag[fl.key] : [],
         };
         if (typeof fl.description === "string" && fl.description) entry.description = fl.description;
         return entry;
       }).filter(function (e) { return e && typeof e.key === "string" && e.key; }),
-      experiments: exps.filter(function (x) { return x && typeof x === "object" && !Array.isArray(x); }),
     };
   }
 
@@ -803,7 +1016,7 @@
       try {
         s = buildTransferSnapshot({ from: "merged" });
       } catch (e) {
-        s = { flags: [], experiments: [] };
+        s = { flags: [] };
       }
       exportName = "";
     }
@@ -874,6 +1087,13 @@
       return;
     }
     var summary = summarizeCounts(counts);
+    // Deprecated: legacy top-level experiments[] notice — gated on the raw
+    // file shape (parse normalizes the top level away, so sniff the text).
+    var legacyFile = false;
+    try {
+      legacyFile = isLegacyTopLevelSnap(JSON.parse(text));
+    } catch (e) { legacyFile = false; }
+    if (legacyFile) summary += " (Deprecated: top-level experiments[] — re-export nested-only.)";
     if (res) res.textContent = summary;
     toastSafe(summary, true);
     closeImportDialog();
@@ -1122,6 +1342,7 @@
     closeDialogEl("transfer-diff-dialog");
   }
 
+  CW.isLegacyTopLevelSnap = isLegacyTopLevelSnap;
   CW.buildTransferSnapshot = buildTransferSnapshot;
   CW.parseTransferSnapshot = parseTransferSnapshot;
   CW.validateTransferSnapshot = validateTransferSnapshot;

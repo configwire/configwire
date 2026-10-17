@@ -11,7 +11,7 @@ Conventions used below:
 
 ## 1. Fetch — `GET /api/v1/env/{env}/config`
 
-Ref: `configwire/fetch/fetch.go:286` (order), `:87` (route + gzip).
+Ref: `configwire/fetch/fetch.go:413-416` (order), `:111-114` (route + gzip).
 
 Query params: `userHash` canonical (16 lowercase hex `sha256Hex16`,
 strict `^[0-9a-f]{16}$` when non-empty); `?uid=` is a DEPRECATED compat
@@ -27,12 +27,12 @@ Precedence: both present with valid `userHash` then `userHash` wins and
 the header is still set; malformed `userHash` (non-empty, non-16-hex)
 then `400` even with `uid` present; both absent or empty stays `200`
 (anonymous: rules still evaluate, bucketing falls back to the default
-variant). Ref: `configwire/fetch/fetch.go:140-162` (`BuildContext`),
-`:85-91` (header).
+variant). Ref: `configwire/fetch/fetch.go:155-191` (`BuildContext`),
+`:89-93` (header).
 
 Auth/env order: 401 (key) then 404 (unknown env slug) then 401
 (key not scoped to this env) then 400/414 (attrs) then 200/304.
-Ref: `configwire/fetch/fetch.go:289-308`.
+Ref: `configwire/fetch/fetch.go:413-428`.
 
 Multi-project slugs: the env is resolved deterministically from the
 key's env record (the key's env IS the env), so a slug shared by
@@ -49,13 +49,13 @@ while unambiguous slugs keep working without it. Ref:
 ```
 
 - `version`: max release version for the env (int).
-- `etag`: stored release etag, served verbatim, also in the `ETag` response header. Never recomputed. Ref: `:324-325`.
+- `etag`: stored release etag, served verbatim, also in the `ETag` response header. Never recomputed. Ref: `:454-455`.
 - `values`: evaluated flag values, typed per flag.
-- `variants`: one entry per flag targeted by at least one experiment row (first row in snapshot id order wins); flags with no targeting experiment have no entry. Anonymous or default-variant fallthrough is recorded as `""`. Ref: `:152-178`.
+- `variants`: one entry per flag targeted by at least one experiment row (per-flag experiment winner order is seed asc with id tiebreak, so flags with 2+ rows evaluate exps[0] deterministically); flags with no targeting experiment have no entry. Anonymous or default-variant fallthrough is recorded as `""`. Ref: `:220-249`.
 - `fetchAt`: server time, RFC3339Nano.
-- Gzip when the client sends `Accept-Encoding: gzip`. Ref: `:87`.
-- CORS `Access-Control-Allow-Origin: *` by default, or `CONFIGWIRE_CORS_ORIGIN` when set. Ref: `:76-83,279-281`.
-- `OPTIONS /api/v1/env/{env}/config` answers `204` with `Allow-Methods`, `Allow-Headers`, `Max-Age: 86400`. Ref: `:93-101`.
+- Gzip when the client sends `Accept-Encoding: gzip`. Ref: `:112`.
+- CORS `Access-Control-Allow-Origin: *` by default, or `CONFIGWIRE_CORS_ORIGIN` when set. Ref: `:103-108,409-419`.
+- `OPTIONS /api/v1/env/{env}/config` answers `204` with `Allow-Methods`, `Allow-Headers`, `Max-Age: 86400`. Ref: `:118-126`.
 
 ### 1b. Empty release (env has no release row yet) — `200`, never 404
 
@@ -63,13 +63,13 @@ while unambiguous slugs keep working without it. Ref:
 {"version": 0, "etag": "none", "values": {}, "variants": {}, "fetchAt": "2026-09-22T00:00:00.000000000Z"}
 ```
 
-Ref: `:314-322`. Values are empty, not flag defaults; SDKs use in-app defaults.
+Ref: `:440-452`. Values are empty, not flag defaults; SDKs use in-app defaults.
 
 ### 1c. `304` not modified
 
 `If-None-Match` equals the stored etag by exact string match only
 (`W/`-prefixed or quoted values do not match) then `304` with an
-empty body. Ref: `:140-143,326-328`.
+empty body. Ref: `:201-206,454-462`.
 
 ### 1d. Fetch errors
 
@@ -94,7 +94,7 @@ Malformed `?userHash=` (anything but 16 lowercase hex, even with
 {"data": {}, "message": "invalid userHash: must be 16 lowercase hex.", "status": 400}
 ```
 
-Ref: `configwire/fetch/fetch.go:153-162` (`BuildContext`, caller maps
+Ref: `configwire/fetch/fetch.go:155-164,428-434` (`BuildContext`, caller maps
 to `400` via `re.BadRequestError`).
 
 Malformed `attrs` (bad JSON, or valid JSON that is not an object):
@@ -109,14 +109,14 @@ Malformed `attrs` (bad JSON, or valid JSON that is not an object):
 {"message": "attrs too large: max 8192 bytes", "status": 414}
 ```
 
-Ref: `:109-136,302-308`. `attrs` shape errors come from `re.BadRequestError`
+Ref: `:173-190,428-434`. `attrs` shape errors come from `re.BadRequestError`
 (PocketBase `data/message/status` shape); oversize comes from explicit
 `re.JSON` with `message/status` only. Unknown `appVersion` values fall
 through to defaults with `200`, never `400`.
 
 ## 2. Publish — `POST /api/v1/admin/env/{env}/publish`
 
-Ref: `configwire/releases/handler.go:32-35` (route + superuser-only), `:83-149` (handler).
+Ref: `configwire/releases/handler.go:71-75` (route + superuser-only), `:120-195` (handler).
 Optional `?project=<projectId>` disambiguates a slug shared by
 several projects (`400` ambiguous without it); unambiguous slugs keep
 working without it. Ref: `configwire/envresolve/resolve.go`.
@@ -129,7 +129,7 @@ current max, 0 on first publish):
 ```
 
 Empty body or malformed JSON then `400`. A `baseVersion` sent as a
-JSON string fails decoding then `400`. Ref: `:68-76`.
+JSON string fails decoding then `400`. Ref: `:80-83,122-125`.
 
 Success `200`:
 
@@ -140,23 +140,31 @@ Success `200`:
 Snapshot schema (server-side build only, never client-supplied;
 flags/rules/experiments scoped to the env's project — experiments
 targeting another project's flags are excluded, never leaked;
-sorted by key/priority/id):
+sorted by key/priority/id; experiments nest per flag with the parent
+key implicit):
 
 ```json
-{"flags": [{"key": "launch_flag", "type": "bool", "default": false, "group": "", "rules": [{"priority": 0, "condition": {"field": "platform", "op": "==", "value": "ios"}, "value": true}]}], "experiments": [{"id": "abc123", "flag": "launch_flag", "seed": "exp-seed-1", "variants": [{"name": "control"}, {"name": "treatment"}], "status": "running"}]}
+{"flags": [{"key": "launch_flag", "type": "bool", "default": false, "group": "", "rules": [{"priority": 0, "condition": {"field": "platform", "op": "==", "value": "ios"}, "value": true}], "experiments": [{"id": "abc123", "seed": "exp-seed-1", "variants": [{"name": "control"}, {"name": "treatment"}], "status": "running"}]}]}
 ```
+
+Compat: old top-level `{"flags": [...], "experiments": [...]}` rows
+remain readable — on read each old experiment folds to its parent flag
+by `flag` key (entries without a `flag` field are nested already),
+orphans targeting no parent flag are dropped, and validation runs over
+the folded shape. Legacy top-level `experiments[]` is deprecated but
+honored within the compat window; new publishers emit nested-only.
 
 Rule condition is either one `{field, op, value[, seed]}` object or a
 non-empty array (max 10) of such objects, AND-ed at eval
 (`platform=ios AND custom.tier<=3`); the dialog writes a single object
 for one row and an array for 2+ rows.
 
-Ref: `configwire/releases/snapshot.go:77-106` (shapes), `:187-269` (builder).
+Ref: `configwire/releases/snapshot.go:78-147` (shapes), `:304-399` (builder).
 
 ETag rule: `etag = hex(sha256(version + ":" + snapshot))[:16]` over the
 canonical server-marshaled bytes. The version is hashed in, so a
 rollback row gets a fresh etag with byte-identical snapshots.
-Ref: `configwire/releases/snapshot.go:108-115`.
+Ref: `configwire/releases/snapshot.go:234-238`.
 
 Stale `baseVersion` then `409` with no write:
 
@@ -164,9 +172,9 @@ Stale `baseVersion` then `409` with no write:
 {"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": 2}
 ```
 
-Ref: `:102-108`. Concurrent double-publish with the same baseVersion
+Ref: `:141-147`. Concurrent double-publish with the same baseVersion
 yields exactly one `200` plus one `409` (process-local write mutex).
-Ref: `:21-27`.
+Ref: `:28-34`.
 
 Publish validation failures then `400`: empty project
 (`nothing to publish`), bad key shape (`^[A-Za-z_][A-Za-z0-9_.-]*$`,
@@ -176,7 +184,7 @@ flag type, bad rule condition shape (unknown field/op, missing value
 key, bare `custom`, empty or over-10 condition array, non-object array
 entry), bad experiment weights (must sum to exactly 10000
 bps). Flag volume is unlimited: no per-project flag cap exists.
-Ref: `configwire/releases/snapshot.go:396-436`.
+Ref: `configwire/releases/snapshot.go:615-652`.
 
 ## 2a. Key minting — `POST /api/v1/admin/keys`
 
@@ -578,17 +586,17 @@ Success `200` (both verbs, same shape):
 
 | Code | Meaning                                                                               | Body                                                                                                                   | Ref                                                                                               |
 | ---- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| 200  | fetch config / publish / rollback / stats / purge                                     | shapes in sections 1, 2, 3, 5, 7                                                                                       | fetch `:340-346`, releases `:148,257`, stats `:168-173`, purge `:320-335`                         |
+| 200  | fetch config / publish / rollback / stats / purge                                     | shapes in sections 1, 2, 3, 5, 7                                                                                       | fetch `:445-451,475-481`, releases `:194,257`, stats `:168-173`, purge `:320-335`                         |
 | 200/400/401/404/409 | promote a release snapshot across envs (new row, fresh etag)                   | shapes in section 3a                                                                                                    | releases handler `postPromoteEnv`, `promoteToNewRow`                                              |
 | 202  | events accepted                                                                       | `{"accepted": N, "status": 202}`                                                                                       | ingest handler `:170`                                                                             |
-| 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:93-101`                                                                                   |
-| 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:326-328`                                                                                  |
-| 400  | bad fetch/publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:70-76,193-195`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go`, fetch `BuildContext` (`?uid=` presence, bad `userHash`) |
-| 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:338-358`, fetch `:301-318`, stream `stream.go:getStream`                                                     |
-| 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:294-297`, releases `:220-221`                                                             |
-| 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:102-108`                                                                               |
+| 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:118-126`                                                                                  |
+| 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:454-462`                                                                                  |
+| 400  | bad fetch/publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:80-83,122-125,156-158`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go`, fetch `BuildContext` (`?uid=` presence, bad `userHash`) |
+| 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:338-358`, fetch `:417-426`, stream `stream.go:getStream`                                                     |
+| 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:417-426`, releases `:220-221`                                                             |
+| 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:141-147`                                                                               |
 | 413  | ingest body/event too large; fetch attrs too large is 414                             | `{"message": "body exceeds 128KB.", "status": 413}`                                                                    | ingest `:252-262`                                                                                 |
-| 414  | fetch attrs over 8192 bytes                                                           | `{"message": "attrs too large: max 8192 bytes", "status": 414}`                                                        | fetch `:302-306`                                                                                  |
+| 414  | fetch attrs over 8192 bytes                                                           | `{"message": "attrs too large: max 8192 bytes", "status": 414}`                                                         | fetch `:430-432`                                                                                  |
 | 429  | rate limit hit (single limiter, per-second global/per-key)                                       | `{"message": "Rate limit exceeded.", "status": 429}` with `Retry-After: 1`                        | ingest handler `:124-126`, limits `limits.go:BlockIP`                                                        |
 | 503  | ingest buffer full (cap 2048, retry)                                                  | `{"message": "Ingest buffer full, retry.", "status": 503}`                                                             | ingest handler `:164-168`                                                                         |
 

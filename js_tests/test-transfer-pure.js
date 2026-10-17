@@ -5,27 +5,37 @@
 // Assertions go through the transfer.js exported surface:
 // - buildTransferSnapshot(opts?) maps the MERGED flag/experiment sets
 //   (drafts.js:280-374 mergedFlags/mergedRules/mergedExperiments) into
-//   {flags, experiments}: flags sorted by key with group ids resolved to
-//   names ({key, type, default, group, rules:[{priority, condition, value}]}),
-//   experiments linked by flag key ({name, flag, seed, variants, status}).
+//   {flags}: flags sorted by key with group ids resolved to names
+//   ({key, type, default, group, rules:[{priority, condition, value}],
+//   experiments:[{name, seed, variants, status}]}). Experiments nest per
+//   flag; the parent key is implicit so entries carry NO flag field, and
+//   there is NO top-level experiments array.
 // - parseTransferSnapshot(text) -> {ok, snap, value, error}: rejects malformed
-//   JSON and non-{flags:[...]} shapes, accepts a minimal {flags:[]} envelope
-//   (experiments defaults to []).
+//   JSON and non-{flags:[...]} shapes, accepts a minimal {flags:[]} envelope.
+//   The returned snap carries ONLY flags (each flag normalized to an
+//   experiments array); a legacy top-level experiments array is never
+//   surfaced — feed it through normalizeSnapshot() first.
 // - validateTransferSnapshot(snap) -> {ok, error}: rejects bad flag key,
 //   unknown flag type, rule condition op outside the transfer.js:17-24
-//   CONDITION_OPS allowlist (mirrors rules.js:125-132), and experiment
-//   variant weights not totalling 10000 (experiments.js:324
+//   CONDITION_OPS allowlist (mirrors rules.js:125-132), and nested
+//   experiment variant weights not totalling 10000 (experiments.js:324
 //   validateVariants); accepts a good snapshot.
 // - importTransferSnapshot(snap) -> counts {groupsCreated, flagsCreated,
 //   flagsUpdated, rulesCreated, rulesDeleted, experimentsCreated,
 //   experimentsUpdated, skipped}: stages local-only drafts via real
 //   CW.drafts.draftStage (drafts.js:121-172) — unknown group names created,
 //   flags matched by key (new create + existing update), rules
-//   replaced per flag (old deletes + snapshot creates), experiments matched
-//   by flag key + seed (create or update).
+//   replaced per flag (old deletes + snapshot creates), nested experiments
+//   matched by parent key + seed (create or update).
 // - diffTransferSnapshots(oldS, neuS) -> {flags, experiments, counts}: row
 //   arrays of {key|id, status, old, new} with status added/removed/modified/
-//   unchanged, plus per-kind and total counts.
+//   unchanged, plus per-kind and total counts. Experiment rows derive from
+//   the nested flags[].experiments sets (identity: parent key + seed).
+// - normalizeSnapshot(snap) [LOCAL test helper, mirrors the transfer.js
+//   compat path]: folds a legacy top-level experiments array
+//   ([{name, flag, seed, variants, status}]) into the owning flags[]
+//   entries (dropping the flag field) so old files stay importable.
+//   Nested input passes through (per-flag experiments defaulting to []).
 // Drafts are seeded via real CW.drafts.draftStage; live collections are set
 // directly on CW.state (no loaders run). CW.toast/CW.esc come from core.js
 // as-is (no stubs needed — pure paths never toast). node:test +
@@ -138,9 +148,21 @@ test("buildTransferSnapshot maps merged flags/rules/experiments with group names
   );
   assert.deepEqual(flagByKey(snap, "zeta").rules, [], "flag without rules carries []");
   assert.deepEqual(flagByKey(snap, "aaa").rules, [], "draft flag carries []");
-  assert.ok(Array.isArray(snap.experiments), "snapshot carries experiments array");
-  assert.equal(snap.experiments.length, 1);
-  assert.equal(snap.experiments[0].name, "Exp");
+  assert.ok(!Object.prototype.hasOwnProperty.call(snap, "experiments"), "no top-level experiments array");
+  var keepExps = flagByKey(snap, "keep").experiments;
+  assert.ok(Array.isArray(keepExps), "experiments nest per flag");
+  assert.equal(keepExps.length, 1);
+  assert.equal(keepExps[0].name, "Exp");
+  assert.equal(keepExps[0].seed, "s");
+  assert.equal(keepExps[0].status, "draft");
+  assert.ok(!Object.prototype.hasOwnProperty.call(keepExps[0], "flag"), "parent key implicit, no flag field");
+  assert.deepEqual(
+    keepExps[0].variants,
+    [{ name: "control", weightBps: 5000 }, { name: "treatment", weightBps: 5000 }],
+    "variants preserved"
+  );
+  assert.deepEqual(flagByKey(snap, "zeta").experiments, [], "flag without experiments carries []");
+  assert.deepEqual(flagByKey(snap, "aaa").experiments, [], "draft flag carries []");
 });
 
 // --- parseTransferSnapshot: malformed rejected, minimal accepted ---
@@ -156,8 +178,12 @@ test("parseTransferSnapshot rejects malformed input and accepts a minimal envelo
   var good = plain(h.CW.parseTransferSnapshot('{"flags":[]}'));
   assert.equal(good.ok, true, "minimal envelope accepted");
   assert.deepEqual(good.snap.flags, []);
-  assert.deepEqual(good.snap.experiments, [], "experiments defaults to []");
-  var full = plain(h.CW.parseTransferSnapshot('{"flags":[],"rules":[],"experiments":[]}'));
+  assert.ok(!Object.prototype.hasOwnProperty.call(good.snap, "experiments"), "no top-level experiments surfaced");
+  var nested = plain(h.CW.parseTransferSnapshot('{"flags":[{"key":"k","experiments":[]}]}'));
+  assert.equal(nested.ok, true, "per-flag experiments accepted");
+  assert.deepEqual(nested.snap.flags[0].experiments, []);
+  assert.ok(!Object.prototype.hasOwnProperty.call(nested.snap, "experiments"), "nested envelope stays top-level-free");
+  var full = plain(h.CW.parseTransferSnapshot('{"flags":[],"rules":[]}'));
   assert.equal(full.ok, true, "extra keys tolerated");
 });
 
@@ -201,11 +227,12 @@ test("validateTransferSnapshot rejects a rule with an invalid condition op", fun
   assert.ok(typeof out.error === "string" && out.error.length > 0);
 });
 
-test("validateTransferSnapshot rejects an experiment whose variants do not total 10000", function () {
+test("validateTransferSnapshot rejects a nested experiment whose variants do not total 10000", function () {
   reset();
   seedLive();
   var snap = plain(h.CW.buildTransferSnapshot());
-  snap.experiments[0].variants[0].weightBps = 1000; // sum 6000, want 10000
+  var keep = snap.flags.filter(function (f) { return f.key === "keep"; })[0];
+  keep.experiments[0].variants[0].weightBps = 1000; // sum 6000, want 10000
   var out = plain(h.CW.validateTransferSnapshot(snap));
   assert.equal(out.ok, false, "variant sum != 10000 rejected");
   assert.ok(typeof out.error === "string" && out.error.length > 0);
@@ -213,7 +240,54 @@ test("validateTransferSnapshot rejects an experiment whose variants do not total
 
 // --- importTransferSnapshot: drafts staged, counts returned ---
 
+// Folds a legacy top-level experiments array ([{name, flag, seed,
+// variants, status}]) into the owning flags[] entries, dropping the flag
+// field. Mirrors the transfer.js compat path so old files stay importable;
+// nested input passes through with per-flag experiments defaulting to [].
+function normalizeSnapshot(snap) {
+  var out = plain(snap);
+  if (!out || !Array.isArray(out.flags)) return out;
+  var byKey = {};
+  out.flags.forEach(function (f) {
+    if (f && typeof f.key === "string") {
+      if (!Array.isArray(f.experiments)) f.experiments = [];
+      byKey[f.key] = f;
+    }
+  });
+  if (Array.isArray(out.experiments)) {
+    out.experiments.forEach(function (x) {
+      if (!x || typeof x.flag !== "string" || !byKey[x.flag]) return;
+      var entry = {};
+      Object.keys(x).forEach(function (k) { if (k !== "flag") entry[k] = x[k]; });
+      byKey[x.flag].experiments.push(entry);
+    });
+  }
+  delete out.experiments;
+  return out;
+}
+
 function importSnapshot() {
+  return {
+    flags: [
+      {
+        key: "keep", type: "bool", default: true, group: "G1", description: "",
+        rules: [{ priority: 5, condition: { field: "platform", op: "!=", value: "android" }, value: false }],
+        experiments: [],
+      },
+      {
+        key: "fresh", type: "bool", default: false, group: "G-new", description: "", rules: [],
+        experiments: [
+          {
+            name: "NExp", seed: "s2", status: "draft",
+            variants: [{ name: "control", weightBps: 5000 }, { name: "treatment", weightBps: 5000 }],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function legacySnapshot() {
   return {
     flags: [
       {
@@ -265,6 +339,25 @@ test("importTransferSnapshot stages drafts: flag create+update, rule replace, ex
   assert.equal(groupKeys.length, 1, "one group create staged");
   assert.equal(h.CW.state.drafts.group[groupKeys[0]].body.name, "G-new");
   assert.equal(h.CW.drafts.hasDrafts(), true, "staged drafts are pending");
+});
+
+test("importTransferSnapshot imports a legacy top-level file via normalizeSnapshot", function () {
+  reset();
+  seedLive();
+  var nested = normalizeSnapshot(legacySnapshot());
+  assert.ok(!Object.prototype.hasOwnProperty.call(nested, "experiments"), "legacy array folded away");
+  assert.deepEqual(nested.flags[1].experiments.map(function (e) { return e.name; }), ["NExp"]);
+  assert.ok(!Object.prototype.hasOwnProperty.call(nested.flags[1].experiments[0], "flag"), "flag field dropped");
+  assert.deepEqual(plain(h.CW.validateTransferSnapshot(nested)), { ok: true });
+  var counts = plain(h.CW.importTransferSnapshot(nested));
+  assert.deepEqual(counts, {
+    groupsCreated: 1, flagsCreated: 1, flagsUpdated: 1,
+    rulesCreated: 1, rulesDeleted: 1,
+    experimentsCreated: 1, experimentsUpdated: 0, skipped: 0,
+  });
+  var expKeys = Object.keys(h.CW.state.drafts.experiment);
+  assert.equal(expKeys.length, 1, "one experiment create staged");
+  assert.equal(h.CW.state.drafts.experiment[expKeys[0]].body.name, "NExp");
 });
 
 // --- diffTransferSnapshots: flags added/removed/modified + experiments ---
@@ -345,17 +438,19 @@ test("releaseSnapshotToTransfer converts frozen snapshots with group names", fun
     id: "r1", version: 3,
     snapshot: {
       flags: [
-        { key: "keep", type: "bool", default: false, group: "g1", rules: [{ priority: 0, condition: { field: "platform", op: "==", value: "ios" }, value: true }] },
-        { key: "plain", type: "string", default: "x", group: "", rules: [] },
+        { key: "keep", type: "bool", default: false, group: "g1", rules: [{ priority: 0, condition: { field: "platform", op: "==", value: "ios" }, value: true }], experiments: [{ name: "Exp", seed: "s", variants: [{ name: "control", weightBps: 5000 }, { name: "treatment", weightBps: 5000 }], status: "draft" }] },
+        { key: "plain", type: "string", default: "x", group: "", rules: [], experiments: [] },
       ],
-      experiments: [{ id: "x1", flag: "keep", seed: "s", variants: [{ name: "control", weightBps: 5000 }, { name: "treatment", weightBps: 5000 }], status: "draft" }],
     },
   };
   var out = plain(h.CW.releaseSnapshotToTransfer(rel));
   assert.equal(out.flags.length, 2);
   assert.equal(out.flags[0].group, "G1");
   assert.equal(out.flags[1].group, "");
-  assert.deepEqual(out.experiments.length, 1);
+  assert.equal(out.flags[0].experiments.length, 1);
+  assert.equal(out.flags[0].experiments[0].name, "Exp");
+  assert.deepEqual(out.flags[1].experiments, []);
+  assert.ok(!Object.prototype.hasOwnProperty.call(out, "experiments"), "no top-level experiments");
   // String snapshots (raw DB bytes) convert identically.
   var relStr = { id: "r1", version: 3, snapshot: JSON.stringify(rel.snapshot) };
   assert.deepEqual(plain(h.CW.releaseSnapshotToTransfer(relStr)), out);
@@ -373,8 +468,7 @@ test("exportReleaseSnapshot fills the export dialog from a release row", functio
   h.CW.state.releases = [{
     id: "r1", version: 3, etag: "e3",
     snapshot: {
-      flags: [{ key: "keep", type: "bool", default: false, group: "g1", rules: [] }],
-      experiments: [],
+      flags: [{ key: "keep", type: "bool", default: false, group: "g1", rules: [], experiments: [] }],
     },
   }];
   h.CW.exportReleaseSnapshot("r1");
@@ -454,6 +548,247 @@ test("openDraftSnapshotDialog lists every staged draft alongside the snapshot di
   assert.ok(html.indexOf("flag/zeta") >= 0, "flag draft listed");
   assert.ok(html.indexOf("rule/rule for zeta") >= 0, "rule draft listed even though it folds into its flag in the snapshot");
   assert.ok(html.indexOf("experiment/Exp") >= 0, "experiment draft listed");
+});
+
+// --- mixed nested+top-level merge (folded from test-transfer-merge-repro.js) ---
+// Go oracle A — releases/snapshot.go Snapshot.UnmarshalJSON: legacy rows
+// APPEND into owning flags (no dedupe at parse), merged list sorts seed asc
+// then id asc, orphans dropped. Go oracle B — fetch/fetch.go flattenForEval:
+// nested-first, first-wins dedupe => nested wins. JS mirrors via true merge
+// in parse/import, seed+name sort, orphan drop + skip count, nested-first
+// collectExps. Identity: flagKey + "\0" + String(seed).
+
+function vv() {
+  return [{ name: "control", weightBps: 5000 }, { name: "treatment", weightBps: 5000 }];
+}
+
+function seedKeepOnly() {
+  h.CW.state.projectId = "p1";
+  h.CW.state.flags = [
+    { id: "f1", project: "p1", key: "keep", type: "bool", defaultValue: false, group: "g1", description: "" },
+  ];
+  h.CW.state.groups = { g1: "G1" };
+  h.CW.state.rules = [];
+  h.CW.state.rulesLoaded = true;
+  h.CW.state.experiments = [];
+  h.CW.state.experimentsLoaded = true;
+}
+
+test("mixed-merge parse: legacy extra appended to flag that already has nested experiments", function () {
+  var text = JSON.stringify({
+    flags: [{ key: "keep", experiments: [{ name: "Nested", seed: "s1", variants: vv(), status: "running" }] }],
+    experiments: [{ name: "Extra", flag: "keep", seed: "s2", variants: vv(), status: "draft" }],
+  });
+  var out = plain(h.CW.parseTransferSnapshot(text));
+  assert.equal(out.ok, true);
+  assert.equal(out.snap.flags[0].experiments.length, 2, "nested + legacy extra merge (Go append mirror)");
+  assert.deepEqual(
+    out.snap.flags[0].experiments.map(function (e) { return e.seed; }),
+    ["s1", "s2"],
+    "merged list sorted seed asc"
+  );
+});
+
+test("mixed-merge parse: merged set sorts seed asc when legacy seed sorts first", function () {
+  var text = JSON.stringify({
+    flags: [{ key: "keep", experiments: [{ name: "N-B", seed: "b", variants: vv(), status: "draft" }] }],
+    experiments: [{ name: "L-A", flag: "keep", seed: "a", variants: vv(), status: "draft" }],
+  });
+  var out = plain(h.CW.parseTransferSnapshot(text));
+  assert.equal(out.ok, true);
+  assert.deepEqual(
+    out.snap.flags[0].experiments.map(function (e) { return e.seed; }),
+    ["a", "b"],
+    "legacy 'a' sorts before nested 'b' after merge"
+  );
+});
+
+test("mixed-merge parse: merged set tiebreaks equal seeds by name asc", function () {
+  var text = JSON.stringify({
+    flags: [{ key: "keep", experiments: [{ name: "Zed", variants: vv(), status: "draft" }] }],
+    experiments: [{ name: "Amy", flag: "keep", variants: vv(), status: "draft" }],
+  });
+  var out = plain(h.CW.parseTransferSnapshot(text));
+  assert.equal(out.ok, true);
+  assert.deepEqual(
+    out.snap.flags[0].experiments.map(function (e) { return e.name; }),
+    ["Amy", "Zed"],
+    "empty-seed tiebreak falls to name asc"
+  );
+});
+
+test("mixed-merge parse: top-level orphan (unknown flag key) dropped in mixed file", function () {
+  var text = JSON.stringify({
+    flags: [{ key: "keep", experiments: [{ name: "Nested", seed: "s1", variants: vv(), status: "draft" }] }],
+    experiments: [{ name: "Ghost", flag: "ghost", seed: "g", variants: vv(), status: "draft" }],
+  });
+  var out = plain(h.CW.parseTransferSnapshot(text));
+  assert.equal(out.ok, true);
+  assert.equal(out.snap.flags[0].experiments.length, 1, "only the nested row survives");
+  assert.equal(out.snap.flags[0].experiments[0].name, "Nested");
+});
+
+test("mixed-merge import: orphan counted in skipped when sibling flag HAS a nested array", function () {
+  reset();
+  seedKeepOnly();
+  var mixed = {
+    flags: [
+      { key: "keep", type: "bool", default: false, group: "G1", description: "", rules: [], experiments: [] },
+    ],
+    experiments: [{ name: "Ghost", flag: "ghost", seed: "g", variants: vv(), status: "draft" }],
+  };
+  var counts = plain(h.CW.importTransferSnapshot(mixed));
+  assert.equal(counts.skipped, 1, "legacy orphan always counted (no anyNestedArray gate)");
+});
+
+test("mixed-merge import: distinct legacy extra staged alongside nested experiments", function () {
+  reset();
+  seedKeepOnly();
+  var mixed = {
+    flags: [
+      {
+        key: "keep", type: "bool", default: false, group: "G1", description: "", rules: [],
+        experiments: [{ name: "Nested", seed: "s1", variants: vv(), status: "running" }],
+      },
+    ],
+    experiments: [{ name: "Extra", flag: "keep", seed: "s2", variants: vv(), status: "draft" }],
+  };
+  var counts = plain(h.CW.importTransferSnapshot(mixed));
+  assert.equal(counts.experimentsCreated, 2, "nested s1 + legacy s2 both staged");
+  assert.equal(counts.skipped, 0, "no orphans here, nothing skipped");
+});
+
+test("mixed-merge diff: overlapping identity resolves to nested fields (nested wins)", function () {
+  var nestedOnly = {
+    flags: [
+      { key: "keep", experiments: [{ name: "E", seed: "s1", variants: vv(), status: "running" }] },
+    ],
+  };
+  var mixed = {
+    flags: [
+      { key: "keep", experiments: [{ name: "E", seed: "s1", variants: vv(), status: "running" }] },
+    ],
+    // NOTE: flag key placed LAST so key order matches the
+    // copy+stamp order collectExps produces for nested rows; the only
+    // intended delta is the status field (draft vs running).
+    experiments: [{ name: "E", seed: "s1", variants: vv(), status: "draft", flag: "keep" }],
+  };
+  var d = plain(h.CW.diffTransferSnapshots(mixed, nestedOnly));
+  var ids = d.experiments.map(function (r) { return r.id; });
+  assert.ok(ids.indexOf("keep\0s1") !== -1, "identity is flagKey\\0String(seed)");
+  assert.equal(d.counts.experimentsModified, 0, "nested-first => mixed agrees with nested-only");
+  assert.equal(d.counts.experimentsUnchanged, 1, "single identity, unchanged");
+});
+
+test("mixed-merge diff: legacy flag-first key order agrees with nested twin", function () {
+  var nestedTwin = {
+    flags: [
+      { key: "keep", experiments: [{ name: "E", seed: "s1", variants: vv(), status: "running" }] },
+    ],
+  };
+  // Natural author order (flag FIRST) must compare equal to the nested
+  // twin: collectExps canonicalizes row key order before diffing.
+  var oldShape = {
+    flags: [{ key: "keep" }],
+    experiments: [{ flag: "keep", name: "E", seed: "s1", variants: vv(), status: "running" }],
+  };
+  var d = plain(h.CW.diffTransferSnapshots(oldShape, nestedTwin));
+  assert.equal(d.counts.experimentsModified, 0, "same content, different key order => not modified");
+  assert.equal(d.counts.experimentsAdded, 0, "no added rows");
+  assert.equal(d.counts.experimentsRemoved, 0, "no removed rows");
+  assert.equal(d.counts.experimentsUnchanged, 1, "single identity, unchanged");
+});
+
+test("mixed-merge diff: mixed snap agrees with its true-merge normalized form", function () {
+  var mixed = {
+    flags: [
+      { key: "keep", experiments: [{ name: "N1", seed: "s1", variants: vv(), status: "running" }] },
+      { key: "other", experiments: [] },
+    ],
+    // flag-last key order (see note above) isolates semantic deltas.
+    experiments: [
+      { name: "L2", seed: "s2", variants: vv(), status: "draft", flag: "keep" },
+      { name: "Ghost", seed: "g", variants: vv(), status: "draft", flag: "ghost" },
+    ],
+  };
+  var norm = normalizeSnapshot(mixed);
+  var d = plain(h.CW.diffTransferSnapshots(mixed, norm));
+  assert.equal(d.counts.experimentsAdded, 0, "no added rows vs normalized (orphan dropped both sides)");
+  assert.equal(d.counts.experimentsRemoved, 0, "no removed rows vs normalized (legacy extra merged)");
+  assert.equal(d.counts.experimentsModified, 0, "no modified rows vs normalized");
+  assert.equal(d.counts.experimentsUnchanged, 2, "s1 + s2 unchanged");
+});
+
+// --- isLegacyTopLevelSnap: pure legacy-shape detector (no notice wiring) ---
+
+test("isLegacyTopLevelSnap detects a non-empty top-level experiments array", function () {
+  assert.equal(typeof h.CW.isLegacyTopLevelSnap, "function", "predicate exported");
+  assert.equal(h.CW.isLegacyTopLevelSnap({ flags: [], experiments: [{ name: "E", flag: "keep", seed: "s" }] }), true);
+});
+
+test("isLegacyTopLevelSnap returns false for missing/empty/nested-only snaps", function () {
+  assert.equal(typeof h.CW.isLegacyTopLevelSnap, "function", "predicate exported");
+  assert.equal(h.CW.isLegacyTopLevelSnap({ flags: [] }), false, "missing array");
+  assert.equal(h.CW.isLegacyTopLevelSnap({ flags: [], experiments: [] }), false, "empty array");
+  assert.equal(
+    h.CW.isLegacyTopLevelSnap({ flags: [{ key: "keep", experiments: [{ name: "E", seed: "s" }] }] }),
+    false,
+    "nested-only is not legacy"
+  );
+  assert.equal(h.CW.isLegacyTopLevelSnap(null), false, "null snap");
+  assert.equal(h.CW.isLegacyTopLevelSnap({ flags: [], experiments: "nope" }), false, "non-array experiments");
+});
+
+// --- stageImportFromDialog: legacy deprecation notice gated on isLegacyTopLevelSnap ---
+// Drives the real dialog flow (openImportDialog + stage-button click) with a
+// captured CW.toast: a legacy file (non-empty top-level experiments[]) shows
+// the suffix in BOTH #transfer-import-result textContent and the CW.toast arg;
+// a nested-only file shows the bare summary byte-identical.
+
+var LEGACY_SUFFIX = " (Deprecated: top-level experiments[] — re-export nested-only.)";
+
+function stageViaDialog(text) {
+  reset();
+  seedLive();
+  var toasts = [];
+  var origToast = h.CW.toast;
+  h.CW.toast = function (msg, ok) { toasts.push({ msg: String(msg), ok: ok }); };
+  try {
+    h.CW.openImportDialog();
+    h.CW.$("transfer-import-text").value = text;
+    var btn = h.CW.$("transfer-import-stage");
+    var clicks = (btn.listeners || []).filter(function (l) { return l && l.type === "click"; });
+    assert.ok(clicks.length > 0, "stage button wired");
+    clicks.forEach(function (l) { l.fn.call(btn, {}); });
+    var result = h.CW.$("transfer-import-result").textContent;
+    return { result: String(result), toasts: toasts };
+  } finally {
+    h.CW.toast = origToast;
+  }
+}
+
+test("stageImportFromDialog shows a bare summary for nested-only files", function () {
+  var out = stageViaDialog(JSON.stringify(importSnapshot()));
+  assert.ok(out.result.indexOf("Import staged:") === 0, "bare summary staged, got: " + out.result);
+  assert.ok(out.result.indexOf("Deprecated") === -1, "no deprecation suffix for nested-only");
+  assert.ok(out.toasts.length > 0, "toast fired");
+  assert.equal(out.toasts[out.toasts.length - 1].msg, out.result, "toast arg matches result text");
+});
+
+test("stageImportFromDialog appends the deprecation suffix for legacy top-level files", function () {
+  var nested = stageViaDialog(JSON.stringify(importSnapshot()));
+  var legacy = stageViaDialog(JSON.stringify(legacySnapshot()));
+  assert.ok(
+    legacy.result.slice(-LEGACY_SUFFIX.length) === LEGACY_SUFFIX,
+    "legacy result carries suffix, got: " + legacy.result
+  );
+  assert.ok(legacy.toasts.length > 0, "toast fired");
+  assert.equal(legacy.toasts[legacy.toasts.length - 1].msg, legacy.result, "toast arg matches result text");
+  assert.equal(
+    legacy.result.slice(0, -LEGACY_SUFFIX.length),
+    nested.result,
+    "base summary byte-identical to nested-only"
+  );
 });
 
 test("importTransferSnapshot of an identical snapshot stages nothing", function () {

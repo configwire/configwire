@@ -28,7 +28,7 @@ func promoteSameProjectGate(srcProject, destProject string) error {
 }
 
 func TestPromoteEtagFreshOnDest(t *testing.T) {
-	snap := []byte(`{"flags":[{"key":"a","type":"bool","default":true,"group":"","rules":[]}],"experiments":[]}`)
+	snap := []byte(`{"flags":[{"key":"a","type":"bool","default":true,"group":"","rules":[],"experiments":[]}]}`)
 	srcEtag := EtagFor(2, snap)
 	destEtag := EtagFor(5, snap)
 	if srcEtag == destEtag {
@@ -125,7 +125,7 @@ func TestPromoteSameProjectGate(t *testing.T) {
 func TestPromoteValidateGate(t *testing.T) {
 	badWeights := func() Snapshot {
 		snap := goodSnapshot()
-		snap.Experiments[0].Variants = []any{
+		snap.Flags[0].Experiments[0].Variants = []any{
 			map[string]any{"name": "control", "weightBps": float64(9900)},
 		}
 		return snap

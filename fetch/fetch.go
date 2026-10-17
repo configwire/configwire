@@ -82,6 +82,9 @@ const allowHeaders = "X-ConfigWire-Key, If-None-Match"
 // deprecatedUidFallbackTotal counts process-local ?uid= fallback uses.
 var deprecatedUidFallbackTotal atomic.Uint64
 
+// deprecatedSnapshotTotal counts process-local legacy-shape snapshot serves.
+var deprecatedSnapshotTotal atomic.Uint64
+
 // markDeprecatedUid stamps the compat header + PII-free log/counter.
 // It takes the header (not the request event) so the shared stamping logic
 // stays unit-testable; callers pass re.Response.Header(). Never logs
@@ -90,6 +93,16 @@ func markDeprecatedUid(h http.Header) {
 	h.Set("X-CW-Deprecated-uid", "true")
 	deprecatedUidFallbackTotal.Add(1)
 	log.Printf("fetch: deprecated ?uid= fallback used (compat window; send userHash)")
+}
+
+// markDeprecatedSnapshot stamps the compat header + PII-free log/counter.
+// It takes the header (not the request event) so the shared stamping logic
+// stays unit-testable; callers pass re.Response.Header(). Never logs
+// snapshot contents (counts/shape only).
+func markDeprecatedSnapshot(h http.Header) {
+	h.Set("X-CW-Deprecated-snapshot", "true")
+	deprecatedSnapshotTotal.Add(1)
+	log.Printf("fetch: deprecated legacy snapshot served (compat window; republish to migrate)")
 }
 
 // setFetchCacheHeaders stamps private cache headers on fetch 200/304
@@ -207,12 +220,18 @@ func EtagMatches(ifNoneMatch, etag string) bool {
 
 // EvaluateSnapshot evaluates every flag in a stored snapshot for ctx purely
 // (no I/O), so it is unit-testable with a fake latest-release input.
+// Both stored shapes reach here identically: Snapshot.UnmarshalJSON folds
+// legacy top-level experiments into their owning flag (orphans dropped),
+// and flattenForEval merges per-flag nested rows with the decoded
+// flattened set (nested wins, orphans dropped), so a nested snapshot and
+// its legacy twin evaluate to the same values and variants.
 // Returns values (typed per flag) and variants (one entry per flag targeted
 // by at least one experiment row; the assigned variant name, including the
 // DefaultVariant fallthrough for non-running/anonymous paths).
 // statusOverride, when non-empty, replaces each experiment's stored status
 // (the ?exp= query param); otherwise the stored status is used.
 func EvaluateSnapshot(snap releases.Snapshot, ctx eval.Context, statusOverride string) (map[string]any, map[string]string) {
+	all := flattenForEval(snap)
 	values := make(map[string]any, len(snap.Flags))
 	variants := map[string]string{}
 	for _, sf := range snap.Flags {
@@ -223,13 +242,13 @@ func EvaluateSnapshot(snap releases.Snapshot, ctx eval.Context, statusOverride s
 				rules = append(rules, r)
 			}
 		}
-		exps := expsForFlag(snap.Experiments, sf.Key)
+		exps := expsForFlag(all, sf.Key)
 		if len(exps) == 0 {
 			values[sf.Key] = eval.Evaluate(flag, rules, ctx)
 			continue
 		}
-		// First matching experiment row wins (snapshot order is by id,
-		// deterministic from the publish path).
+		// First matching experiment row wins (per-flag order is by seed
+		// with id tiebreak, deterministic from the publish path).
 		se := exps[0]
 		status := se.Status
 		if statusOverride != "" {
@@ -273,6 +292,58 @@ func decodeRule(sr releases.SnapshotRule, i int) (eval.Rule, bool) {
 	return r, true
 }
 
+// flattenForEval collects the eval-ready experiment set: per-flag nested
+// entries first with the parent key stamped (parent wins on identity),
+// then rows from the decoded flattened set whose flag matches a snapshot
+// flag (legacy top-level fallback; orphans dropped — the same exclusion
+// ResolveExperimentFlag applies at build time to untargeted rows).
+// Values decoded via Snapshot.UnmarshalJSON carry both from the same
+// rows, so the merge dedupes to identical rows for either stored shape;
+// hand-built values with only nested rows work unchanged. Record ids are
+// globally unique; id-less rows fall back to parent flag + seed.
+func flattenForEval(snap releases.Snapshot) []releases.SnapshotExperiment {
+	keys := make(map[string]bool, len(snap.Flags))
+	for _, sf := range snap.Flags {
+		keys[sf.Key] = true
+	}
+	keyOf := func(e releases.SnapshotExperiment) string {
+		if e.ID != "" {
+			return "id\x00" + e.ID
+		}
+		return "seed\x00" + e.Flag + "\x00" + e.Seed
+	}
+	var out []releases.SnapshotExperiment
+	seen := map[string]bool{}
+	for _, sf := range snap.Flags {
+		for _, e := range sf.Experiments {
+			e.Flag = sf.Key
+			k := keyOf(e)
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+			out = append(out, e)
+		}
+	}
+	for _, e := range snap.Experiments {
+		if !keys[e.Flag] {
+			continue
+		}
+		k := keyOf(e)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+// expsForFlag selects the compat-flattened experiments targeting key, in
+// fold order (nested first, so the first matching row is the nested
+// parent entry when both shapes carry the flag). Callers pass the
+// flattenForEval set (EvaluateSnapshot folds it up front); entries carry
+// the parent key stamped by Snapshot.UnmarshalJSON / flattenNested.
 func expsForFlag(all []releases.SnapshotExperiment, key string) []releases.SnapshotExperiment {
 	var out []releases.SnapshotExperiment
 	for _, e := range all {
@@ -413,6 +484,14 @@ func getConfig(re *core.RequestEvent) error {
 	setFetchCacheHeaders(re)
 	if deprecatedUid {
 		markDeprecatedUid(re.Response.Header())
+	}
+	// Legacy-shape snapshots stamp on this 200 config path only: 304/empty
+	// paths intentionally do not load the snapshot to stamp (avoids an
+	// extra DB read); steady-state cached clients learn of deprecation on
+	// next 200. Unlike uid — which stamps all three success paths — the
+	// snapshot stamp hooks here only.
+	if releases.IsLegacyTopLevel(snapBytes) {
+		markDeprecatedSnapshot(re.Response.Header())
 	}
 	return re.JSON(http.StatusOK, map[string]any{
 		"version":  rel.GetInt("version"),

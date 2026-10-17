@@ -45,7 +45,7 @@ func TestRollbackRejectsCorruptSnapshot(t *testing.T) {
 // be resurrected through rollback into a new release.
 func TestRollbackRejectsInvalidSnapshot(t *testing.T) {
 	app := promoteHandlerTestApp(t)
-	src := rollbackSrcRecord(t, app, `{"flags":[],"experiments":[]}`)
+	src := rollbackSrcRecord(t, app, `{"flags":[]}`)
 	if _, _, err := rollbackToNewRow(app, src, "note", "tester", 1); err == nil {
 		t.Fatal("rollback of invalid snapshot succeeded, want refusal")
 	} else if !strings.Contains(err.Error(), "nothing to publish") {

@@ -150,6 +150,9 @@ func postPublish(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
+	// BuildSnapshot emits the nested shape (per-flag Experiments plus the
+	// in-memory flattened set); ValidateSnapshot gates the nested rows,
+	// so no fold is needed before the gate.
 	if err := ValidateSnapshot(snap); err != nil {
 		return re.BadRequestError(err.Error(), nil)
 	}
@@ -304,8 +307,10 @@ func versionConflictResponse(re *core.RequestEvent, current int) error {
 // with version=max+1 in the source row's env and a fresh etag (the
 // version is part of the etag input, so identical bytes still hash
 // differently). The snapshot is re-validated (json.Valid, then
-// json.Unmarshal into Snapshot + ValidateSnapshot) exactly like promote:
-// a corrupt or legacy source row fails here instead of cloning
+// json.Unmarshal into Snapshot — UnmarshalJSON folds legacy top-level
+// experiments into their owning flag and drops orphans, so both stored
+// shapes validate identically — + ValidateSnapshot) exactly like
+// promote: a corrupt or legacy source row fails here instead of cloning
 // fail-open bytes (e.g. a vacuously-matching condition) into a new
 // release. Releases rows stay immutable: no UPDATE path exists.
 func rollbackToNewRow(app core.App, src *core.Record, note, author string, fromVersion int) (int, string, error) {
@@ -358,8 +363,10 @@ func rollbackToNewRow(app core.App, src *core.Record, note, author string, fromV
 // canonical src bytes). Dest parameterization is pure: the write target
 // always comes from the destEnvID param — src.GetString("env") is only
 // read for the audit log, never as the write target. The snapshot is
-// re-validated (json.Valid, then json.Unmarshal into Snapshot +
-// ValidateSnapshot) so a corrupt source row fails here instead of
+// re-validated (json.Valid, then json.Unmarshal into Snapshot —
+// UnmarshalJSON folds legacy top-level experiments into their owning
+// flag and drops orphans, so both stored shapes validate identically —
+// + ValidateSnapshot) so a corrupt source row fails here instead of
 // cloning bad bytes; ValidateSnapshot errors propagate verbatim for the
 // caller to map to 400. Persists via internalSave so the main.go
 // publish-only guard passes. Single-binary scope: the caller holds

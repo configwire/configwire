@@ -21,6 +21,7 @@ import (
 
 	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/ingest"
+	"github.com/configwire/configwire/releases"
 )
 
 // TestAuthOrder_KeyHeaderContract pins the SDK-key header name. A rename
@@ -230,6 +231,36 @@ func TestMarkDeprecatedUid_StampsHeaderAndCounts(t *testing.T) {
 		t.Fatalf("second call counter = %d, want %d", got, want)
 	}
 	if got := h.Get("X-CW-Deprecated-uid"); got != "true" {
+		t.Fatalf("repeat header = %q, want %q", got, "true")
+	}
+}
+
+// TestMarkDeprecatedSnapshot_StampsHeaderAndCounts mirrors the uid stamping
+// test for legacy-shape snapshots: exact header value plus one counter
+// increment per call; nested-only payloads never stamp (detector false).
+func TestMarkDeprecatedSnapshot_StampsHeaderAndCounts(t *testing.T) {
+	h := http.Header{}
+	before := deprecatedSnapshotTotal.Load()
+	markDeprecatedSnapshot(h)
+	if got := h.Get("X-CW-Deprecated-snapshot"); got != "true" {
+		t.Fatalf("header = %q, want %q", got, "true")
+	}
+	if got, want := deprecatedSnapshotTotal.Load(), before+1; got != want {
+		t.Fatalf("counter = %d, want %d (delta +1)", got, want)
+	}
+	if releases.IsLegacyTopLevel([]byte(`{"flags":[]}`)) {
+		t.Fatal("nested-only payload must not detect as legacy (no header)")
+	}
+	if !releases.IsLegacyTopLevel([]byte(`{"flags":[],"experiments":[{"id":"e1","flag":"f","seed":"s","variants":[],"status":"running"}]}`)) {
+		t.Fatal("non-empty top-level experiments payload must detect as legacy")
+	}
+	if releases.IsLegacyTopLevel([]byte(`{"flags":[],"experiments":[]}`)) {
+		t.Fatal("empty top-level experiments array must not detect as legacy")
+	}
+	if releases.IsLegacyTopLevel([]byte(`not json`)) {
+		t.Fatal("malformed payload must not detect as legacy")
+	}
+	if got := h.Get("X-CW-Deprecated-snapshot"); got != "true" {
 		t.Fatalf("repeat header = %q, want %q", got, "true")
 	}
 }
