@@ -2156,9 +2156,9 @@ td code {
 /* ---- Flag row ⋯ action menu (renderer contract: js/flags.js folderRowHTML
  * emits td.flag-actions-cell > .flag-menu-wrap > button.flag-menu-btn
  * ([data-flag-menu], aria-haspopup=menu) + .flag-menu[role=menu][hidden]
- * holding the same data-flag-rules / data-edit-flag /
- * data-delete-flag buttons boot.js already delegates, plus the
- * select[data-move-flag] moved inside the menu). Absolute positioning needs
+ * holding edit / delete / move-to-group label + select[data-move-flag] on
+ * top, a .flag-menu-divider, then data-flag-rules / data-flag-experiments
+ * buttons boot.js already delegates). Absolute positioning needs
  * visible overflow on both ancestors or bottom rows get clipped. */
 #flag-folders .folder {
   overflow: visible;
@@ -2232,6 +2232,26 @@ td code {
   width: 100%;
   max-width: none;
   height: 28px;
+  background-color: transparent;
+  border-color: var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 var(--space-6) 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+#flag-folders .flag-menu select:hover {
+  border-color: var(--accent);
+  background-color: rgba(59, 130, 246, 0.12);
+  color: var(--text);
+}
+
+#flag-folders .flag-menu select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: transparent;
 }
 
 #flag-folders .flag-menu-label {
@@ -2243,6 +2263,13 @@ td code {
   letter-spacing: 0.07em;
   color: var(--muted);
   text-align: left;
+}
+
+#flag-folders .flag-menu-divider {
+  display: block;
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
 }
 
 @media (prefers-reduced-motion: reduce) {

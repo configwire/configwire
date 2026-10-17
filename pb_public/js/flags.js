@@ -124,13 +124,13 @@
       '<td class="flag-actions-cell"><div class="flag-menu-wrap">' +
       '<button type="button" class="flag-menu-btn" data-flag-menu="' + CW.esc(f.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(f.key) + '">&#8943;</button>' +
       '<div class="flag-menu" role="menu" hidden>' +
-      '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + rulesIcon + "<span>" + CW.esc(rulesLabel) + "</span>" + ruleDot + "</button>" +
-      '<button type="button" role="menuitem" data-flag-experiments="' + CW.esc(f.id) + '">' + expsIcon + "<span>" + CW.esc(expsLabel) + "</span>" + expDot + "</button>" +
       '<button type="button" role="menuitem" data-edit-flag="' + CW.esc(f.id) + '">' + editIcon + "<span>edit</span></button>" +
       '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">' + deleteIcon + "<span>delete</span></button>" +
-      '<span class="flag-menu-label">Move to group</span>' +
-      '<select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to group"' + moveDisabled + ">" +
+      '<select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to another group" data-cw-tip="Move ' + CW.esc(f.key) + ' to another group"' + moveDisabled + ">" +
       moveOpts + "</select>" +
+      '<span class="flag-menu-divider" aria-hidden="true"></span>' +
+      '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + rulesIcon + "<span>" + CW.esc(rulesLabel) + "</span>" + ruleDot + "</button>" +
+      '<button type="button" role="menuitem" data-flag-experiments="' + CW.esc(f.id) + '">' + expsIcon + "<span>" + CW.esc(expsLabel) + "</span>" + expDot + "</button>" +
       "</div></div></td></tr>";
   }
 
