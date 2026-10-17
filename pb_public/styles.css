@@ -5464,8 +5464,9 @@ section[aria-labelledby="backups-s3"] .card-head {
  * Singleton #cw-tip is filled + positioned by js/boot.js delegation
  * (mouseover/focusin, capture phase, so dynamically injected HTML such as
  * select[data-move-flag] in .flag-menu is covered with no per-node init).
- * Visuals mirror .field-info-bubble: var(--text) chip, var(--bg) ink,
- * var(--radius-sm) corners, var(--space-2) spacing. No transition and
+ * Visuals mirror #flag-folders .flag-menu: var(--panel-2) surface,
+ * var(--border) hairline, var(--text) ink, var(--radius-sm) corners,
+ * var(--shadow) elevation. No transition and
  * zero transition-delay: shows the same frame the pointer/focus lands.
  * position:fixed + high z-index escapes #flag-folders .flag-menu clipping
  * (ancestors already overflow:visible) and works on <select>, where
@@ -5476,13 +5477,14 @@ section[aria-labelledby="backups-s3"] .card-head {
   display: none;
   max-width: min(320px, calc(100vw - 16px));
   padding: 8px 10px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--text);
-  color: var(--bg);
+  background: var(--panel-2);
+  color: var(--text);
   font-size: 12px;
   line-height: 1.45;
   font-weight: 400;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow);
   pointer-events: none;
   white-space: normal;
   overflow-wrap: break-word;
