@@ -210,22 +210,19 @@
   function saveLimits(ev) {
     if (ev) ev.preventDefault();
     var hipsEl = CW.$("limit-ip-headers");
-    var hipsInForm = hipsEl && hipsEl.closest ? hipsEl.closest("#limits-form") : null;
     var stateHeaders = currentVal("ipHeaders", null);
     var chdrEl = CW.$("limit-country-headers");
-    var chdrInForm = chdrEl && chdrEl.closest ? chdrEl.closest("#limits-form") : null;
     var stateCountry = currentVal("countryHeaders", null);
     var stateAllowed = currentVal("adminAllowedIPs", null);
     var allowEl = CW.$("admin-allowed-ips");
-    var allowInForm = allowEl && allowEl.closest ? allowEl.closest("#limits-form") : null;
     var body = {
       globalRps: numOr("limit-global", currentVal("globalRps", NaN)),
       burst: numOr("limit-burst", currentVal("burst", NaN)),
       fetchRps: numOr("limit-fetch", currentVal("fetchRps", NaN)),
       ingestRps: numOr("limit-ingest", currentVal("ingestRps", NaN)),
-      adminAllowedIPs: allowInForm ? stringToIPs(allowEl.value) : (Array.isArray(stateAllowed) ? stateAllowed : stringToIPs(allowEl && allowEl.value)),
-      ipHeaders: hipsInForm ? stringToHeaders(hipsEl.value) : (Array.isArray(stateHeaders) ? stateHeaders : stringToHeaders(hipsEl && hipsEl.value)),
-      countryHeaders: chdrInForm ? stringToHeaders(chdrEl.value) : (Array.isArray(stateCountry) ? stateCountry : stringToHeaders(chdrEl && chdrEl.value))
+      adminAllowedIPs: allowEl ? stringToIPs(allowEl.value) : (Array.isArray(stateAllowed) ? stateAllowed : []),
+      ipHeaders: hipsEl ? stringToHeaders(hipsEl.value) : (Array.isArray(stateHeaders) ? stateHeaders : []),
+      countryHeaders: chdrEl ? stringToHeaders(chdrEl.value) : (Array.isArray(stateCountry) ? stateCountry : [])
     };
     var fields = ["globalRps", "burst", "fetchRps", "ingestRps"];
     for (var i = 0; i < fields.length; i++) {

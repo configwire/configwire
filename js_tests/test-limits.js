@@ -182,6 +182,29 @@ test("saveLimits success PUTs parsed body", async function () {
   assert.equal(textOf("limits-result"), "Saved.");
 });
 
+test("saveLimits prefers live DOM over stale state for headers", async function () {
+  reset();
+  h.CW.state.limits = { globalRps: 200, burst: 400, fetchRps: 100, ingestRps: 50,
+    adminAllowedIPs: [], ipHeaders: ["CF-Connecting-IP"], countryHeaders: ["CF-IPCountry", "X-Country"] };
+  setVal("limit-global", "200");
+  setVal("limit-burst", "400");
+  setVal("limit-fetch", "100");
+  setVal("limit-ingest", "50");
+  setVal("limit-ip-headers", "X-Custom-IP");
+  setVal("limit-country-headers", "X-Custom-Country");
+  setVal("admin-allowed-ips", "");
+  var calls = [];
+  var restore = stubApiMut(calls, 200, { globalRps: 200 });
+  try {
+    await h.CW.saveLimits(null);
+  } finally {
+    restore();
+  }
+  assert.equal(calls.length, 1);
+  assert.deepEqual(plain(calls[0].body.ipHeaders), ["X-Custom-IP"]);
+  assert.deepEqual(plain(calls[0].body.countryHeaders), ["X-Custom-Country"]);
+});
+
 test("saveLimits rejects bad country header names without network", async function () {
   reset();
   setVal("limit-global", "200");
