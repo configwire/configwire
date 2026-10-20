@@ -32,9 +32,10 @@ func SetIdentityManager(m *identity.Manager) {
 // deriveIdentity resolves (anonID, country) for one ingest request:
 // anonID = identity.Manager over limits.ClientIP + User-Agent for the
 // event env's UTC day ("" on derivation error — the event still stores,
-// unattributed); country = identity.CountryFromHeaders ("" when absent).
+// unattributed); country = first valid ISO-2 value in the limits
+// country-header order ("" when absent).
 func deriveIdentity(re *core.RequestEvent, envID string, now time.Time) (string, string) {
-	country := identity.CountryFromHeaders(re.Request.Header)
+	country := identity.CountryFromHeadersWith(re.Request.Header, limits.GetConfig().CountryHeaders)
 	anonID, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
 	if err != nil {
 		log.Printf("ingest: anonID derivation failed, storing unattributed: %v", err)

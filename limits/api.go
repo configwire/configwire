@@ -13,12 +13,14 @@ import (
 // Register loads persisted tunables (seeding the singleton row when
 // absent) and mounts the superuser-only admin endpoints:
 //
-//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminAllowedIPs,ipHeaders,clientIp,remoteAddr,windowSec:1}
+//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminAllowedIPs,ipHeaders,countryHeaders,clientIp,remoteAddr,windowSec:1}
 //	PUT /api/v1/admin/limits -> validates numerics 1..10000 + allowlist +
-//	    header order, updates memory + upserts the rate_settings row,
+//	    header orders, updates memory + upserts the rate_settings row,
 //	    returns the same shape.
 //	    ipHeaders is optional: absent (or null) keeps the stored order for
 //	    back-compat; an explicit empty list resets to the code defaults.
+//	    countryHeaders is optional with the same semantics (absent/null
+//	    keeps stored; explicit empty resets to the code defaults).
 //	    adminAllowedIPs is optional: absent (or null) keeps stored;
 //	    explicit empty stays empty (allow all).
 func Register(se *core.ServeEvent) {
@@ -30,8 +32,10 @@ func Register(se *core.ServeEvent) {
 // limitsBody is the wire shape for GET responses and PUT requests.
 // IPHeaders is a pointer so absent/null (keep stored order) stays
 // distinct from an explicit empty list (reset to the code defaults).
-// AdminAllowedIPs is a pointer so absent/null (keep stored) stays
-// distinct from an explicit empty list (allow all).
+// CountryHeaders has the same absent/null-vs-empty semantics for the
+// country-code header order. AdminAllowedIPs is a pointer so
+// absent/null (keep stored) stays distinct from an explicit empty list
+// (allow all).
 type limitsBody struct {
 	GlobalRps       int       `json:"globalRps"`
 	Burst           int       `json:"burst"`
@@ -39,12 +43,17 @@ type limitsBody struct {
 	IngestRps       int       `json:"ingestRps"`
 	AdminAllowedIPs *[]string `json:"adminAllowedIPs"`
 	IPHeaders       *[]string `json:"ipHeaders"`
+	CountryHeaders  *[]string `json:"countryHeaders"`
 }
 
 func toBody(c Config) map[string]any {
 	headers := append([]string(nil), c.IPHeaders...)
 	if len(headers) == 0 {
 		headers = DefaultIPHeaders()
+	}
+	country := append([]string(nil), c.CountryHeaders...)
+	if len(country) == 0 {
+		country = DefaultCountryHeaders()
 	}
 	allowed := append([]string(nil), c.AdminAllowedIPs...)
 	if allowed == nil {
@@ -57,6 +66,7 @@ func toBody(c Config) map[string]any {
 		"ingestRps":       c.IngestRps,
 		"adminAllowedIPs": allowed,
 		"ipHeaders":       headers,
+		"countryHeaders":  country,
 		"windowSec":       WindowSec,
 	}
 }
@@ -80,7 +90,8 @@ func getLimits(re *core.RequestEvent) error {
 // putLimits handles PUT /api/v1/admin/limits (superuser-only). Order:
 // 400 (body/validation) -> 500 (persist failure) -> 200 (same shape).
 // ipHeaders absent/null keeps the stored order; explicit empty resets to
-// the code defaults. adminAllowedIPs absent/null keeps stored; explicit
+// the code defaults. countryHeaders has the same absent/null-vs-empty
+// semantics. adminAllowedIPs absent/null keeps stored; explicit
 // empty stays empty (allow all, never reset to defaults).
 func putLimits(re *core.RequestEvent) error {
 	security.SetHeaders(re)
@@ -96,6 +107,7 @@ func putLimits(re *core.RequestEvent) error {
 		IngestRps:       req.IngestRps,
 		AdminAllowedIPs: resolvePUTAdminIPs(stored.AdminAllowedIPs, req.AdminAllowedIPs),
 		IPHeaders:       resolvePUTHeaders(stored.IPHeaders, req.IPHeaders),
+		CountryHeaders:  resolvePUTCountryHeaders(stored.CountryHeaders, req.CountryHeaders),
 	}
 	if err := ValidateConfig(next); err != nil {
 		return re.BadRequestError(err.Error(), nil)
@@ -137,6 +149,21 @@ func resolvePUTHeaders(stored []string, req *[]string) []string {
 	return DefaultIPHeaders()
 }
 
+// resolvePUTCountryHeaders maps the PUT countryHeaders field onto the
+// stored order with the same nil-vs-empty semantics as
+// resolvePUTHeaders: nil (absent/null) keeps the stored order, an empty
+// (or all-blank) list resets to the code defaults, otherwise the
+// normalized order is returned for ValidateConfig to accept or reject.
+func resolvePUTCountryHeaders(stored []string, req *[]string) []string {
+	if req == nil {
+		return append([]string(nil), stored...)
+	}
+	if norm := normalizeCountryHeaders(*req); len(norm) > 0 {
+		return norm
+	}
+	return DefaultCountryHeaders()
+}
+
 // upsertGlobalRow writes the singleton rate_settings row (key=global),
 // creating it when absent. Uses the request-scoped app (never captured).
 func upsertGlobalRow(app core.App, c Config) error {
@@ -158,5 +185,6 @@ func upsertGlobalRow(app core.App, c Config) error {
 	rec.Set("ingestRps", c.IngestRps)
 	setAdminAllowedIPsField(collection, rec, c.AdminAllowedIPs)
 	setIPHeadersField(collection, rec, c.IPHeaders)
+	setCountryHeadersField(collection, rec, c.CountryHeaders)
 	return app.Save(rec)
 }

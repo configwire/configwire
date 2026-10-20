@@ -36,6 +36,33 @@ func TestCountryFromHeaders(t *testing.T) {
 	}
 }
 
+// TestCountryFromHeadersWithOrder pins the explicit-order seam: a
+// custom order re-prioritizes headers, and an empty order falls back
+// to the code defaults.
+func TestCountryFromHeadersWithOrder(t *testing.T) {
+	mk := func(kv map[string]string) http.Header {
+		h := http.Header{}
+		for k, v := range kv {
+			h.Set(k, v)
+		}
+		return h
+	}
+	both := mk(map[string]string{"CF-IPCountry": "FR", "X-Country": "jp"})
+	if got := CountryFromHeadersWith(both, []string{"X-Country", "CF-IPCountry"}); got != "JP" {
+		t.Fatalf("custom order = %q, want JP (X-Country first)", got)
+	}
+	if got := CountryFromHeadersWith(both, nil); got != "FR" {
+		t.Fatalf("empty order = %q, want FR (defaults put CF-IPCountry first)", got)
+	}
+	custom := mk(map[string]string{"X-Geo": "de"})
+	if got := CountryFromHeadersWith(custom, []string{"X-Geo"}); got != "DE" {
+		t.Fatalf("custom header = %q, want DE", got)
+	}
+	if got := CountryFromHeadersWith(custom, []string{"X-Unknown"}); got != "" {
+		t.Fatalf("unmatched order = %q, want empty", got)
+	}
+}
+
 // TestNormalizeCountryStrictISO2: only 2 ASCII letters survive.
 func TestNormalizeCountryStrictISO2(t *testing.T) {
 	for _, ok := range []string{"US", "us", "Us", " gb "} {

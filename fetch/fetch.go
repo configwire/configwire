@@ -191,8 +191,9 @@ func stampUserHashCompat(h http.Header, q url.Values) {
 // so it is unit-testable. Bucketing identity is server-derived: anonID is
 // the per-request Manager.AnonID(envID, ClientIP, User-Agent, day) value
 // passed in by getConfig and stored in Context.UserHash (field name kept
-// for eval.Bucket compat); country is the server geo from
-// identity.CountryFromHeaders passed in by getConfig. Client ?userHash=
+// for eval.Bucket compat); country is the server geo from the limits
+// country-header order (identity.CountryFromHeadersWith) passed in by
+// getConfig. Client ?userHash=
 // (any shape, even malformed) and client ?country= are accepted-but-ignored
 // and never reach eval; getConfig stamps userHashCompatHeader when the
 // client sent ?userHash=. Legacy ?uid= is sunset: any trimmed non-empty
@@ -479,7 +480,7 @@ func getConfig(re *core.RequestEvent) error {
 		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Failed to derive identity.", "status": 500})
 	}
 	q := re.Request.URL.Query()
-	ctx, cerr := BuildContext(q, anonID, identity.CountryFromHeaders(re.Request.Header))
+	ctx, cerr := BuildContext(q, anonID, identity.CountryFromHeadersWith(re.Request.Header, limits.GetConfig().CountryHeaders))
 	if cerr != nil {
 		if len(re.Request.URL.Query().Get("attrs")) > MaxAttrsBytes {
 			return re.JSON(http.StatusRequestURITooLong, map[string]any{"message": cerr.Error(), "status": http.StatusRequestURITooLong})

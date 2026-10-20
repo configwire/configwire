@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/configwire/configwire/limits"
 )
 
 // TestDeriveAnonID_Vector pins the exact contract: hex(HMAC_SHA256(salt,
@@ -52,7 +54,16 @@ func TestDeriveAnonID_Deterministic(t *testing.T) {
 	}
 }
 
-// TestCrossDayUnlinkability (Q1 Aptabase-style daily rebucket, ACCEPTED):
+// TestCountryDefaultsMatchLimits locks the two default orders together:
+// the tunable lives in limits, but the identity backstop must agree or
+// standalone CountryFromHeaders diverges from serve.
+func TestCountryDefaultsMatchLimits(t *testing.T) {
+	if got, want := strings.Join(countryHeaders, ","), strings.Join(limits.DefaultCountryHeaders(), ","); got != want {
+		t.Fatalf("identity backstop = %q, limits defaults = %q, want equal", got, want)
+	}
+}
+
+// TestCrossDayUnlinkability (Q1 daily rebucket, ACCEPTED):
 // same env/ip/ua on different UTC days yields different anonIDs, and
 // different envs on the same day also diverge.
 func TestCrossDayUnlinkability(t *testing.T) {

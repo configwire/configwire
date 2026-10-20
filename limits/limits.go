@@ -25,6 +25,10 @@
 // the direct TCP peer is a trusted proxy (loopback/private/link-local)
 // or the remote host is empty/unparseable; public peers ignore all
 // headers.
+//
+// Country-code headers (Config.CountryHeaders, same list shape) feed
+// identity.CountryFromHeaders with the same semantics: the first
+// present, valid ISO-2 value wins.
 package limits
 
 import (
@@ -88,6 +92,12 @@ type Config struct {
 	// comma-separated item as the client IP; every other header must
 	// parse as a single IP.
 	IPHeaders []string `json:"ipHeaders"`
+	// CountryHeaders is the ordered country-code header list (same
+	// 1..10-entry, token-char shape as IPHeaders).
+	// identity.CountryFromHeaders reads the first present, valid ISO-2
+	// value in this order. Empty means "code defaults" (normalized on
+	// load/apply, never stored empty).
+	CountryHeaders []string `json:"countryHeaders"`
 }
 
 // Defaults returns the code defaults (before env/DB overrides).
@@ -99,6 +109,7 @@ func Defaults() Config {
 		IngestRps:       DefaultIngestRps,
 		AdminAllowedIPs: DefaultAdminAllowedIPs(),
 		IPHeaders:       DefaultIPHeaders(),
+		CountryHeaders:  DefaultCountryHeaders(),
 	}
 }
 
@@ -236,6 +247,98 @@ func parseIPHeaders(raw string) []string {
 // to the default order.
 func loadIPHeadersFromEnv() []string {
 	return parseIPHeaders(os.Getenv(ipHeadersEnvName))
+}
+
+// countryHeadersEnvName seeds the ordered country-code header list
+// before the first DB load (the rate_settings row is the source of
+// truth after load).
+const countryHeadersEnvName = "CONFIGWIRE_COUNTRY_HEADERS"
+
+// defaultCountryHeaders is the canonical order: Cloudflare's
+// CF-IPCountry first, then the generic X-Country back-compat fallback
+// for plain proxy setups.
+var defaultCountryHeaders = []string{"CF-IPCountry", "X-Country"}
+
+// DefaultCountryHeaders returns a fresh copy of the canonical order.
+func DefaultCountryHeaders() []string {
+	out := make([]string, len(defaultCountryHeaders))
+	copy(out, defaultCountryHeaders)
+	return out
+}
+
+// normalizeCountryHeaders is dedupeIPHeaders capped at maxIPHeaders for
+// storage paths. Empty/nil input yields an empty slice meaning "code
+// defaults" to the callers. Character/length validity is NOT checked
+// here — ValidateCountryHeaders owns rejection.
+func normalizeCountryHeaders(in []string) []string {
+	out := dedupeIPHeaders(in)
+	if len(out) > maxIPHeaders {
+		out = out[:maxIPHeaders]
+	}
+	return out
+}
+
+// ValidateCountryHeaders enforces 1..10 entries, each 1..64 chars matching
+// ^[A-Za-z0-9-]+$, deduped case-insensitively. Empty/nil is valid and
+// means "code defaults" so older Config literals and absent PUT fields
+// keep working; callers normalize empty to DefaultCountryHeaders.
+func ValidateCountryHeaders(in []string) error {
+	norm := dedupeIPHeaders(in)
+	if len(norm) == 0 {
+		return nil
+	}
+	if len(norm) > maxIPHeaders {
+		return &configError{msg: "invalid countryHeaders: must hold 1..10 entries."}
+	}
+	for _, name := range norm {
+		if len(name) > maxIPHeaderLen || !ipHeaderNameRe.MatchString(name) {
+			return &configError{msg: "invalid countryHeaders entry " + strconv.Quote(name) + ": must be 1..64 chars of [A-Za-z0-9-]."}
+		}
+	}
+	return nil
+}
+
+// canonicalCountryHeaders returns the storable form of in: normalized, or the
+// code defaults when empty. Invalid entries fall back to the defaults
+// (never trust env/DB blindly — mirrors the numeric clamp posture).
+func canonicalCountryHeaders(in []string) []string {
+	norm := normalizeCountryHeaders(in)
+	if len(norm) == 0 {
+		return DefaultCountryHeaders()
+	}
+	if err := ValidateCountryHeaders(norm); err != nil {
+		return DefaultCountryHeaders()
+	}
+	return norm
+}
+
+// parseCountryHeaders splits a comma-separated header list into the storable
+// ordered form. Empty input returns the defaults; over-long lists keep
+// the first maxIPHeaders valid names; invalid names are dropped (env
+// input cannot fail a request, so it filters instead of rejecting).
+func parseCountryHeaders(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return DefaultCountryHeaders()
+	}
+	var cand []string
+	for _, part := range strings.Split(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" || len(name) > maxIPHeaderLen || !ipHeaderNameRe.MatchString(name) {
+			continue
+		}
+		cand = append(cand, name)
+	}
+	if len(cand) == 0 {
+		return DefaultCountryHeaders()
+	}
+	return canonicalCountryHeaders(cand)
+}
+
+// loadCountryHeadersFromEnv reads CONFIGWIRE_COUNTRY_HEADERS following the
+// parseEnvInt/loadDefaultsFromEnv pattern: unset/empty/invalid falls back
+// to the default order.
+func loadCountryHeadersFromEnv() []string {
+	return parseCountryHeaders(os.Getenv(countryHeadersEnvName))
 }
 
 // adminAllowedIPsEnvName seeds the admin allowlist before the first DB
@@ -420,12 +523,13 @@ func loadDefaultsFromEnv() Config {
 	c.IngestRps = parseEnvInt("CONFIGWIRE_INGEST_RPS", c.IngestRps)
 	c.AdminAllowedIPs = loadAdminAllowedIPsFromEnv()
 	c.IPHeaders = loadIPHeadersFromEnv()
+	c.CountryHeaders = loadCountryHeadersFromEnv()
 	return c
 }
 
 // ValidateConfig enforces 1..10000 on every numeric tunable, checked in
 // struct order so multi-field failures always report the same field first,
-// then the admin allowlist (empty means allow all) and the header order
+// then the admin allowlist (empty means allow all) and the header orders
 // (empty means code defaults and is valid).
 func ValidateConfig(c Config) error {
 	fields := []struct {
@@ -448,6 +552,9 @@ func ValidateConfig(c Config) error {
 	if err := ValidateIPHeaders(c.IPHeaders); err != nil {
 		return err
 	}
+	if err := ValidateCountryHeaders(c.CountryHeaders); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -458,7 +565,7 @@ func (e *configError) Error() string { return e.msg }
 // clampConfig forces every numeric field into 1..10000 (used when loading
 // env/DB values that bypass admin validation), canonicalizes the admin
 // allowlist (empty stays allow-all, invalid falls back to allow-all) and
-// normalizes the header order to the storable form (empty/invalid becomes
+// normalizes the header orders to the storable form (empty/invalid becomes
 // the code defaults).
 func clampConfig(c Config) Config {
 	clamp := func(v, def int) int {
@@ -474,6 +581,7 @@ func clampConfig(c Config) Config {
 	c.IngestRps = clamp(c.IngestRps, d.IngestRps)
 	c.AdminAllowedIPs = canonicalAdminAllowedIPs(c.AdminAllowedIPs)
 	c.IPHeaders = canonicalIPHeaders(c.IPHeaders)
+	c.CountryHeaders = canonicalCountryHeaders(c.CountryHeaders)
 	return c
 }
 
@@ -554,12 +662,13 @@ var (
 )
 
 // resetForTest replaces config + limiters (tests only, same package).
-// The header order is normalized so bare Config literals resolve like
+// The header orders are normalized so bare Config literals resolve like
 // production (empty becomes the code defaults); the admin allowlist is
 // canonicalized (empty stays allow-all).
 func resetForTest(c Config) {
 	c.AdminAllowedIPs = canonicalAdminAllowedIPs(c.AdminAllowedIPs)
 	c.IPHeaders = canonicalIPHeaders(c.IPHeaders)
+	c.CountryHeaders = canonicalCountryHeaders(c.CountryHeaders)
 	cfgMu.Lock()
 	current = c
 	cfgMu.Unlock()
@@ -579,11 +688,14 @@ func GetConfig() Config {
 	if out.IPHeaders != nil {
 		out.IPHeaders = append([]string(nil), out.IPHeaders...)
 	}
+	if out.CountryHeaders != nil {
+		out.CountryHeaders = append([]string(nil), out.CountryHeaders...)
+	}
 	return out
 }
 
 // applyConfig validates and installs c (admin PUT path), storing copies
-// of the allowlist and header order.
+// of the allowlist and header orders.
 func applyConfig(c Config) error {
 	if err := ValidateConfig(c); err != nil {
 		return err
@@ -598,6 +710,11 @@ func applyConfig(c Config) error {
 		c.IPHeaders = DefaultIPHeaders()
 	} else {
 		c.IPHeaders = append([]string(nil), normalizeIPHeaders(c.IPHeaders)...)
+	}
+	if len(c.CountryHeaders) == 0 {
+		c.CountryHeaders = DefaultCountryHeaders()
+	} else {
+		c.CountryHeaders = append([]string(nil), normalizeCountryHeaders(c.CountryHeaders)...)
 	}
 	cfgMu.Lock()
 	current = c
@@ -872,6 +989,21 @@ func setIPHeadersField(collection *core.Collection, rec *core.Record, headers []
 	rec.Set("ipHeaders", string(raw))
 }
 
+// setCountryHeadersField stores the country-code header order as a JSON
+// string on rec, but only when the collection already carries the
+// additive countryHeaders field (pre-migration rows keep working
+// without it).
+func setCountryHeadersField(collection *core.Collection, rec *core.Record, headers []string) {
+	if collection.Fields.GetByName("countryHeaders") == nil {
+		return
+	}
+	raw, err := json.Marshal(canonicalCountryHeaders(headers))
+	if err != nil {
+		return
+	}
+	rec.Set("countryHeaders", string(raw))
+}
+
 // setAdminAllowedIPsField stores the admin allowlist as a JSON string on
 // rec, but only when the collection already carries the additive
 // adminAllowedIPs field (pre-migration rows keep working without it).
@@ -916,6 +1048,7 @@ func ensureLoaded(app core.App) {
 		rec.Set("ingestRps", c.IngestRps)
 		setAdminAllowedIPsField(collection, rec, c.AdminAllowedIPs)
 		setIPHeadersField(collection, rec, c.IPHeaders)
+		setCountryHeadersField(collection, rec, c.CountryHeaders)
 		if err := app.Save(rec); err != nil {
 			log.Printf("limits: failed to seed rate_settings: %v", err)
 		}
@@ -961,6 +1094,19 @@ func ensureLoaded(app core.App) {
 			log.Printf("limits: ignoring unparseable rate_settings.ipHeaders, using env defaults")
 		} else {
 			c.IPHeaders = canonicalIPHeaders(stored)
+		}
+	}
+	// The country-code header order is the Settings row's source of truth
+	// once stored: a parseable stored list overrides the env-seeded value
+	// (explicit empty resets to the code defaults); missing/empty/
+	// unparseable keeps the env-seeded value, which itself falls back to
+	// the code defaults.
+	if raw := strings.TrimSpace(rec.GetString("countryHeaders")); raw != "" {
+		var stored []string
+		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+			log.Printf("limits: ignoring unparseable rate_settings.countryHeaders, using env defaults")
+		} else {
+			c.CountryHeaders = canonicalCountryHeaders(stored)
 		}
 	}
 	cfgMu.Lock()
