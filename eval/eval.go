@@ -20,7 +20,7 @@
 //	  - Else variant = cumulative weightBps mapping of Bucket(anonID, Seed).
 //	  - anonID is the daily-rotating anonymous ID (Context.UserHash).
 //	  - DAILY REBUCKET: daily salt rotation re-randomizes
-//	    fnv64a(newHash+seed)%10000 — intentional Aptabase-style break,
+//	    fnv64a(newHash+seed)%10000 — intentional daily-rebucket break,
 //	    release note required.
 //
 //	Bucket(anonID, seed string) int
@@ -120,7 +120,7 @@ type Variant struct {
 
 // Experiment splits anonIDs across variants by Bucket(anonID, Seed).
 // Buckets re-randomize when the client rotates the daily anonID salt
-// (intentional Aptabase-style break; see Bucket).
+// (intentional daily-rebucket break; see Bucket).
 type Experiment struct {
 	ID             string    `json:"id"`
 	Seed           string    `json:"seed"`
@@ -167,7 +167,7 @@ func Assign(exp Experiment, anonID string) string {
 // anonID or seed is empty. anonID semantics: the input is the
 // daily-rotating anonymous ID, not a stable user identifier.
 // DAILY REBUCKET: daily salt rotation re-randomizes
-// fnv64a(newHash+seed)%10000 — intentional Aptabase-style break, release
+// fnv64a(newHash+seed)%10000 — intentional daily-rebucket break, release
 // note required.
 func Bucket(anonID, seed string) int {
 	if anonID == "" || seed == "" {

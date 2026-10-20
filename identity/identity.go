@@ -1,5 +1,5 @@
 // Package identity derives PII-minimal anonymous IDs with daily salt
-// rotation (Q1 Aptabase-style daily rebucket, ACCEPTED).
+// rotation (Q1 daily rebucket, ACCEPTED).
 //
 // Contract: AnonID(envID, ip, ua, day) =
 // hex(HMAC_SHA256(salt_env_day, ip + 0x00 + ua))[:16], keeping the

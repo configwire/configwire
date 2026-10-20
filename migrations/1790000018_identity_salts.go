@@ -4,7 +4,7 @@ package migrations
 //
 // Creates the identity_salts collection holding one row per
 // (envID, UTC day) for the configwire/identity salt manager (Q1
-// Aptabase-style daily rebucket): {envID Text required, day Text
+// daily rebucket): {envID Text required, day Text
 // required (YYYY-MM-DD UTC), salt Text required (hex of the 32B
 // crypto/rand salt — PocketBase collections have no BLOB column type,
 // so the raw bytes live hex-encoded in TEXT), plus the automatic
