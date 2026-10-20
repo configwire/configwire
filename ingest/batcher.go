@@ -13,12 +13,19 @@ import (
 // event env's project (resolved in the handler from the verbatim key);
 // "" means the flag relation stays unset (env-wide event, or an unknown
 // key whose kind/variant are preserved without attribution).
+//
+// Identity is server-derived only: AnonID comes from identity.Manager
+// (ClientIP + User-Agent + daily salt) and Country from the request's
+// country headers. UserHash is the legacy column — always stored empty,
+// kept only for compat until a later migration drops it.
 type StoredEvent struct {
 	EnvID    string
 	Kind     string
 	Flag     string
 	Variant  string
 	UserHash string
+	AnonID   string
+	Country  string
 	Version  int
 	Ts       time.Time
 }
@@ -214,7 +221,9 @@ func (b *Batcher) flushChunk(col *core.Collection, chunk []StoredEvent) (int, er
 }
 
 // saveStoredEvent writes one validated event via the given app (process
-// app for retries, tx app inside a chunk transaction).
+// app for retries, tx app inside a chunk transaction). Identity is
+// anonID-only: anonId + country are stored, userHash is stored empty
+// (column kept nullable for compat, never written).
 func saveStoredEvent(app core.App, col *core.Collection, it StoredEvent) error {
 	rec := core.NewRecord(col)
 	if it.EnvID != "" {
@@ -225,7 +234,9 @@ func saveStoredEvent(app core.App, col *core.Collection, it StoredEvent) error {
 		rec.Set("flag", it.Flag)
 	}
 	rec.Set("variant", it.Variant)
-	rec.Set("userHash", it.UserHash)
+	rec.Set("userHash", "")
+	rec.Set("anonId", it.AnonID)
+	rec.Set("country", it.Country)
 	rec.Set("version", it.Version)
 	rec.Set("ts", it.Ts)
 	return app.Save(rec)

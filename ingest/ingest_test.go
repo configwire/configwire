@@ -193,6 +193,33 @@ func TestValidateBodyRejectsPII(t *testing.T) {
 	}
 }
 
+func TestValidateBodyRejectsPIIExtended(t *testing.T) {
+	for _, key := range []string{
+		"email", "Email", "EMAIL", "e-mail", "phone", "PHONE",
+		"IP", "Ip", "deviceid", "DeviceId", "device_id", "DEVICE_ID",
+		"advertisingid", "adid", "ADID", "idfa", "IDFA", "idfv", "IDFV",
+		"androidid", "serial", "mac", "MAC", "imei", "IMEI",
+		"UserId", "USERID",
+	} {
+		e := ev("exposure")
+		e[key] = "raw-value"
+		_, aerr := ValidateBody(body(t, []any{e}))
+		if aerr == nil || aerr.Status != 400 {
+			t.Errorf("raw %q must be 400, got %v", key, aerr)
+			continue
+		}
+		if strings.Contains(aerr.Msg, "raw-value") {
+			t.Errorf("raw %q: error must not echo the value, got %q", key, aerr.Msg)
+		}
+	}
+	// Benign unknown keys (e.g. traceId) stay accepted-but-ignored.
+	e := ev("exposure")
+	e["traceId"] = "abc"
+	if _, aerr := ValidateBody(body(t, []any{e})); aerr != nil {
+		t.Fatalf("traceId must stay accepted, got %v", aerr)
+	}
+}
+
 func TestValidateBodyBogusKind(t *testing.T) {
 	_, aerr := ValidateBody(body(t, []any{ev("bogus")}))
 	if aerr == nil || aerr.Status != 400 {

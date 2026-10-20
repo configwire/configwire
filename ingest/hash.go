@@ -29,6 +29,12 @@ func KeyHash(fullKey string) string {
 // HashUser maps a raw ID to its storable digest, dropping the input — only this digest reaches the events table.
 // Empty input -> "" (matches eval.HashUserID's frozen contract exactly;
 // either function satisfies the contract).
+//
+// Deprecated: anonID-only storage is server-derived (identity.Manager
+// over ClientIP + User-Agent + daily salt). Client userHash values are
+// accepted by the schema but ignored — the server value always wins.
+// Kept for the compat window and existing tests; do not call from new
+// code.
 func HashUser(userID string) string {
 	if userID == "" {
 		return ""

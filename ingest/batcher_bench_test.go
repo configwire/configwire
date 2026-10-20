@@ -28,6 +28,8 @@ func flushBenchApp(t testing.TB) *tests.TestApp {
 		`{"type":"text","name":"kind"}`,
 		`{"type":"text","name":"variant"}`,
 		`{"type":"text","name":"userHash"}`,
+		`{"type":"text","name":"anonId"}`,
+		`{"type":"text","name":"country"}`,
 		`{"type":"number","name":"version"}`,
 		`{"type":"date","name":"ts"}`,
 	} {

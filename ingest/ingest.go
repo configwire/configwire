@@ -8,8 +8,15 @@
 //	Body: {"events":[{"kind":"fetch|exposure","flag":"<key>","variant":"<name>",
 //	    "userHash":"<opaque>", "ts":"2026-09-22T00:00:00Z | 1726870000"}]}
 //	flag/variant/userHash/ts are all optional; ts accepts RFC3339 string or
-//	unix-seconds number, absent means server time. Raw "userId"/"ip" keys are
-//	STRICTLY REJECTED (400) — PII must never reach storage.
+//	unix-seconds number, absent means server time. The client "userHash"
+//	key is still accepted by the schema (length/NUL validated) but IGNORED:
+//	storage is anonID-only — the handler derives anonID server-side via
+//	identity.Manager (limits.ClientIP + User-Agent + daily salt) plus
+//	country from headers, stores events.anonId + events.country, and
+//	stores userHash empty (column kept nullable for compat). Raw "userId"/"ip" keys and
+//	PII/device-identifier keys (email, phone, device IDs; case-insensitive)
+//	are STRICTLY REJECTED (400) — PII must never reach storage; values are
+//	never logged, errors name only the key.
 //
 // SDK key format (contract for T10/T11/T16):
 //   - The full key is an opaque string presented in X-ConfigWire-Key.
@@ -70,6 +77,10 @@ const (
 )
 
 // EventIn is one validated ingest event with server-normalized timestamp.
+// UserHash carries the client-supplied value verbatim through validation
+// (length/NUL checked) but is IGNORED at storage: the handler always
+// substitutes the server-derived anonID (ignore+replace, documented in
+// the package doc).
 type EventIn struct {
 	Kind     string
 	Flag     string
@@ -108,11 +119,24 @@ type rawEvent struct {
 	Ts       json.RawMessage `json:"ts"`
 }
 
+// forbiddenEventKeys holds lowercased top-level event keys that are never
+// accepted (PII/device identifiers). Matched case-insensitively; values are
+// never logged, errors name only the key (PII-free).
+var forbiddenEventKeys = map[string]struct{}{
+	"email": {}, "e-mail": {}, "phone": {}, "ip": {},
+	"deviceid": {}, "device_id": {}, "advertisingid": {},
+	"adid": {}, "idfa": {}, "idfv": {},
+	"androidid": {}, "serial": {}, "mac": {}, "imei": {},
+}
+
 // ValidateBody parses and validates a request body purely (no I/O), so it is
 // unit-testable. It enforces: non-empty JSON with an "events" array,
 // 1..MaxBatchEvents items, per-event ≤ MaxEventBytes, kind ∈
 // {fetch,exposure}, optional flag ≤ MaxFlagLen runes with no NUL byte,
-// no raw "userId"/"ip" keys, parseable ts.
+// no raw "userId"/"ip" or PII/device-identifier keys (case-insensitive),
+// parseable ts. A client "userHash" key is accepted (length/NUL checked)
+// but IGNORED downstream — the handler replaces it with the server-derived
+// anonID (ignore+replace).
 func ValidateBody(body []byte) ([]EventIn, *apiError) {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil, badRequest("empty body: expected {\"events\":[...]}.")
@@ -155,6 +179,8 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	}
 	// Strict PII guard: detect raw userId/ip keys on the untyped map so
 	// that even null-valued keys are rejected (presence, not value).
+	// Extended: PII/device-identifier keys are rejected case-insensitively;
+	// errors name only the key, values are never logged or stored.
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return ev, badRequest("malformed event JSON: " + err.Error())
@@ -164,6 +190,18 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	}
 	if _, ok := m["ip"]; ok {
 		return ev, badRequest("raw \"ip\" is forbidden and never stored.")
+	}
+	for k := range m {
+		lk := strings.ToLower(k)
+		if lk == "userid" {
+			return ev, badRequest("raw \"userId\" is forbidden: send \"userHash\" instead.")
+		}
+		if _, denied := forbiddenEventKeys[lk]; denied {
+			if lk == "ip" {
+				return ev, badRequest("raw \"ip\" is forbidden and never stored.")
+			}
+			return ev, badRequest("raw \"" + lk + "\" is forbidden and never stored.")
+		}
 	}
 	var r rawEvent
 	if err := json.Unmarshal(raw, &r); err != nil {
@@ -241,6 +279,12 @@ func clampTs(ts time.Time) (time.Time, *apiError) {
 // NOTE: the HTTP path rejects raw userId before this is ever reached, so the
 // userID branch exists for completeness/testability and future server-side
 // callers — raw PII from clients is never stored.
+//
+// Deprecated: anonID-only storage ignores the client userHash entirely —
+// the handler derives AnonID server-side (identity.Manager over ClientIP
+// + User-Agent + daily salt) and stores anonId + country with userHash
+// left empty. Kept for the compat window and existing tests; do not call
+// from new code.
 func ResolveUserHash(userHash, userID string) string {
 	if userHash != "" {
 		return userHash

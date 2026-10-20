@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/configwire/configwire/identity"
+	"github.com/configwire/configwire/limits"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -14,10 +16,41 @@ var module struct {
 	batcher *Batcher
 }
 
+// idManager derives server-side anonIDs (identity.Manager over ClientIP +
+// User-Agent + daily salt). MemoryStore is the local default until the
+// identity_salts collection is wired as the durable Store; SetIdentityManager
+// swaps it in tests.
+var idManager = identity.NewManager(identity.NewMemoryStore())
+
+// SetIdentityManager swaps the anonID manager (tests only).
+func SetIdentityManager(m *identity.Manager) {
+	if m != nil {
+		idManager = m
+	}
+}
+
+// deriveIdentity resolves (anonID, country) for one ingest request:
+// anonID = identity.Manager over limits.ClientIP + User-Agent for the
+// event env's UTC day ("" on derivation error — the event still stores,
+// unattributed); country = identity.CountryFromHeaders ("" when absent).
+func deriveIdentity(re *core.RequestEvent, envID string, now time.Time) (string, string) {
+	country := identity.CountryFromHeaders(re.Request.Header)
+	anonID, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
+	if err != nil {
+		log.Printf("ingest: anonID derivation failed, storing unattributed: %v", err)
+		return "", country
+	}
+	return anonID, country
+}
+
 // Register mounts the events ingest route and starts the flush pipeline.
 // It also registers the flag-ID cache eviction hooks so flag writes in
 // this process invalidate cached (project,key)->flagID mappings.
+// It swaps idManager onto the durable PB-backed salt Store so same-day
+// anonIDs survive restarts; unit tests that never call Register keep
+// the MemoryStore default (see SetIdentityManager).
 func Register(se *core.ServeEvent) {
+	idManager = identity.NewManager(identity.NewPBStore(se.App))
 	module.batcher = NewBatcher(se.App)
 	module.batcher.Start()
 	RegisterFlagCacheHooks(se.App)
@@ -63,16 +96,20 @@ func postEvents(re *core.RequestEvent) error {
 	}
 	now := time.Now().UTC()
 	flagIDs := resolveFlagIDs(re.App, env.GetString("project"), events)
+	anonID, country := deriveIdentity(re, env.Id, now)
 	stored := make([]StoredEvent, 0, len(events))
 	for _, ev := range events {
 		ts := ev.Ts
 		if ts.IsZero() {
 			ts = now
 		}
+		// anonID-only storage: the client userHash is accepted by the
+		// schema but ignored — the server-derived anonID always wins
+		// (documented ignore+replace choice). userHash stores empty.
 		stored = append(stored, StoredEvent{
 			EnvID: env.Id,
 			Kind:  ev.Kind, Flag: flagIDs[ev.Flag], Variant: ev.Variant,
-			UserHash: ResolveUserHash(ev.UserHash, ""), Ts: ts,
+			AnonID: anonID, Country: country, Ts: ts,
 			Version: ev.Version,
 		})
 	}
