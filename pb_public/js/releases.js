@@ -888,7 +888,7 @@
       '<p id="promote-src-summary" role="status"></p>' +
       '<form id="promote-form" method="dialog">' +
       '<label>Destination environment <select id="promote-dest-env"></select></label>' +
-      '<label>Note (optional) <input id="promote-note" type="text" maxlength="500"></label>' +
+      '<label>Note (optional) <input id="promote-note" type="text" maxlength="500" placeholder="Short reason only, no emails or phone numbers"></label>' +
       '<label>Destination base version <input id="promote-dest-base" type="number" min="0" required></label>' +
       '<div class="dialog-actions">' +
       '<span class="dialog-spacer"></span>' +

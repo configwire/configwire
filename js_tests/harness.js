@@ -31,6 +31,7 @@ var FULL_ORDER = Object.freeze([
   "stats.js", // index.html:707
   "json-editor.js", // index.html:708
   "limits.js", // index.html:709 (boot.js:636-637 wires its save handlers)
+  "retention.js", // retention card (after limits.js, before backups.js)
   "backups.js", // index.html:737
   "boot.js", // index.html:710
   "update.js", // index.html:711

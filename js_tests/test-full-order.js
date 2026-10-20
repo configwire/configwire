@@ -1,6 +1,6 @@
 "use strict";
 // test-full-order.js — full-order integration smoke (Wave 3, todo 11).
-// Loads ALL 19 files via harness FULL_ORDER (index.html:694-711 order) with
+// Loads ALL 20 files via harness FULL_ORDER (index.html:694-711 order) with
 // NO files arg to h.load(); node:test + node:assert/strict only.
 // Run from configwire/: node --test js_tests/test-full-order.js
 //
@@ -54,10 +54,10 @@ function metaRes(data, ok) {
   };
 }
 
-// --- full-order load: silent at load, 19 files, admin surface present ---
+// --- full-order load: silent at load, 20 files, admin surface present ---
 
-test("FULL_ORDER loads all 19 files with zero fetch before DOMContentLoaded", function () {
-assert.equal(h.FULL_ORDER.length, 19);
+test("FULL_ORDER loads all 20 files with zero fetch before DOMContentLoaded", function () {
+assert.equal(h.FULL_ORDER.length, 20);
 assert.equal(h.FULL_ORDER[0], "core.js"); // index.html:694
 assert.equal(h.FULL_ORDER[12], "transfer.js"); // index.html:706
 assert.equal(h.FULL_ORDER[h.FULL_ORDER.length - 1], "update.js"); // index.html:711

@@ -340,6 +340,30 @@
                 </div>
               </form>
             </section>
+            <section class="card" aria-labelledby="retention">
+                <div class="card-head">
+                  <h2 id="retention">Retention</h2>
+                </div>
+              <p class="muted">Raw events roll into daily aggregates, then age out. Rollups must outlive raw.</p>
+              <form id="retention-form" aria-label="Retention windows">
+                <div class="limit-grid">
+                  <div class="limit-field">
+                    <label for="retention-raw">Raw events</label>
+                    <input id="retention-raw" type="number" min="1" max="1825">
+                    <small>Days live.</small>
+                  </div>
+                  <div class="limit-field">
+                    <label for="retention-rollup">Daily rollups</label>
+                    <input id="retention-rollup" type="number" min="1" max="1825">
+                    <small>Days kept.</small>
+                  </div>
+                </div>
+                <div class="limits-footer">
+                  <button type="submit" class="btn primary">Save retention</button>
+                  <span id="retention-result" role="status"></span>
+                </div>
+              </form>
+            </section>
             <section class="scope-group scope-group-backups" aria-labelledby="backups">
               <div class="scope-group-head">
                 <h2 id="backups" class="scope-group-title">Backups</h2>
@@ -937,6 +961,7 @@
   <script src="/js/stats.js"></script>
   <script src="/js/json-editor.js"></script>
   <script src="/js/limits.js"></script>
+  <script src="/js/retention.js"></script>
   <script src="/js/backups.js"></script>
   <script src="/js/boot.js"></script>
   <script src="/js/update.js"></script>

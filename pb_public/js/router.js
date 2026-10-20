@@ -589,6 +589,7 @@
     try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
     if (CW.loadAccounts) CW.loadAccounts().catch(CW.toastErr);
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
+    if (CW.loadRetention) CW.loadRetention().catch(function () { /* inline in retention card */ });
   }
 
   function showSettings() {
@@ -597,6 +598,7 @@
     try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
     if (CW.loadAccounts) CW.loadAccounts().catch(CW.toastErr);
     if (CW.loadLimits) CW.loadLimits().catch(function () { /* inline in settings card */ });
+    if (CW.loadRetention) CW.loadRetention().catch(function () { /* inline in retention card */ });
     if (CW.loadBackups) CW.loadBackups().catch(function () { /* inline in backups card */ });
     if (CW.loadBackupS3) CW.loadBackupS3().catch(function () { /* inline in backups card */ });
     if (CW.loadBackupSchedule) CW.loadBackupSchedule().catch(function () { /* inline in backups card */ });
