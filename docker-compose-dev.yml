@@ -9,7 +9,7 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile
-    image: configwire:local
+    image: ${CONFIGWIRE_IMAGE:-configwire:local}
     container_name: configwire
     ports:
       - "8090:8090"
