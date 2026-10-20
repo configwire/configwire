@@ -67,8 +67,9 @@ binary plus operator procedure.
   computes `anonID = hex(HMAC_SHA256(per-env daily salt,
   ip + 0x00 + ua))[:16]` via `identity.Manager` (trusted client IP
   from `limits.ClientIP` + User-Agent, salt for the env's UTC day),
-  and `country` from headers only (`CF-IPCountry`, then `X-Country`;
-  trimmed, uppercased, strict ISO-2, else `""`). Raw IPs and
+   and `country` from headers only (default order `CF-IPCountry`, then
+   `X-Country`, tunable via the limits `countryHeaders` setting;
+   trimmed, uppercased, strict ISO-2, else `""`). Raw IPs and
   User-Agents live in memory only, never persisted; only
   `(envID, day, salt)` reaches the salt store. Ref:
   `configwire/identity/identity.go:40-68` (`DeriveAnonID`, `AnonID`),
@@ -80,8 +81,7 @@ binary plus operator procedure.
   (`Prune` deletes days strictly older than `DayString(now-48h)`),
   so the previous-day salt always survives for late events but nothing
   older lingers. A rotated salt re-randomizes bucketing
-  (`fnv64a(newHash+seed)%10000`), an intentional Aptabase-style
-  rebucket, so plan experiment reads as one rebucket, not steady
+  (`fnv64a(newHash+seed)%10000`), an intentional daily rebucket, so plan experiment reads as one rebucket, not steady
   churn. Fetch and ingest both store the anonID only; stats return
   aggregate counts and never read identity. Ref:
   `configwire/identity/salt.go:10-24` (salt size, `pruneAfter`),

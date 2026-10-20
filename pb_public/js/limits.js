@@ -132,6 +132,8 @@
     });
     var hips = CW.$("limit-ip-headers");
     if (hips && d.ipHeaders !== undefined) hips.value = headersToString(d.ipHeaders);
+    var chdr = CW.$("limit-country-headers");
+    if (chdr && d.countryHeaders !== undefined) chdr.value = headersToString(d.countryHeaders);
     var allowEl = CW.$("admin-allowed-ips");
     if (allowEl && d.adminAllowedIPs !== undefined) allowEl.value = ipsToString(d.adminAllowedIPs);
     var curIp = CW.$("admin-current-ip");
@@ -195,6 +197,9 @@
     var hipsEl = CW.$("limit-ip-headers");
     var hipsInForm = hipsEl && hipsEl.closest ? hipsEl.closest("#limits-form") : null;
     var stateHeaders = currentVal("ipHeaders", null);
+    var chdrEl = CW.$("limit-country-headers");
+    var chdrInForm = chdrEl && chdrEl.closest ? chdrEl.closest("#limits-form") : null;
+    var stateCountry = currentVal("countryHeaders", null);
     var stateAllowed = currentVal("adminAllowedIPs", null);
     var allowEl = CW.$("admin-allowed-ips");
     var allowInForm = allowEl && allowEl.closest ? allowEl.closest("#limits-form") : null;
@@ -204,7 +209,8 @@
       fetchRps: numOr("limit-fetch", currentVal("fetchRps", NaN)),
       ingestRps: numOr("limit-ingest", currentVal("ingestRps", NaN)),
       adminAllowedIPs: allowInForm ? stringToIPs(allowEl.value) : (Array.isArray(stateAllowed) ? stateAllowed : stringToIPs(allowEl && allowEl.value)),
-      ipHeaders: hipsInForm ? stringToHeaders(hipsEl.value) : (Array.isArray(stateHeaders) ? stateHeaders : stringToHeaders(hipsEl && hipsEl.value))
+      ipHeaders: hipsInForm ? stringToHeaders(hipsEl.value) : (Array.isArray(stateHeaders) ? stateHeaders : stringToHeaders(hipsEl && hipsEl.value)),
+      countryHeaders: chdrInForm ? stringToHeaders(chdrEl.value) : (Array.isArray(stateCountry) ? stateCountry : stringToHeaders(chdrEl && chdrEl.value))
     };
     var fields = ["globalRps", "burst", "fetchRps", "ingestRps"];
     for (var i = 0; i < fields.length; i++) {
@@ -228,6 +234,20 @@
         var bad = "Bad header: " + body.ipHeaders[h];
         CW.$("limits-result").textContent = bad;
         CW.toast(bad);
+        return Promise.resolve();
+      }
+    }
+    if (body.countryHeaders.length > 10) {
+      var tooManyCountry = "Max 10 country headers.";
+      CW.$("limits-result").textContent = tooManyCountry;
+      CW.toast(tooManyCountry);
+      return Promise.resolve();
+    }
+    for (var c = 0; c < body.countryHeaders.length; c++) {
+      if (!IP_HEADER_RE.test(body.countryHeaders[c])) {
+        var badCountry = "Bad country header: " + body.countryHeaders[c];
+        CW.$("limits-result").textContent = badCountry;
+        CW.toast(badCountry);
         return Promise.resolve();
       }
     }
@@ -261,6 +281,15 @@
         return fail("Bad header: " + headers[h]);
       }
     }
+    var countryHeaders = stringToHeaders(CW.$("limit-country-headers") && CW.$("limit-country-headers").value);
+    if (countryHeaders.length > 10) {
+      return fail("Max 10 country headers.");
+    }
+    for (var ch = 0; ch < countryHeaders.length; ch++) {
+      if (!IP_HEADER_RE.test(countryHeaders[ch])) {
+        return fail("Bad country header: " + countryHeaders[ch]);
+      }
+    }
     function send() {
       var cur = CW.state.limits || {};
       var body = {
@@ -269,7 +298,8 @@
         fetchRps: cur.fetchRps,
         ingestRps: cur.ingestRps,
         adminAllowedIPs: allowed,
-        ipHeaders: headers
+        ipHeaders: headers,
+        countryHeaders: countryHeaders
       };
       var fields = ["globalRps", "burst", "fetchRps", "ingestRps"];
       for (var i = 0; i < fields.length; i++) {
@@ -282,7 +312,8 @@
               fetchRps: fresh.fetchRps,
               ingestRps: fresh.ingestRps,
               adminAllowedIPs: allowed,
-              ipHeaders: headers
+              ipHeaders: headers,
+              countryHeaders: countryHeaders
             }, "settings-limits-result");
           });
         }

@@ -55,8 +55,9 @@ IDs survive restarts, while `MemoryStore` stays the package default
 for unit tests. Salt-prune ownership is ticker-only, DB-direct via
 `PruneIdentitySalts` (`purge/purge.go:318`, global, all envs);
 `Manager.Prune` is the per-env API, never called from the ticker,
-so there is no double-delete. Geo is country-only (ISO-2 from `CF-IPCountry` /
-`X-Country` headers, no GeoIP database). Stored event rows carry
+so there is no double-delete. Geo is country-only (ISO-2 from the
+configurable country-header order, default `CF-IPCountry` /
+`X-Country`, no GeoIP database). Stored event rows carry
  `anonId` + `country` with the legacy `userHash` column left empty
  (`ingest/handler.go:102-110`).
 So per-device rows are pseudonymous, never anonymous: unlinkable

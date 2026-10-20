@@ -21,7 +21,7 @@ var h = harness.load(["core.js", "limits.js"], {
 });
 
 var INPUT_IDS = ["limit-global", "limit-burst", "limit-fetch", "limit-ingest",
-  "limit-ip-headers", "admin-allowed-ips", "limits-result", "settings-limits-result"];
+  "limit-ip-headers", "limit-country-headers", "admin-allowed-ips", "limits-result", "settings-limits-result"];
 
 function setVal(id, v) { h.CW.$(id).value = v; }
 function textOf(id) { return h.CW.$(id).textContent; }
@@ -148,6 +148,7 @@ test("saveLimits success PUTs parsed body", async function () {
   setVal("limit-fetch", "100");
   setVal("limit-ingest", "50");
   setVal("limit-ip-headers", "X-Foo");
+  setVal("limit-country-headers", "X-Geo");
   setVal("admin-allowed-ips", "10.0.0.1, 192.168.0.0/16");
   DB.limits = { globalRps: 200, burst: 400, fetchRps: 100, ingestRps: 50, adminAllowedIPs: [], ipHeaders: [] };
   var calls = [];
@@ -161,7 +162,21 @@ test("saveLimits success PUTs parsed body", async function () {
   assert.equal(calls[0].method + " " + calls[0].path, "PUT /api/v1/admin/limits");
   assert.deepEqual(plain(calls[0].body.adminAllowedIPs), ["10.0.0.1", "192.168.0.0/16"]);
   assert.deepEqual(plain(calls[0].body.ipHeaders), ["X-Foo"]);
+  assert.deepEqual(plain(calls[0].body.countryHeaders), ["X-Geo"]);
   assert.equal(textOf("limits-result"), "Saved.");
+});
+
+test("saveLimits rejects bad country header names without network", async function () {
+  reset();
+  setVal("limit-global", "200");
+  setVal("limit-burst", "400");
+  setVal("limit-fetch", "100");
+  setVal("limit-ingest", "50");
+  setVal("limit-ip-headers", "X-Foo");
+  setVal("limit-country-headers", "bad header!");
+  await h.CW.saveLimits(null);
+  assert.ok(textOf("limits-result").indexOf("Bad country header:") === 0);
+  assert.equal(h.fetchCalls.length, 0);
 });
 
 // --- saveAdminLimit validation ---
@@ -185,6 +200,7 @@ test("saveAdminLimit sends allowlist via PUT", async function () {
   h.CW.state.limits = { globalRps: 200, burst: 400, fetchRps: 100, ingestRps: 50 };
   setVal("admin-allowed-ips", "10.0.0.1, 192.168.0.0/16");
   setVal("limit-ip-headers", "");
+  setVal("limit-country-headers", "X-Geo");
   DB.limits = { globalRps: 200, burst: 400, fetchRps: 100, ingestRps: 50, adminAllowedIPs: [], ipHeaders: [] };
   var calls = [];
   var restore = stubApiMut(calls, 200, { globalRps: 200 });
@@ -195,6 +211,7 @@ test("saveAdminLimit sends allowlist via PUT", async function () {
   }
   assert.equal(calls.length, 1);
   assert.deepEqual(plain(calls[0].body.adminAllowedIPs), ["10.0.0.1", "192.168.0.0/16"]);
+  assert.deepEqual(plain(calls[0].body.countryHeaders), ["X-Geo"]);
 });
 
 // --- putLimits/loadLimits flows ---
@@ -217,12 +234,13 @@ test("putLimits failure renders status shape", async function () {
 test("loadLimits fills state and inputs; failure surfaces inline", async function () {
   reset();
   DB.limits = { globalRps: 200, burst: 400, fetchRps: 100, ingestRps: 50,
-    adminAllowedIPs: ["10.0.0.1"], ipHeaders: ["X-Foo"], clientIp: "10.0.0.1", remoteAddr: "" };
+    adminAllowedIPs: ["10.0.0.1"], ipHeaders: ["X-Foo"], countryHeaders: ["X-Geo"], clientIp: "10.0.0.1", remoteAddr: "" };
   var data = await h.CW.loadLimits();
   assert.equal(data.globalRps, 200);
   assert.equal(h.CW.state.limits.globalRps, 200);
   assert.equal(h.CW.$("limit-global").value, 200);
   assert.equal(h.CW.$("admin-allowed-ips").value, "10.0.0.1");
+  assert.equal(h.CW.$("limit-country-headers").value, "X-Geo");
   failGet = true;
   var err = null;
   try { await h.CW.loadLimits(); } catch (e) { err = e; }

@@ -598,16 +598,21 @@ Superuser-only; SDK-key-only or unauth then `401`.
 Success `200` (both verbs, same shape):
 
 ```json
-{"globalRps": 200, "burst": 400, "fetchRps": 100, "ingestRps": 50, "adminAllowedIPs": [], "ipHeaders": ["CF-Connecting-IP", "Fly-Client-IP", "X-Forwarded-For", "X-Real-IP"], "clientIp": "1.2.3.4", "remoteAddr": "127.0.0.1:52314", "windowSec": 1}
+{"globalRps": 200, "burst": 400, "fetchRps": 100, "ingestRps": 50, "adminAllowedIPs": [], "ipHeaders": ["CF-Connecting-IP", "Fly-Client-IP", "X-Forwarded-For", "X-Real-IP"], "countryHeaders": ["CF-IPCountry", "X-Country"], "clientIp": "1.2.3.4", "remoteAddr": "127.0.0.1:52314", "windowSec": 1}
 ```
 
 - Defaults: `globalRps 200`, `burst 400`, `fetchRps 100`,
   `ingestRps 50`, `adminAllowedIPs []` (empty = allow all),
-  `windowSec 1` (fixed 1s window).
+  `ipHeaders`/`countryHeaders` as above, `windowSec 1` (fixed 1s window).
 - `clientIp` is the caller's IP resolved via the `IPHeaders` order;
   `remoteAddr` is the direct TCP peer. The Admin UI Settings card
   shows them as "Your current IP (via IP headers)" so operators can
   copy the right entry into the allowlist.
+- Country header order: the first present header in `countryHeaders`
+  with a valid ISO-2 value wins (`""` when none); fetch and ingest
+  read `country` through this order only. Same shape rules as
+  `ipHeaders` (`1..10` entries, `1..64` chars of `[A-Za-z0-9-]`,
+  deduped case-insensitively).
 - Admin IP allowlist: entries are exact IPs or CIDRs (IPv4+IPv6,
   max 32). Empty allows all (safe upgrade). There is no admin
   req/s rate limiting. A denied admin IP then `403`
@@ -616,16 +621,19 @@ Success `200` (both verbs, same shape):
 - Env overrides at boot: `CONFIGWIRE_GLOBAL_RPS`,
   `CONFIGWIRE_BURST`, `CONFIGWIRE_FETCH_RPS`,
   `CONFIGWIRE_INGEST_RPS`, `CONFIGWIRE_ADMIN_ALLOWED_IPS`
-  (comma-separated IPs/CIDRs). Legacy `CONFIGWIRE_ADMIN_RPS` is
-  deprecated and ignored.
+  (comma-separated IPs/CIDRs), `CONFIGWIRE_IP_HEADERS` and
+  `CONFIGWIRE_COUNTRY_HEADERS` (comma-separated header names).
+  Legacy `CONFIGWIRE_ADMIN_RPS` is deprecated and ignored.
 - `PUT` validates numerics `1..10000` plus every allowlist entry
-  (IP-or-CIDR, max 32; outside then `400`), applies immediately in
-  memory, and persists to the `rate_settings` singleton row
-  (`key=global`). `adminAllowedIPs` absent/null keeps the stored
-  list. Empty or malformed JSON then `400`. Persist
-  failure then `500`.
+  (IP-or-CIDR, max 32; outside then `400`) plus both header orders
+  (same `1..10` / token-char rules; outside then `400`), applies
+  immediately in memory, and persists to the `rate_settings`
+  singleton row (`key=global`). `adminAllowedIPs` absent/null keeps
+  the stored list; `ipHeaders`/`countryHeaders` absent/null keep the
+  stored order, explicit empty resets to the code defaults. Empty or
+  malformed JSON then `400`. Persist failure then `500`.
 - Admin UI Limits card calls this endpoint (4 numeric inputs plus
-  the allowlist editor and the current-IP line).
+  the allowlist editor, the IP/country header editors, and the current-IP line).
 - Per-key overrides: `sdk_keys.fetchRps`/`sdk_keys.ingestRps`
   (optional, empty/0 means the global `fetchRps` 100/s /
    `ingestRps` 50/s defaults). Set via the Admin UI Keys card Edit
