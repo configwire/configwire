@@ -296,14 +296,14 @@
                 </div>
                 <div class="limit-field">
                   <label for="limit-ip-headers">IP headers</label>
-                  <input id="limit-ip-headers" type="text" placeholder="CF-Connecting-IP, Fly-Client-IP, X-Forwarded-For, X-Real-IP" title="Comma-separated trusted proxy headers, first match wins. Empty resets to defaults.">
-                  <small>First match wins.</small>
+                  <input id="limit-ip-headers" type="text" value="CF-Connecting-IP, Fly-Client-IP, X-Forwarded-For, X-Real-IP" title="Comma-separated trusted proxy headers, first match wins. Empty resets to defaults.">
+                  <small>First match wins. Empty resets to defaults.</small>
                   <p id="admin-current-ip" class="ip-status-pill" role="status"><span id="admin-current-ip-text">Your IP: …</span><button id="admin-current-ip-copy" type="button" class="btn ghost ip-copy-btn" aria-label="Copy current IP">Copy</button></p>
                 </div>
                 <div class="limit-field">
                   <label for="limit-country-headers">Country headers</label>
-                  <input id="limit-country-headers" type="text" placeholder="CF-IPCountry, X-Country" title="Comma-separated country-code headers, first match wins. Empty resets to defaults.">
-                  <small>First match wins.</small>
+                  <input id="limit-country-headers" type="text" value="CF-IPCountry, X-Country" title="Comma-separated country-code headers, first match wins. Empty resets to defaults.">
+                  <small>First match wins. Empty resets to defaults.</small>
                   <p id="admin-current-country" class="ip-status-pill" role="status"><span id="admin-current-country-text">Your country: Unknown</span></p>
                 </div>
                 <div class="limits-footer">
