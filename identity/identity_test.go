@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/configwire/configwire/limits"
 )
 
 // TestDeriveAnonID_Vector pins the exact contract: hex(HMAC_SHA256(salt,
@@ -51,15 +49,6 @@ func TestDeriveAnonID_Deterministic(t *testing.T) {
 	salt := []byte("0123456789abcdef0123456789abcdef")
 	if a, b := DeriveAnonID(salt, "1.2.3.4", "ua"), DeriveAnonID(salt, "1.2.3.4", "ua"); a != b {
 		t.Fatalf("non-deterministic: %q != %q", a, b)
-	}
-}
-
-// TestCountryDefaultsMatchLimits locks the two default orders together:
-// the tunable lives in limits, but the identity backstop must agree or
-// standalone CountryFromHeaders diverges from serve.
-func TestCountryDefaultsMatchLimits(t *testing.T) {
-	if got, want := strings.Join(countryHeaders, ","), strings.Join(limits.DefaultCountryHeaders(), ","); got != want {
-		t.Fatalf("identity backstop = %q, limits defaults = %q, want equal", got, want)
 	}
 }
 

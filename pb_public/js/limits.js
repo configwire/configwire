@@ -105,6 +105,17 @@
     }
   }
 
+  function renderCurrentCountry(el, country) {
+    var textEl = CW.$("admin-current-country-text") || el;
+    var code = String(country == null ? "" : country).replace(/^\s+|\s+$/g, "").toUpperCase();
+    // textContent only (country is operator-influenced via headers).
+    textEl.textContent = code === "" ? "Your country: Unknown" : "Your country: " + code;
+    if (el.classList) {
+      el.classList.remove("is-valid");
+      if (code !== "") el.classList.add("is-valid");
+    }
+  }
+
   function copyCurrentIP() {
     var d = CW.state.limits || {};
     var ip = String(d.clientIp == null ? "" : d.clientIp).replace(/^\s+|\s+$/g, "");
@@ -139,6 +150,10 @@
     var curIp = CW.$("admin-current-ip");
     if (curIp) {
       renderCurrentIP(curIp, d.clientIp, d.remoteAddr, d.adminAllowedIPs);
+    }
+    var curCountry = CW.$("admin-current-country");
+    if (curCountry) {
+      renderCurrentCountry(curCountry, d.country);
     }
   }
 
@@ -341,4 +356,5 @@
   CW.stringToHeaders = stringToHeaders;
   CW.headersToString = headersToString;
   CW.renderCurrentIP = renderCurrentIP;
+  CW.renderCurrentCountry = renderCurrentCountry;
 })();

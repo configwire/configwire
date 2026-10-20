@@ -3,6 +3,8 @@ package limits
 import (
 	"strings"
 	"testing"
+
+	"github.com/configwire/configwire/identity"
 )
 
 func TestDefaultCountryHeadersOrder(t *testing.T) {
@@ -141,5 +143,16 @@ func TestGetConfigCopiesCountryHeaders(t *testing.T) {
 	got.CountryHeaders[0] = "MUTATED"
 	if again := GetConfig(); again.CountryHeaders[0] == "MUTATED" {
 		t.Fatal("GetConfig aliases the active country header order")
+	}
+}
+
+// TestCountryDefaultsMatchIdentity locks the two default orders together:
+// the tunable lives here, but the identity backstop must agree or
+// standalone CountryFromHeaders diverges from serve. It lives in this
+// package (not identity's tests) because identity's non-test sources
+// must stay stdlib-only and therefore cannot import limits.
+func TestCountryDefaultsMatchIdentity(t *testing.T) {
+	if got, want := strings.Join(identity.DefaultCountryHeaders(), ","), strings.Join(DefaultCountryHeaders(), ","); got != want {
+		t.Fatalf("identity backstop = %q, limits defaults = %q, want equal", got, want)
 	}
 }

@@ -15,6 +15,17 @@ import (
 // at ISO-2 granularity, never precise geo.
 var countryHeaders = []string{"CF-IPCountry", "X-Country"}
 
+// DefaultCountryHeaders returns a fresh copy of the backstop order.
+// It must match limits.DefaultCountryHeaders — pinned by
+// TestCountryDefaultsMatchIdentity in the limits package (kept there
+// because this package's non-test sources must stay stdlib-only and
+// therefore cannot import limits).
+func DefaultCountryHeaders() []string {
+	out := make([]string, len(countryHeaders))
+	copy(out, countryHeaders)
+	return out
+}
+
 // CountryFromHeaders returns the request's ISO-2 country code from
 // the first present, valid country header in the backstop order,
 // else "". Serve paths prefer CountryFromHeadersWith with the active

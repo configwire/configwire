@@ -3,6 +3,7 @@ package limits
 import (
 	"net/http"
 
+	"github.com/configwire/configwire/identity"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
@@ -13,7 +14,7 @@ import (
 // Register loads persisted tunables (seeding the singleton row when
 // absent) and mounts the superuser-only admin endpoints:
 //
-//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminAllowedIPs,ipHeaders,countryHeaders,clientIp,remoteAddr,windowSec:1}
+//	GET /api/v1/admin/limits -> {globalRps,burst,fetchRps,ingestRps,adminAllowedIPs,ipHeaders,countryHeaders,clientIp,country,remoteAddr,windowSec:1}
 //	PUT /api/v1/admin/limits -> validates numerics 1..10000 + allowlist +
 //	    header orders, updates memory + upserts the rate_settings row,
 //	    returns the same shape.
@@ -72,11 +73,14 @@ func toBody(c Config) map[string]any {
 }
 
 // toBodyForRequest is toBody plus the resolved client IP for the current
-// request (so the UI can display which IP the allowlist sees) and the
-// raw remote address host.
+// request (so the UI can display which IP the allowlist sees), the
+// resolved ISO-2 country through the active country-header order (so the
+// UI can display which geo fetch/ingest derive), and the raw remote
+// address host.
 func toBodyForRequest(re *core.RequestEvent, c Config) map[string]any {
 	body := toBody(c)
 	body["clientIp"] = ClientIP(re)
+	body["country"] = identity.CountryFromHeadersWith(re.Request.Header, c.CountryHeaders)
 	body["remoteAddr"] = remoteHostFromAddr(re.Request.RemoteAddr)
 	return body
 }

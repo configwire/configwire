@@ -598,7 +598,7 @@ Superuser-only; SDK-key-only or unauth then `401`.
 Success `200` (both verbs, same shape):
 
 ```json
-{"globalRps": 200, "burst": 400, "fetchRps": 100, "ingestRps": 50, "adminAllowedIPs": [], "ipHeaders": ["CF-Connecting-IP", "Fly-Client-IP", "X-Forwarded-For", "X-Real-IP"], "countryHeaders": ["CF-IPCountry", "X-Country"], "clientIp": "1.2.3.4", "remoteAddr": "127.0.0.1:52314", "windowSec": 1}
+{"globalRps": 200, "burst": 400, "fetchRps": 100, "ingestRps": 50, "adminAllowedIPs": [], "ipHeaders": ["CF-Connecting-IP", "Fly-Client-IP", "X-Forwarded-For", "X-Real-IP"], "countryHeaders": ["CF-IPCountry", "X-Country"], "clientIp": "1.2.3.4", "country": "US", "remoteAddr": "127.0.0.1:52314", "windowSec": 1}
 ```
 
 - Defaults: `globalRps 200`, `burst 400`, `fetchRps 100`,
@@ -608,6 +608,10 @@ Success `200` (both verbs, same shape):
   `remoteAddr` is the direct TCP peer. The Admin UI Settings card
   shows them as "Your current IP (via IP headers)" so operators can
   copy the right entry into the allowlist.
+- `country` is the caller's ISO-2 code resolved via the
+  `countryHeaders` order (`""` when no header yields a valid code) —
+  the same value fetch/ingest derive for this request. The Admin UI
+  Settings card shows it as "Your country".
 - Country header order: the first present header in `countryHeaders`
   with a valid ISO-2 value wins (`""` when none); fetch and ingest
   read `country` through this order only. Same shape rules as

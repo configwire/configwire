@@ -33,6 +33,7 @@ function reset() {
   s.token = "tok";
   INPUT_IDS.forEach(function (id) { h.CW.$(id).value = ""; h.CW.$(id).textContent = ""; });
   h.CW.$("admin-current-ip-text").textContent = "";
+  h.CW.$("admin-current-country-text").textContent = "";
   h.fetchCalls.length = 0;
   failGet = false;
   DB.limits = null;
@@ -110,6 +111,21 @@ test("renderCurrentIP states: unknown, allowed, blocked, remote suffix", functio
   assert.ok(textOf("admin-current-ip-text").indexOf("blocked by allowlist") >= 0);
   C.renderCurrentIP(C.$("admin-current-ip"), "1.2.3.4", "5.6.7.8", []);
   assert.equal(textOf("admin-current-ip-text"), "Your IP: 1.2.3.4 (remote 5.6.7.8)");
+});
+
+test("renderCurrentCountry states: unknown, normalized code", function () {
+  reset();
+  var C = h.CW;
+  C.renderCurrentCountry(C.$("admin-current-country"), "");
+  assert.equal(textOf("admin-current-country-text"), "Your country: Unknown");
+  C.renderCurrentCountry(C.$("admin-current-country"), null);
+  assert.equal(textOf("admin-current-country-text"), "Your country: Unknown");
+  C.renderCurrentCountry(C.$("admin-current-country"), undefined);
+  assert.equal(textOf("admin-current-country-text"), "Your country: Unknown");
+  C.renderCurrentCountry(C.$("admin-current-country"), "us");
+  assert.equal(textOf("admin-current-country-text"), "Your country: US");
+  C.renderCurrentCountry(C.$("admin-current-country"), "DE");
+  assert.equal(textOf("admin-current-country-text"), "Your country: DE");
 });
 
 // --- saveLimits validation (no fetch on rejection) ---
@@ -234,13 +250,14 @@ test("putLimits failure renders status shape", async function () {
 test("loadLimits fills state and inputs; failure surfaces inline", async function () {
   reset();
   DB.limits = { globalRps: 200, burst: 400, fetchRps: 100, ingestRps: 50,
-    adminAllowedIPs: ["10.0.0.1"], ipHeaders: ["X-Foo"], countryHeaders: ["X-Geo"], clientIp: "10.0.0.1", remoteAddr: "" };
+    adminAllowedIPs: ["10.0.0.1"], ipHeaders: ["X-Foo"], countryHeaders: ["X-Geo"], clientIp: "10.0.0.1", country: "US", remoteAddr: "" };
   var data = await h.CW.loadLimits();
   assert.equal(data.globalRps, 200);
   assert.equal(h.CW.state.limits.globalRps, 200);
   assert.equal(h.CW.$("limit-global").value, 200);
   assert.equal(h.CW.$("admin-allowed-ips").value, "10.0.0.1");
   assert.equal(h.CW.$("limit-country-headers").value, "X-Geo");
+  assert.equal(textOf("admin-current-country-text"), "Your country: US");
   failGet = true;
   var err = null;
   try { await h.CW.loadLimits(); } catch (e) { err = e; }
