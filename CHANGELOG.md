@@ -3,6 +3,106 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.12 — 2026-10-20
+
+### Added
+
+- Ephemeral server-derived identity (`configwire/identity`,
+  migration `1790000018_identity_salts` creating the `identity_salts`
+  collection): per request `anonID = hex(HMAC_SHA256(per-env daily
+  salt, ip + 0x00 + ua))[:16]` via `identity.Manager` (trusted client
+  IP from `limits.ClientIP` + User-Agent, per-env UTC-day salt from
+  `crypto/rand`), and `country` from headers only (tunable order,
+  default `CF-IPCountry`, then `X-Country`; trimmed, uppercased,
+  strict ISO-2, else `""`).
+  Raw IPs and User-Agents live in memory only and are never persisted;
+  only `(envID, day, salt)` reaches the salt store.
+- Tunable retention windows (`configwire/retention`, migration
+  `1790000019_retention_settings` seeding the `retention_settings`
+  singleton): superuser-only `GET/PUT /api/v1/admin/retention`
+  (`{rawDays, rollupDays}`, defaults 30/90, each `1..1825`, invariant
+  `rollupDays >= rawDays`; PUT absent/null keeps the stored value;
+  boot env `CONFIGWIRE_RAW_RETENTION_DAYS` /
+  `CONFIGWIRE_ROLLUP_RETENTION_DAYS`; out-of-range or
+  invariant-breaking values clamp on load, never fatal on serve).
+  Retention admin card (`pb_public/js/retention.js`, validated
+  `1..1825` with `rollup >= raw` client-side).
+- Identity scrub on a 48h horizon (`purge/purge.go`, migration
+  `1790000020_ephemeral_id` adding nullable `events.anonId` +
+  `events.country`): `ScrubIdentitiesOlderThan` nulls `anonId`/`country`
+  on events with `ts` strictly before `now - 48h` (rows kept, so later
+  rollups still count them); purge `200` gains `scrubbed` alongside
+  `deleted`; the daily ticker and the manual purge route both run
+  scrub → rollup+purge → salt prune, and `PruneIdentitySalts` drops
+  salt rows older than 48h (previous-day salt always survives).
+- PII denylists (fetch `attrs`, ingest event keys): top-level
+  `email`/`phone`/`ip`/device-identifier keys (case-insensitive) are
+  `400`; errors name only the key, values are never logged.
+- Privacy docs: new `docs/PRIVACY.md` and `docs/DPA.md` (data
+  residency, operator-controlled backups); `SECURITY.md` §3 and
+  `CONTRACT.md` rewritten for anonID-only identity.
+- Tunable country-header order (`configwire/limits`, migration
+  `1790000021_rate_settings_country_headers` adding
+  `rate_settings.countryHeaders`): superuser-only
+  `GET/PUT /api/v1/admin/limits` gains `countryHeaders` (defaults
+  `CF-IPCountry`, `X-Country`; same `1..10` / token-char rules as
+  `ipHeaders`; absent/null keeps stored, explicit empty resets to
+  defaults; boot env `CONFIGWIRE_COUNTRY_HEADERS`). Fetch and ingest
+  read `country` through the active order; the Admin UI Settings card
+  gains a country-headers editor.
+- Resolved country on the limits admin (`GET/PUT
+  /api/v1/admin/limits` carry `country`, resolved through the active
+  order): the Admin UI Settings card shows a "Your country" pill next
+  to the country-headers editor (`Unknown` when no header yields a
+  code; mint-valid styling and the same height as the IP pill when
+  resolved).
+
+### Changed
+
+- Fetch identity is server-derived only (`fetch/fetch.go`
+  `BuildContext`): client `?userHash=` (any shape) and `?country=`
+  are accepted-but-ignored, and a sent `?userHash=` stamps
+  `X-CW-Deprecated-userHash: true` so callers can find and remove it.
+  The `?uid=` compat alias is removed: any trimmed non-empty `?uid=`
+  is `400` (`raw "uid" is forbidden: send "userHash" instead.`).
+- Ingest storage is anonID-only (`ingest/handler.go`
+  `deriveIdentity`, `ingest/batcher.go` `saveStoredEvent`): the client
+  `userHash` key is still accepted by the schema but IGNORED — the
+  handler derives `anonID` + `country` server-side, stores
+  `events.anonId` + `events.country`, and stores `userHash` empty
+  (column kept nullable for compat, never written).
+- Stats `?since=` clamp and purge cutoffs read the live retention
+  config, so tuned windows apply without a restart (defaults preserve
+  the 30/90 behavior until tuned).
+- Dart/Flutter clients deprecate identity APIs (`@Deprecated`,
+  removal next major) but keep emitting `userHash`/`country`, so old
+  SDKs keep getting `200`/`202` against this server.
+- Request/app logs (`_logs`) pinned off by default on fresh installs
+  (`main.go` `Logs.MaxDays = 0` behind `Settings().IsNew()`), so a new
+  binary never retains logs unless a superuser enables them.
+- E2E Stage 2N pins the sunset (`scripts/e2e.sh`,
+  `configwire/scripts/e2e.sh`): non-empty `?uid=` (alone or with
+  `userHash`) `400`, malformed `?userHash=` accepted-but-ignored
+  `200`, empty `?uid=` anonymous `200`.
+
+### Migration notes
+
+- Apply migrations on upgrade: `identity_salts` and
+  `retention_settings` collections are created; `events` gains
+  nullable `anonId`/`country`. The legacy `events.userHash` column is
+  kept but no longer written — a later migration removes it.
+  `rate_settings` gains `countryHeaders` (additive; missing keeps the
+  previous order).
+- One-time rebucket: daily salt rotation re-randomizes
+  `fnv64a(newHash+seed)%10000` bucketing (intentional daily-rebucket
+  break), so plan experiment reads as one rebucket, not steady churn.
+- `?uid=` senders must migrate before upgrading (now `400`);
+  `userHash`/`country` senders keep working but should stop sending
+  (deprecated header marks the path).
+- Align backup rotation with tuned retention windows: backup zips are
+  full dumps, and a restore reintroduces rows the purge already
+  deleted.
+
 ## v0.1.11 — 2026-10-17
 
 ### Added
