@@ -46,6 +46,9 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
+
+	"github.com/configwire/configwire/identity"
+	"github.com/configwire/configwire/retention"
 )
 
 const (
@@ -56,11 +59,45 @@ const (
 	// rollupExtraDays derives the event_daily cutoff from the raw-events
 	// cutoff passed to PurgeOlderThan: 90d - 30d = 60d further back.
 	rollupExtraDays = RollupRetentionDays - RawRetentionDays
+	// scrubAfter bounds raw-event identity lifetime independently of the
+	// configured raw window: anonId/country are nulled 48h after ts even
+	// when raw rows live 5yr (rollups never need identity). Mirrors
+	// identity.pruneAfter (previous-day salt survival) so salts and the
+	// identities they derived die on the same 48h horizon.
+	scrubAfter = 48 * time.Hour
+	// scrubPageSize bounds one identity-scrub cursor page: one page = one
+	// short transaction, same heap/lock discipline as purgePageSize.
+	scrubPageSize = purgePageSize
 	// purgePageSize bounds one cursor page: one page = one short
 	// transaction, so a 500k-row run holds at most this many rows in heap
 	// and never holds the write lock for the whole run.
 	purgePageSize = 2000
 )
+
+// configuredRawDays returns the active raw-event window from the
+// retention singleton (defaults {30,90} keep the historic cutoffs when
+// the admin never tunes them).
+func configuredRawDays() int {
+	return retention.GetConfig().RawDays
+}
+
+// configuredRollupDays returns the active daily-aggregate window from
+// the retention singleton.
+func configuredRollupDays() int {
+	return retention.GetConfig().RollupDays
+}
+
+// currentRollupExtraDays derives the event_daily cutoff offset from the
+// configured windows (rollupDays - rawDays, >= 0 by the retention
+// invariant), so the stale-rollup cutoff is always now-rollupDays when
+// the raw cutoff is now-rawDays.
+func currentRollupExtraDays() int {
+	extra := configuredRollupDays() - configuredRawDays()
+	if extra < 0 {
+		return 0
+	}
+	return extra
+}
 
 // EventRow is the minimal event projection the purge needs — pure and
 // DB-free so rollup math is unit-testable on fake rows.
@@ -144,6 +181,188 @@ func BuildRollups(rows []EventRow) []Rollup {
 // comparisons are lexicographic == chronological (fixed-width UTC).
 func dateParam(t time.Time) string {
 	return t.UTC().Format(types.DefaultDateLayout)
+}
+
+// ShouldScrub is the identity-scrub cutoff rule: rows with ts strictly
+// older than the 48h scrub cutoff lose anonId/country; exactly-at-cutoff,
+// fresher, and zero-ts rows keep them. Same strict-before shape as
+// ShouldDelete, but the effect is nulling (rows survive for rollup), so it
+// carries its own name at the call sites.
+func ShouldScrub(ts, scrubCutoff time.Time) bool {
+	return ShouldDelete(ts, scrubCutoff)
+}
+
+// ScrubCutoff maps now to the identity-scrub horizon (now minus 48h),
+// independent of the configured raw/rollup windows.
+func ScrubCutoff(now time.Time) time.Time {
+	return now.Add(-scrubAfter)
+}
+
+// needsScrub reports whether r still carries identity worth nulling:
+// past the scrub cutoff with at least one of anonId/country set.
+// PocketBase reads both "" and NULL back as "", so empty means clean.
+func needsScrub(r *core.Record, scrubCutoff time.Time) bool {
+	if !ShouldScrub(r.GetDateTime("ts").Time(), scrubCutoff) {
+		return false
+	}
+	return r.GetString("anonId") != "" || r.GetString("country") != ""
+}
+
+// ScrubIdentitiesOlderThan nulls anonId/country on events with ts strictly
+// before scrubCutoff (usually ScrubCutoff(now)), keeping every row —
+// counts, env, kind, variant, version, ts, and userHash are untouched so
+// later rollups still count the rows. It returns the rows actually
+// scrubbed (already-clean rows cost nothing and are not counted, so a
+// rerun converges to 0).
+//
+// Reads page by (ts, id) with LIMIT scrubPageSize over the same indexed
+// candidate set as the purge path; each page's nulls commit in one short
+// transaction, so a mid-run crash leaves committed pages nulled and a rerun
+// walks the same cursor to finish the rest. ts never changes, so in-place
+// nulling cannot shift the cursor.
+func ScrubIdentitiesOlderThan(app core.App, scrubCutoff time.Time) (scrubbed int, err error) {
+	n := 0
+	base, _ := eventPageParams(scrubCutoff)
+	cutoffParam := dateParam(scrubCutoff.UTC().Truncate(time.Millisecond))
+	var cursorVal, cursorID string
+	hasCursor := false
+	for {
+		params := dbx.Params{"cutoff": cutoffParam}
+		filter, params := pageFilter(base, params, "ts", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("events", filter, "ts,id", scrubPageSize, 0, params)
+		if err != nil {
+			return 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		var dirty []*core.Record
+		for _, r := range page {
+			if needsScrub(r, scrubCutoff) {
+				dirty = append(dirty, r)
+			}
+		}
+		last := page[len(page)-1]
+		cursorVal = dateParam(last.GetDateTime("ts").Time())
+		cursorID = last.Id
+		hasCursor = true
+		if len(dirty) > 0 {
+			if err := app.RunInTransaction(func(txApp core.App) error {
+				for _, r := range dirty {
+					r.Set("anonId", "")
+					r.Set("country", "")
+					if err := txApp.Save(r); err != nil {
+						return err
+					}
+					n++
+				}
+				return nil
+			}); err != nil {
+				return 0, err
+			}
+		}
+		if len(page) < scrubPageSize {
+			break
+		}
+	}
+	return n, nil
+}
+
+// CountScrubOlderThan reports how many rows ScrubIdentitiesOlderThan would
+// null with the same cutoff, with zero writes (dry-run path): rows past
+// the scrub cutoff that still carry anonId or country. It walks the same
+// indexed candidate set with the same (ts, id) cursor paging.
+//
+// Dry/live delta: scrubbing creates no rows and nulls in place, so live
+// always equals dry exactly on a quiescent table — unlike the purge path,
+// where just-rolled stale buckets make live exceed dry (see the
+// CountOlderThan contract).
+func CountScrubOlderThan(app core.App, scrubCutoff time.Time) (int, error) {
+	n := 0
+	base, _ := eventPageParams(scrubCutoff)
+	cutoffParam := dateParam(scrubCutoff.UTC().Truncate(time.Millisecond))
+	var cursorVal, cursorID string
+	hasCursor := false
+	for {
+		params := dbx.Params{"cutoff": cutoffParam}
+		filter, params := pageFilter(base, params, "ts", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("events", filter, "ts,id", scrubPageSize, 0, params)
+		if err != nil {
+			return 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, r := range page {
+			if needsScrub(r, scrubCutoff) {
+				n++
+			}
+		}
+		last := page[len(page)-1]
+		cursorVal = dateParam(last.GetDateTime("ts").Time())
+		cursorID = last.Id
+		hasCursor = true
+		if len(page) < scrubPageSize {
+			break
+		}
+	}
+	return n, nil
+}
+
+// PruneIdentitySalts deletes identity_salts rows with day strictly before
+// identity.DayString(now minus 48h), returning the rows deleted. Yesterday's
+// salt always survives for late events; nothing older lingers. A missing
+// identity_salts collection (migration not yet applied) is 0, nil — the
+// ticker must never fail the purge over salts. Paged by (day, id) with
+// LIMIT scrubPageSize, one txn per page, so a rerun converges to 0.
+func PruneIdentitySalts(app core.App, now time.Time) (int, error) {
+	if _, err := app.FindCollectionByNameOrId("identity_salts"); err != nil {
+		return 0, nil
+	}
+	cutoffDay := identity.DayString(now.Add(-scrubAfter))
+	n := 0
+	var cursorVal, cursorID string
+	hasCursor := false
+	for {
+		params := dbx.Params{"cutoff": cutoffDay}
+		filter, params := pageFilter("day != '' && day < {:cutoff}", params, "day", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("identity_salts", filter, "day,id", scrubPageSize, 0, params)
+		if err != nil {
+			return 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		var doomed []*core.Record
+		for _, r := range page {
+			if day := r.GetString("day"); day != "" && day < cutoffDay {
+				doomed = append(doomed, r)
+			}
+		}
+		last := page[len(page)-1]
+		cursorVal = last.GetString("day")
+		cursorID = last.Id
+		hasCursor = true
+		if len(doomed) > 0 {
+			pageDeleted := 0
+			if err := app.RunInTransaction(func(txApp core.App) error {
+				for _, r := range doomed {
+					if err := txApp.Delete(r); err != nil {
+						return err
+					}
+					pageDeleted++
+				}
+				return nil
+			}); err != nil {
+				return 0, err
+			}
+			n += pageDeleted
+		}
+		if len(page) < scrubPageSize {
+			break
+		}
+	}
+	return n, nil
 }
 
 // eventRangeExpr is the INDEXED prefilter for the raw-events delete set
@@ -300,9 +519,9 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 			break
 		}
 	}
-	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
+	rollupCutoff := cutoff.AddDate(0, 0, -currentRollupExtraDays())
 
-	// Stale aggregates: event_daily rows older than 90d die too, paged by
+	// Stale aggregates: event_daily rows older than rollupDays die too, paged by
 	// (day, id) with LIMIT purgePageSize — the same keyset discipline as
 	// the raw path (dailyPageParams + pageFilter), one txn per page, with
 	// the per-row day recheck preserved exactly.
@@ -397,7 +616,7 @@ func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 			break
 		}
 	}
-	rollupCutoff := cutoff.AddDate(0, 0, -rollupExtraDays)
+	rollupCutoff := cutoff.AddDate(0, 0, -currentRollupExtraDays())
 	dailyBase, _ := dailyPageParams(rollupCutoff)
 	rcParam := dateParam(rollupCutoff.UTC().Truncate(time.Millisecond))
 	cursorVal, cursorID = "", ""
@@ -566,14 +785,31 @@ func purgeInterval() time.Duration {
 }
 
 func dailyTicker(app core.App, stop <-chan struct{}) {
+	// PRUNE OWNERSHIP: this ticker owns salt pruning via DB-direct
+	// PruneIdentitySalts (global, all envs, one pass). Manager.Prune is
+	// the per-env API over a Store (PBStore.DeleteOlderThan) for
+	// on-demand paths — it is NOT called here, so there is no
+	// double-delete. Both share the same 48h DayString cutoff, so the
+	// deletion sets cannot diverge.
 	run := func(tag string) {
-		cutoff := time.Now().UTC().AddDate(0, 0, -RawRetentionDays)
+		now := time.Now().UTC()
+		scrubbed, serr := ScrubIdentitiesOlderThan(app, ScrubCutoff(now))
+		if serr != nil {
+			log.Printf("purge: %s scrub run failed: %v", tag, serr)
+			return
+		}
+		cutoff := now.AddDate(0, 0, -configuredRawDays())
 		n, err := PurgeOlderThan(app, cutoff)
 		if err != nil {
 			log.Printf("purge: %s run failed: %v", tag, err)
 			return
 		}
-		log.Printf("purge: %s run deleted %d rows (cutoff %s)", tag, n, cutoff.Format(time.RFC3339))
+		pruned, perr := PruneIdentitySalts(app, now)
+		if perr != nil {
+			log.Printf("purge: %s salt-prune run failed: %v", tag, perr)
+			return
+		}
+		log.Printf("purge: %s run scrubbed %d deleted %d pruned %d salts (cutoff %s)", tag, scrubbed, n, pruned, cutoff.Format(time.RFC3339))
 	}
 	// Boot run first: upgraded DBs with >30d backlog converge immediately
 	// instead of waiting a day (manual route stays the alternative).
@@ -592,10 +828,13 @@ func dailyTicker(app core.App, stop <-chan struct{}) {
 }
 
 // postPurge handles POST /api/v1/admin/maintenance/purge.
-// ?dry=1 (or true) -> 200 {"deleted":N,"dry":true} with ZERO writes.
-// ?dry= absent/0/false -> live purge -> 200 {"deleted":N,"dry":false}.
+// ?dry=1 (or true) -> 200 {"deleted":N,"scrubbed":M,"dry":true} with ZERO
+// writes (deleted counts doomed raw + stale daily rows at the raw cutoff,
+// scrubbed counts rows still carrying identity past the 48h scrub cutoff).
+// ?dry= absent/0/false -> live run (scrub 48h identities, then rollup+purge)
+// -> 200 {"deleted":N,"scrubbed":M,"dry":false}.
 // Any other dry value (e.g. abc) -> 400. Unauth/SDK-key -> 401 via
-// middleware; empty events table -> 200 deleted:0.
+// middleware; empty events table -> 200 deleted:0 scrubbed:0.
 func postPurge(re *core.RequestEvent) error {
 	raw := re.Request.URL.Query().Get("dry")
 	dry := false
@@ -607,26 +846,38 @@ func postPurge(re *core.RequestEvent) error {
 	default:
 		return re.BadRequestError("invalid dry: must be 0 or 1.", nil)
 	}
-	cutoff := time.Now().UTC().AddDate(0, 0, -RawRetentionDays)
+	now := time.Now().UTC()
+	cutoff := now.AddDate(0, 0, -configuredRawDays())
+	scrubCutoff := ScrubCutoff(now)
 	if dry {
 		n, err := CountOlderThan(re.App, cutoff)
 		if err != nil {
 			return err
 		}
+		m, err := CountScrubOlderThan(re.App, scrubCutoff)
+		if err != nil {
+			return err
+		}
 		return re.JSON(http.StatusOK, map[string]any{
-			"deleted": n,
-			"dry":     true,
-			"cutoff":  cutoff.Format(time.RFC3339),
+			"deleted":  n,
+			"scrubbed": m,
+			"dry":      true,
+			"cutoff":   cutoff.Format(time.RFC3339),
 		})
+	}
+	m, err := ScrubIdentitiesOlderThan(re.App, scrubCutoff)
+	if err != nil {
+		return err
 	}
 	n, err := PurgeOlderThan(re.App, cutoff)
 	if err != nil {
 		return err
 	}
-	log.Printf("purge: manual run deleted %d rows (cutoff %s)", n, cutoff.Format(time.RFC3339))
+	log.Printf("purge: manual run scrubbed %d deleted %d rows (cutoff %s)", m, n, cutoff.Format(time.RFC3339))
 	return re.JSON(http.StatusOK, map[string]any{
-		"deleted": n,
-		"dry":     false,
-		"cutoff":  cutoff.Format(time.RFC3339),
+		"deleted":  n,
+		"scrubbed": m,
+		"dry":      false,
+		"cutoff":   cutoff.Format(time.RFC3339),
 	})
 }
