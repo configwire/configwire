@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -76,6 +77,23 @@ func countProjectEnvs(t *testing.T, app *tests.TestApp, projectID string) int {
 		}
 	}
 	return n
+}
+
+// TestLogsOffByDefaultOnFreshInstall pins the _logs off-by-default guard:
+// main.go must set Logs.MaxDays = 0 for fresh installs (IsNew gate), so
+// request/app logs stay disabled unless a superuser explicitly enables them.
+// Source pin (grep test): moving or deleting the default fails loudly here.
+func TestLogsOffByDefaultOnFreshInstall(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	if !strings.Contains(string(src), "app.Settings().Logs.MaxDays = 0") {
+		t.Fatal("main.go must pin Logs.MaxDays = 0 for fresh installs (_logs off-by-default)")
+	}
+	if !strings.Contains(string(src), "app.Settings().IsNew()") {
+		t.Fatal("main.go must gate the _logs default behind Settings().IsNew() (fresh installs only)")
+	}
 }
 
 func TestEnvDeleteLastOfProjectBlocked(t *testing.T) {

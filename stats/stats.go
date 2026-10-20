@@ -27,6 +27,7 @@
 package stats
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ import (
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/purge"
 	"github.com/configwire/configwire/releases"
+	"github.com/configwire/configwire/retention"
 	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/dbx"
@@ -52,10 +54,21 @@ const (
 	MaxFlagLen = 64
 )
 
+// maxSinceDays returns the active ?since= clamp from the retention
+// singleton (rollupDays): stats history cannot reach past the
+// daily-aggregate window. Defaults to MaxSinceDays (90) matching the
+// historic rollup window.
+func maxSinceDays() int {
+	if n := retention.GetConfig().RollupDays; n >= 1 {
+		return n
+	}
+	return MaxSinceDays
+}
+
 // ParseSince parses the ?since= query value purely (no I/O), so it is
 // unit-testable. "" -> DefaultSinceDays. "<N>d" with N >= 1 -> N clamped
-// to MaxSinceDays. Anything else (abc, -5d, 0d, 7h, "7") -> error, which
-// the handler maps to 400.
+// to the configured rollup window. Anything else (abc, -5d, 0d, 7h, "7")
+// -> error, which the handler maps to 400.
 func ParseSince(raw string) (int, error) {
 	if strings.TrimSpace(raw) == "" {
 		return DefaultSinceDays, nil
@@ -68,8 +81,8 @@ func ParseSince(raw string) (int, error) {
 	if err != nil || n < 1 {
 		return 0, errBadSince()
 	}
-	if n > MaxSinceDays {
-		n = MaxSinceDays
+	if max := maxSinceDays(); n > max {
+		n = max
 	}
 	return n, nil
 }
@@ -79,7 +92,7 @@ type sinceError struct{ msg string }
 func (e *sinceError) Error() string { return e.msg }
 
 func errBadSince() error {
-	return &sinceError{msg: "invalid since: must be <N>d (1-90 days), e.g. 7d."}
+	return &sinceError{msg: fmt.Sprintf("invalid since: must be <N>d (1-%d days), e.g. 7d.", maxSinceDays())}
 }
 
 // ParseFlag validates the ?flag= query value purely (no I/O), so it is
@@ -149,7 +162,7 @@ func EffectiveSince(days int) string {
 
 // EchoFor builds the echo block purely (unit-testable): env is the
 // verbatim request value, since/sinceDays/horizon carry the EFFECTIVE
-// window after the 90d clamp, cutoff is the UTC RFC3339 window start,
+// window after the configured rollup-window clamp, cutoff is the UTC RFC3339 window start,
 // and rollupHorizon is the UTC RFC3339 midnight that splits raw events
 // from pre-purge daily rollups (see HorizonFor). horizon keeps its original
 // label meaning ("7d"); rollupHorizon is the additive machine-readable
@@ -173,13 +186,13 @@ func EchoFor(envSlug string, days int, cutoff, horizon time.Time, flag ...string
 }
 
 // HorizonFor returns the UTC-midnight split between raw events and
-// pre-purge daily rollups: DayBucket(now - RawRetentionDays), the same
-// day grain the purge rolls up into. Raw events at/after the horizon
-// are live; rollup buckets strictly before it are history. Disjoint by
+// pre-purge daily rollups: DayBucket(now - rawDays), the same day grain
+// the purge rolls up into. Raw events at/after the horizon are live;
+// rollup buckets strictly before it are history. Disjoint by
 // construction, so a crash-window row present in BOTH sources is still
 // counted once (plus approximate:true marks the taint).
 func HorizonFor(now time.Time) time.Time {
-	return purge.DayBucket(now.AddDate(0, 0, -purge.RawRetentionDays))
+	return purge.DayBucket(now.AddDate(0, 0, -retention.GetConfig().RawDays))
 }
 
 // EventCutoffFor clamps the raw-events window to the live side of the

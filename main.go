@@ -30,6 +30,7 @@ import (
 	_ "github.com/configwire/configwire/migrations"
 	"github.com/configwire/configwire/purge"
 	"github.com/configwire/configwire/releases"
+	"github.com/configwire/configwire/retention"
 	"github.com/configwire/configwire/security"
 	"github.com/configwire/configwire/sso"
 	"github.com/configwire/configwire/stats"
@@ -400,10 +401,13 @@ func main() {
 	})
 
 	// Fresh-install default: PocketBase request + app logs (_logs) off.
-	// Mutating the in-memory default before Start only affects the first
-	// bootstrap save (ReloadSettings persists defaults when no settings
-	// row exists yet); existing installs load the stored value and keep
-	// whatever the superuser chose in /_/ settings.
+	// Pinned off-by-default (P1 hardening): fresh installs must not retain
+	// request/app logs; only an explicit superuser change in /_/ settings
+	// re-enables them. Mutating the in-memory default before Start only
+	// affects the first bootstrap save (ReloadSettings persists defaults
+	// when no settings row exists yet); existing installs load the stored
+	// value and keep whatever the superuser chose in /_/ settings.
+	// Guarded by TestLogsOffByDefaultOnFreshInstall (source pin below).
 	if app.Settings().IsNew() {
 		app.Settings().Logs.MaxDays = 0
 	}
@@ -471,6 +475,8 @@ func main() {
 		})
 
 		limits.Register(se)
+
+		retention.Register(se)
 
 		ingest.Register(se)
 
