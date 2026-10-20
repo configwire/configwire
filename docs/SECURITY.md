@@ -52,38 +52,80 @@ binary plus operator procedure.
      for a global invalidate across all auth records.
   3. Re-issue SDK keys (section above) if key material may have leaked.
 
-## 3. PII — userHash-only, retention 30d raw / 90d rollups
+## 3. PII — anonID-only, ephemeral identity, tunable retention
 
 - The ingest path **strictly rejects** raw `userId`/`ip` keys — even
-  `null`-valued ones (presence, not value) → `400`. Clients must send
-  the opaque `userHash` field.
-- The fetch path takes identity as canonical `userHash` query param:
-  `?userHash=` must be 16 lowercase hex (`^[0-9a-f]{16}$` strict) when
-  present; absent or empty stays `200` (anonymous).
-  Ref: `configwire/fetch/fetch.go` (`BuildContext`).
-- Compat-current (until sunset in the next server major): `?uid=` is a DEPRECATED
-  alias, not a rejection. The server hashes trimmed non-empty `uid` to
-  `userHash` semantics and stamps `X-CW-Deprecated-uid: true` on every
-  response where trimmed `uid` is non-empty. Precedence: both present
-  with valid `userHash` then `userHash` wins and the header is still
-  set; malformed `userHash` then `400` even with `uid` present; empty
-  `uid` equals absent. Privacy caveat: the deprecated path sends raw
-  identity on the wire and in URLs, so it stays visible in URL/query
-  logs until sunset. The server never logs raw `uid` or hash values
-  (PII-free counter and log line only); canonical `userHash` stays
-  PII-minimal (`hex(sha256)` truncated to 16).
-- Re-bucketing note: hashing cut over to `userHash` re-seats
-  assignments, so a 50/50 experiment flips about 50% of users once;
-  plan it as a one-time rebucket, not a steady-state churn.
-- Server-side derivation, when needed, is `hex(sha256(userID))[:16]`
+  `null`-valued ones (presence, not value) — plus PII/device-identifier
+  keys (`email`, `phone`, `ip`, `deviceId`, `advertisingId`, `adid`,
+  `idfa`, `idfv`, `androidId`, `serial`, `mac`, `imei`,
+  case-insensitive; `userId` in any case) then `400`. Errors name only
+  the key, values are never logged. Clients send `userHash` only, and
+  even that is ignored at storage. Ref:
+  `configwire/ingest/ingest.go:122-130` (denylist), `:175-205`
+  (strict reject).
+- Identity is server-derived and ephemeral. Per request the server
+  computes `anonID = hex(HMAC_SHA256(per-env daily salt,
+  ip + 0x00 + ua))[:16]` via `identity.Manager` (trusted client IP
+  from `limits.ClientIP` + User-Agent, salt for the env's UTC day),
+  and `country` from headers only (`CF-IPCountry`, then `X-Country`;
+  trimmed, uppercased, strict ISO-2, else `""`). Raw IPs and
+  User-Agents live in memory only, never persisted; only
+  `(envID, day, salt)` reaches the salt store. Ref:
+  `configwire/identity/identity.go:40-68` (`DeriveAnonID`, `AnonID`),
+  `configwire/identity/geo.go:21-41` (`CountryFromHeaders`,
+  `NormalizeCountry`), `configwire/ingest/handler.go:32-44`
+  (`deriveIdentity`).
+- Lifecycle: salts rotate at UTC midnight (per-env daily salt,
+  32 bytes from `crypto/rand`); old salts are pruned past 48h
+  (`Prune` deletes days strictly older than `DayString(now-48h)`),
+  so the previous-day salt always survives for late events but nothing
+  older lingers. A rotated salt re-randomizes bucketing
+  (`fnv64a(newHash+seed)%10000`), an intentional Aptabase-style
+  rebucket, so plan experiment reads as one rebucket, not steady
+  churn. Fetch and ingest both store the anonID only; stats return
+  aggregate counts and never read identity. Ref:
+  `configwire/identity/salt.go:10-24` (salt size, `pruneAfter`),
+  `:89-158` (`SaltForDay`, `Prune`), `configwire/eval/eval.go:166-179`
+  (`Bucket` + rebucket note).
+- The fetch path takes identity as server-derived only: client
+  `?userHash=` (any shape) and `?country=` are accepted-but-ignored,
+  and a sent `?userHash=` stamps `X-CW-Deprecated-userHash: true` so
+  callers can find and remove it. Stop sending both; the server
+  derives them. Ref: `configwire/fetch/fetch.go:153-170`,
+  `:187-198`, `:459-471`.
+- Removal notice: the `?uid=` compat alias is removed. Any trimmed
+  non-empty `?uid=` returns `400`
+  (`raw "uid" is forbidden: send "userHash" instead.`). Never send raw
+  identity on the wire or in URLs. Ref:
+  `configwire/fetch/fetch.go:187-190`.
+- The fetch `attrs` map denies PII/device-identifier keys
+  (`email`, `phone`, `ip`, `deviceId`, `advertisingId`, `adid`,
+  `idfa`, `idfv`, `androidId`, `serial`, `mac`, `imei`,
+  case-insensitive) then `400`; values are never logged. Ref:
+  `configwire/fetch/fetch.go:90-105`.
+- Server-side derivation, when needed, is `hex(HMAC(...))[:16]`
   (64 bits: enough to join fetch/exposure rows, non-reversible).
-- Stats endpoints return aggregate counts only; `userHash` never
+- Stats endpoints return aggregate counts only; identity never
   leaves the server through them (never read, never exported).
 - Retention (enforced by the `configwire/purge` daily job + manual
-  `POST /api/v1/admin/maintenance/purge`, superuser-only):
-  - **raw `events` rows: 30 days**, then rolled up and deleted;
-  - **daily `event_daily` rollups `(day, env, flag, variant, version)`: 90 days**;
-  - rollups carry counts only — no PII survives past the raw window.
+  `POST /api/v1/admin/maintenance/purge`, superuser-only, plus the
+  retention admin API; see `CONTRACT.md` sections 7 and 11):
+  - **raw `events` rows: default 30 days**, then rolled up and deleted;
+  - **daily `event_daily` rollups `(day, env, flag, variant, version)`: default 90 days**;
+  - both windows tunable `1..1825` days with the invariant
+    `rollupDays >= rawDays`; rollups carry counts only, no PII
+    survives past the raw window.
+   - identity salts scrub on their own 48h bound (see lifecycle above),
+     independent of event retention. Event identity is nulled on the
+     same horizon (`ScrubIdentitiesOlderThan` past `now - 48h`, rows
+     kept), and the daily ticker plus the manual purge route both run
+     scrub → rollup+purge → salt prune in that order. Ref:
+     `configwire/purge/purge.go:62-67,195-199` (48h bound,
+     `ScrubCutoff`), `:223-269` (`ScrubIdentitiesOlderThan`),
+     `:312-318` (`PruneIdentitySalts`), `:787-832`
+     (ticker wiring, manual route).
+- Release author and note are free text and land in releases rows, server logs, and backups (see `BACKUPS.md` section 7). Never put email, phone, or other PII in note or author. Prefer an opaque operator id (for example `op-114`) plus a short change reason. Note the publish path defaults author to the superuser email when present, so use a role account where policy requires it.
+- Backup residency is operator controlled: the SQLite file, the local `backups/` dir, and the S3 bucket and region you configure (`BACKUPS.md` sections 4 and 7). Keep backup and record-upload buckets separate.
 
 ## 4. Rate limits (per-second global/per-key)
 
@@ -213,8 +255,27 @@ binary plus operator procedure.
   Never run `migrate down` without a backup.
 - Cascade deletes (`1790000006`, 11 relations) make one project delete
   wipe its environments, flags, rules, experiments, releases, keys,
-  events, and 90 days of rollups with no soft-delete. Deleting a
-  project to "clean up" silently purges history.
+  events, and rollups with no soft-delete. Deleting a project to
+  "clean up" silently purges history.
+- Retention bounds are tunable, not fixed: raw `events` default 30
+  days, daily rollups default 90 days, each `1..1825` days with
+  `rollupDays >= rawDays`, via superuser-only
+  `GET/PUT /api/v1/admin/retention` (absent/null fields keep stored;
+  boot env `CONFIGWIRE_RAW_RETENTION_DAYS` /
+  `CONFIGWIRE_ROLLUP_RETENTION_DAYS`; out-of-range or
+  invariant-breaking values clamp on load, never fatal). Purge
+   cutoffs read the live config on every run (raw `now - rawDays`,
+   rollups `now - rollupDays`). Event identity (`anonId`/`country`)
+   scrubs on a separate 48h bound past `ts` (rows kept, counts
+   untouched) and salts prune past 48h (section 3); the daily ticker
+   and the manual purge route both run scrub → rollup+purge → salt
+   prune in that order. Align backup rotation with the configured
+  windows: backup zips are full dumps and a restore reintroduces
+  rows the purge already deleted. Ref:
+  `configwire/retention/api.go:13-26`,
+  `configwire/retention/retention.go:30-39,79-116`,
+   `configwire/purge/purge.go:67-90,195-199,787-832`,
+   `configwire/identity/salt.go:134-158`.
 - Rollback/promote clone snapshots into NEW rows; releases are never
   updated in place. Superseded releases stay readable; only events and
   expired rollups are ever deleted, never release rows.

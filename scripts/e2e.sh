@@ -194,38 +194,34 @@ sys.exit(0 if a.get('variants', {}).get('exp_bool') == exp['exp_bool_variant'] e
 EOF
 cp /tmp/cw-t17-fetch1.json /tmp/cw-t17-fetch-stage2.json
 
-# ---- STAGE 2N (compat Choice-C): ?uid= dual-accept + header + bucket-equality ------------
-echo "--- STAGE 2N: ?uid= compat dual-accept + anonymous ---"
-CODE_UID=$(curl -s -D /tmp/cw-t17-uid-hdr.txt -o /tmp/cw-t17-uid.json -w "%{http_code}" --max-time 10 \
+# ---- STAGE 2N (sunset): non-empty ?uid= -> 400; empty -> anonymous 200 ------------
+echo "--- STAGE 2N: ?uid= sunset 400 + anonymous ---"
+CODE_UID=$(curl -s -o /tmp/cw-t17-uid.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?uid=$E2E_RAW_UID&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
-[ "$CODE_UID" = "200" ] && pass "uid fallback 200" || fail "uid fallback (code $CODE_UID)"
-grep -qi "^X-CW-Deprecated-uid: *true" /tmp/cw-t17-uid-hdr.txt 2>/dev/null \
-  && pass "uid fallback header X-CW-Deprecated-uid:true" || fail "uid fallback header"
-python3 - <<'EOF' && pass "uid fallback body byte-equal to userHash (shared buckets)" || fail "uid fallback body equality"
+[ "$CODE_UID" = "400" ] && pass "non-empty ?uid= sunset 400" || fail "non-empty ?uid= sunset (code $CODE_UID)"
+python3 - <<'EOF' && pass "uid sunset body contains forbidden message" || fail "uid sunset body"
 import json, sys
-a = json.load(open('/tmp/cw-t17-uid.json'))
-b = json.load(open('/tmp/cw-t17-fetch-stage2.json'))
-sys.exit(0 if (a.get('values') == b.get('values') and a.get('variants') == b.get('variants')) else 1)
+d = json.load(open('/tmp/cw-t17-uid.json'))
+# PocketBase Sentenize() capitalises the first letter over the wire.
+sys.exit(0 if 'raw "uid" is forbidden' in d.get('message', '').lower() else 1)
 EOF
 CODE_UID_EMPTY=$(curl -s -D /tmp/cw-t17-uid-empty-hdr.txt -o /tmp/cw-t17-uid-empty.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?uid=&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_UID_EMPTY" = "200" ] && pass "empty ?uid= anonymous 200" || fail "empty ?uid= anonymous (code $CODE_UID_EMPTY)"
-! grep -qi "^X-CW-Deprecated-uid:" /tmp/cw-t17-uid-empty-hdr.txt 2>/dev/null \
+! grep -qi "^X-CW-Deprecated:" /tmp/cw-t17-uid-empty-hdr.txt 2>/dev/null \
   && pass "empty ?uid= no deprecated header" || fail "empty ?uid= no deprecated header"
-CODE_UID_BOTH=$(curl -s -D /tmp/cw-t17-uid-both-hdr.txt -o /tmp/cw-t17-uid-both.json -w "%{http_code}" --max-time 10 \
+CODE_UID_BOTH=$(curl -s -o /tmp/cw-t17-uid-both.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?uid=$E2E_RAW_UID&userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
-[ "$CODE_UID_BOTH" = "200" ] && pass "uid+userHash 200 (userHash wins)" || fail "uid+userHash (code $CODE_UID_BOTH)"
-grep -qi "^X-CW-Deprecated-uid: *true" /tmp/cw-t17-uid-both-hdr.txt 2>/dev/null \
-  && pass "uid+userHash header X-CW-Deprecated-uid:true" || fail "uid+userHash header"
-python3 - <<'EOF' && pass "uid+userHash body byte-equal to pure userHash" || fail "uid+userHash body equality"
+[ "$CODE_UID_BOTH" = "400" ] && pass "uid+userHash 400 (uid wins)" || fail "uid+userHash (code $CODE_UID_BOTH)"
+python3 - <<'EOF' && pass "uid+userHash body contains forbidden message" || fail "uid+userHash body"
 import json, sys
-a = json.load(open('/tmp/cw-t17-uid-both.json'))
-b = json.load(open('/tmp/cw-t17-fetch-stage2.json'))
-sys.exit(0 if (a.get('values') == b.get('values') and a.get('variants') == b.get('variants')) else 1)
+d = json.load(open('/tmp/cw-t17-uid-both.json'))
+# PocketBase Sentenize() capitalises the first letter over the wire.
+sys.exit(0 if 'raw "uid" is forbidden' in d.get('message', '').lower() else 1)
 EOF
 CODE_BADHASH=$(curl -s -o /tmp/cw-t17-badhash.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?userHash=user-7&platform=ios" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
-[ "$CODE_BADHASH" = "400" ] && pass "malformed userHash rejected 400" || fail "malformed userHash rejected (code $CODE_BADHASH)"
+[ "$CODE_BADHASH" = "200" ] && pass "malformed userHash accepted-but-ignored 200" || fail "malformed userHash accepted-but-ignored (code $CODE_BADHASH)"
 CODE_ANON=$(curl -s -o /tmp/cw-t17-anon.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_ANON" = "200" ] && pass "anonymous fetch 200" || fail "anonymous fetch (code $CODE_ANON)"

@@ -188,6 +188,9 @@ type snapshotCompat struct {
 // payloads report false. Pure: no I/O, no logging, payload contents never
 // retained.
 //
+// Deprecated: legacy top-level shape is deprecated and will be rejected in
+// the next server major; republish to migrate.
+//
 // Detector choice (a): gate on nested presence rather than an explicit
 // version marker. A marker would require a schema bump every reader must
 // understand; presence-gating keeps old parsers (which ignore unknown

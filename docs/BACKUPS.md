@@ -245,3 +245,7 @@ If the server does not come back (bad zip, disk full), re-run with the pre-resto
 - The local `backups/` dir is excluded from zips, so restoring never wipes your other backup files.
 - Record uploads stored via top-level `s3.*` are NOT inside backup zips. If uploads matter to you, back up that bucket separately.
 - Settings `GET` blanks secrets (they read back empty): a `GET /api/settings` round trip never leaks S3 keys.
+
+## 7. Data residency
+
+All backup bytes stay where you put them. The SQLite file (`pb_data/data.db`), the local `backups/` dir, and any S3 bucket you configure are operator controlled. ConfigWire never copies backup data elsewhere. Pick the bucket region and endpoint with `CONFIGWIRE_BACKUP_S3_REGION` / `CONFIGWIRE_BACKUP_S3_ENDPOINT` / `CONFIGWIRE_BACKUP_S3_BUCKET` (section 4) to match your residency needs, and keep backup and upload buckets separate. Rotation follows `cronMaxKeep` in both stores: the newest `@auto_*` files survive and older ones are pruned (`0` keeps all, section 2). Record uploads stored via top-level `s3.*` are not inside backup zips (section 6); back up that bucket separately if uploads matter. Releases rows inside backups carry free-text author and note fields, so keep PII out of them; see `SECURITY.md` section 3 and `CONTRACT.md` for the releases shape.

@@ -11,28 +11,34 @@ Conventions used below:
 
 ## 1. Fetch — `GET /api/v1/env/{env}/config`
 
-Ref: `configwire/fetch/fetch.go:413-416` (order), `:111-114` (route + gzip).
+Ref: `configwire/fetch/fetch.go:187-222` (`BuildContext`),
+`:153-170` (compat header), `:448-471` (handler order), route + gzip
+`:136-139`.
 
-Query params: `userHash` canonical (16 lowercase hex `sha256Hex16`,
-strict `^[0-9a-f]{16}$` when non-empty); `?uid=` is a DEPRECATED compat
-alias (lenient non-empty, spaces-trimmed; empty equals absent). During
-the compat window the server hashes `uid` server-side to `userHash`
-semantics (`hex(sha256(uid))[:16]`) and stamps
-`X-CW-Deprecated-uid: true` on every response where trimmed `uid` is
-non-empty. The window ends at the next server major: then raw `?uid=`
-presence returns `400` again. Client 1.0.0 is hash-only and never
-sends `uid`.
+Identity is server-derived: bucketing uses
+`anonID = Manager.AnonID(envID, ClientIP, User-Agent, day)`
+(`HMAC_SHA256(per-env daily salt, ip + 0x00 + ua)`, 16 lowercase hex),
+stored in `Context.UserHash` (field name kept for `eval.Bucket`
+compat); country is server geo from `identity.CountryFromHeaders`
+only. Client `?userHash=` (any shape, even malformed) and `?country=`
+are accepted-but-ignored and never reach eval; a sent `?userHash=`
+(trimmed non-empty) stamps `X-CW-Deprecated-userHash: true` on the
+response. Client identity material must migrate to nothing: stop
+sending `userHash`/`country`, the server derives both.
 
-Precedence: both present with valid `userHash` then `userHash` wins and
-the header is still set; malformed `userHash` (non-empty, non-16-hex)
-then `400` even with `uid` present; both absent or empty stays `200`
-(anonymous: rules still evaluate, bucketing falls back to the default
-variant). Ref: `configwire/fetch/fetch.go:155-191` (`BuildContext`),
-`:89-93` (header).
+Removal notice: the `?uid=` compat alias is removed. Any trimmed
+non-empty `?uid=` returns `400` (empty equals absent). Clients must
+send no `uid` at all.
 
-Auth/env order: 401 (key) then 404 (unknown env slug) then 401
-(key not scoped to this env) then 400/414 (attrs) then 200/304.
-Ref: `configwire/fetch/fetch.go:413-428`.
+Precedence: both absent or empty stays `200` (anonymous: rules still
+evaluate, bucketing uses the server anonID, which is always
+non-empty on success). Ref: `configwire/fetch/fetch.go:187-198`
+(`BuildContext`), `:163-170` (header stamp).
+
+Auth/env order: CORS stamp then 401 (key) then 404 (unknown env slug)
+then 401 (key not scoped to this env) then 429 (rate) then 400/414
+(attrs) then 200 (empty release) then 304/200.
+Ref: `configwire/fetch/fetch.go:444-447`.
 
 Multi-project slugs: the env is resolved deterministically from the
 key's env record (the key's env IS the env), so a slug shared by
@@ -49,13 +55,13 @@ while unambiguous slugs keep working without it. Ref:
 ```
 
 - `version`: max release version for the env (int).
-- `etag`: stored release etag, served verbatim, also in the `ETag` response header. Never recomputed. Ref: `:454-455`.
+- `etag`: stored release etag, served verbatim, also in the `ETag` response header. Never recomputed. Ref: `:488`.
 - `values`: evaluated flag values, typed per flag.
-- `variants`: one entry per flag targeted by at least one experiment row (per-flag experiment winner order is seed asc with id tiebreak, so flags with 2+ rows evaluate exps[0] deterministically); flags with no targeting experiment have no entry. Anonymous or default-variant fallthrough is recorded as `""`. Ref: `:220-249`.
+- `variants`: one entry per flag targeted by at least one experiment row (per-flag experiment order is seed asc with id tiebreak, so flags with 2+ rows evaluate exps[0] deterministically); flags with no targeting experiment have no entry. Anonymous or default-variant fallthrough is recorded as `""`. Ref: `:251-280`.
 - `fetchAt`: server time, RFC3339Nano.
-- Gzip when the client sends `Accept-Encoding: gzip`. Ref: `:112`.
-- CORS `Access-Control-Allow-Origin: *` by default, or `CONFIGWIRE_CORS_ORIGIN` when set. Ref: `:103-108,409-419`.
-- `OPTIONS /api/v1/env/{env}/config` answers `204` with `Allow-Methods`, `Allow-Headers`, `Max-Age: 86400`. Ref: `:118-126`.
+- Gzip when the client sends `Accept-Encoding: gzip`. Ref: `:137`.
+- CORS `Access-Control-Allow-Origin: *` by default, or `CONFIGWIRE_CORS_ORIGIN` when set. Ref: `:128-133,440-442,449-450`.
+- `OPTIONS /api/v1/env/{env}/config` answers `204` with `Allow-Methods`, `Allow-Headers`, `Max-Age: 86400`. Ref: `:141-150`.
 
 ### 1b. Empty release (env has no release row yet) — `200`, never 404
 
@@ -63,44 +69,45 @@ while unambiguous slugs keep working without it. Ref:
 {"version": 0, "etag": "none", "values": {}, "variants": {}, "fetchAt": "2026-09-22T00:00:00.000000000Z"}
 ```
 
-Ref: `:440-452`. Values are empty, not flag defaults; SDKs use in-app defaults.
+Ref: `:477-485`. Values are empty, not flag defaults; SDKs use in-app defaults.
 
 ### 1c. `304` not modified
 
 `If-None-Match` equals the stored etag by exact string match only
 (`W/`-prefixed or quoted values do not match) then `304` with an
-empty body. Ref: `:201-206,454-462`.
+empty body. Ref: `:232-237,488-493`.
 
 ### 1d. Fetch errors
 
-Compat window (until the next server major): `?uid=` alone, or
-alongside a valid `userHash`, answers `200` with
-`X-CW-Deprecated-uid: true`. The server hashes the trimmed `uid` to
-`userHash` semantics when no valid `userHash` is present; when both are
-present and `userHash` is valid, `userHash` wins and the header is
-still set. Empty `uid` equals absent (no header, anonymous when
-`userHash` is also empty).
-
-> Sunset: at the next server major the compat alias is removed and raw
-> `?uid=` presence (even alongside `userHash`) returns `400` again
-> with `raw "uid" is forbidden: send "userHash" instead.` That string
-> is retired during the window (current compat code never emits it)
-> and returns only at sunset.
-
-Malformed `?userHash=` (anything but 16 lowercase hex, even with
-`?uid=` present):
+Removal notice: the `?uid=` compat alias is removed. Any trimmed
+non-empty `?uid=` returns `400`:
 
 ```json
-{"data": {}, "message": "invalid userHash: must be 16 lowercase hex.", "status": 400}
+{"data": {}, "message": "raw \"uid\" is forbidden: send \"userHash\" instead.", "status": 400}
 ```
 
-Ref: `configwire/fetch/fetch.go:155-164,428-434` (`BuildContext`, caller maps
-to `400` via `re.BadRequestError`).
+Empty `uid` equals absent (no error, anonymous path). Ref:
+`configwire/fetch/fetch.go:187-190` (`BuildContext`, caller maps to
+`400` via `re.BadRequestError`).
+
+Client `?userHash=` is never an error: any shape (including malformed)
+is accepted-but-ignored, stamping `X-CW-Deprecated-userHash: true`
+when trimmed non-empty. There is no `400` for `userHash`. Ref:
+`:163-170` (`stampUserHashCompat`), `:464-471` (handler).
 
 Malformed `attrs` (bad JSON, or valid JSON that is not an object):
 
 ```json
 {"data": {}, "message": "malformed attrs: not a JSON object", "status": 400}
+```
+
+Forbidden `attrs` key (PII/device identifiers: `email`, `phone`,
+`ip`, `deviceId`, `advertisingId`, `adid`, `idfa`, `idfv`,
+`androidId`, `serial`, `mac`, `imei`, case-insensitive; error names
+only the key, values never logged):
+
+```json
+{"data": {}, "message": "attrs key \"email\" is forbidden: remove PII custom attributes", "status": 400}
 ```
 
 `attrs` over 8192 bytes:
@@ -109,7 +116,7 @@ Malformed `attrs` (bad JSON, or valid JSON that is not an object):
 {"message": "attrs too large: max 8192 bytes", "status": 414}
 ```
 
-Ref: `:173-190,428-434`. `attrs` shape errors come from `re.BadRequestError`
+Ref: `:199-222,464-469`. `attrs` shape errors come from `re.BadRequestError`
 (PocketBase `data/message/status` shape); oversize comes from explicit
 `re.JSON` with `message/status` only. Unknown `appVersion` values fall
 through to defaults with `200`, never `400`.
@@ -325,12 +332,12 @@ subscribers. Ref: `configwire/stream/stream.go:RegisterHook`.
 
 ## 4. Events ingest — `POST /api/v1/env/{env}/events`
 
-Ref: `configwire/ingest/handler.go:111-171` (order), `configwire/ingest/ingest.go:101-130` (body).
+Ref: `configwire/ingest/handler.go:74-76` (order), `configwire/ingest/ingest.go:132-169` (body).
 
 Order: 401 (key) then 404 (unknown env slug) / 400 (ambiguous slug,
 key-less callers only) / 401 (env-scope mismatch) then 429 (rate)
 then 400/413 (body) then 202.
-Ref: `configwire/ingest/handler.go:108-109`.
+Ref: `configwire/ingest/handler.go:74-84`.
 
 Request:
 
@@ -347,8 +354,25 @@ Request:
   SDK fetch events carry it); absent means 0. Negative then `400`.
 - `ts` accepts RFC3339 string, unix-seconds number, or absent/null
   (server time). Anything else then `400`.
+- Identity is server-derived (ignore+replace): a client `userHash`
+  key is accepted by the schema (length/NUL checked) but IGNORED at
+  storage — the handler derives `anonID` via
+  `identity.Manager` (`limits.ClientIP` + User-Agent + per-env daily
+  salt) plus `country` from headers, stores
+  `events.anonId` + `events.country`, and stores `userHash` empty
+  (column kept nullable for compat). Client-sent `anonId`/`country`
+  keys are unknown to the schema and ignored; the server values always
+  win. Ref: `configwire/ingest/handler.go:32-44` (`deriveIdentity`),
+  `:93-111` (ignore+replace), `configwire/ingest/batcher.go:223-239`
+  (`saveStoredEvent`).
 - Raw `userId`/`ip` keys are strictly rejected (presence, not value,
-  even null-valued) then `400`. Clients send `userHash` only.
+  even null-valued) then `400`. PII/device-identifier keys (`email`,
+  `phone`, `ip`, `deviceId`, `advertisingId`, `adid`, `idfa`, `idfv`,
+  `androidId`, `serial`, `mac`, `imei`, case-insensitive; `userId` in
+  any case) are strictly rejected then `400`; errors name only the
+  key, values are never logged. Ref:
+  `configwire/ingest/ingest.go:122-130` (denylist), `:175-205`
+  (strict reject).
 - 1..100 events per request (0 or over 100 then `400`).
 - Single event over 64KB or body over 128KB then `413`.
 - Rate (per-second):
@@ -525,7 +549,16 @@ After auth the handler holds SSE long-lived:
 
 ## 7. Purge — `POST /api/v1/admin/maintenance/purge`
 
-Ref: `configwire/purge/purge.go:298-336` (handler). Superuser-only.
+Ref: `configwire/purge/purge.go:766-779` (`Register`), `:832-877`
+(`postPurge`), `:787-822` (daily ticker: scrub → purge → salt prune).
+Superuser-only.
+Cutoffs are dynamic: raw cutoff is `now - rawDays`, rollup cutoff is
+`now - rollupDays`, both read live from the retention singleton
+(defaults 30/90; see section 11). Identity scrub runs on its own
+48h horizon (`ScrubCutoff(now) = now - 48h`, `:62-67,195-199`),
+independent of the retention windows. Ref: `:77-100`
+(`configuredRawDays`, `configuredRollupDays`,
+`currentRollupExtraDays`), `:766` (manual route).
 
 `?dry=` absent/`0`/`false` means live; `1`/`true` means dry-run
 (zero writes, same count); anything else (for example `abc`) then `400`.
@@ -533,17 +566,28 @@ Ref: `configwire/purge/purge.go:298-336` (handler). Superuser-only.
 Live `200`:
 
 ```json
-{"deleted": 1, "dry": false, "cutoff": "2026-08-23T00:00:00Z"}
+{"deleted": 1, "scrubbed": 2, "dry": false, "cutoff": "2026-08-23T00:00:00Z"}
 ```
 
 Dry-run `200`:
 
 ```json
-{"deleted": 1, "dry": true, "cutoff": "2026-08-23T00:00:00Z"}
+{"deleted": 1, "scrubbed": 2, "dry": true, "cutoff": "2026-08-23T00:00:00Z"}
 ```
 
-Empty table then `200` with `deleted: 0`. A daily 24h process-local
-ticker purges with `cutoff = now - 30d`. Ref: `:284-296`.
+`deleted` counts raw events rolled up and deleted plus stale daily
+rollups deleted; `scrubbed` counts rows whose `anonId`/`country` were
+nulled past the 48h scrub cutoff (rows kept, identity only); `cutoff`
+is the raw-events cutoff (`now - rawDays`, UTC RFC3339). Scrub nulls
+identity on events with `ts` strictly before `now - 48h` and keeps
+every row (counts, env, kind, variant, version, `ts` untouched) so
+later rollups still count them. Empty tables then `200` with
+`deleted: 0, scrubbed: 0`. A daily process-local ticker (boot run,
+then every 23-25h) runs scrub → purge → salt prune with the same
+dynamic cutoffs. Ref: `:195-199` (`ScrubCutoff`), `:223-269`
+(`ScrubIdentitiesOlderThan`), `:271-310` (`CountScrubOlderThan`,
+dry-run path), `:312-318` (`PruneIdentitySalts`). Set `CONFIGWIRE_PURGE=off` (or `0`/`false`) to disable the
+ticker on a node; the manual route stays mounted. Ref: `:753-764`.
 
 ## 8. Limits admin — `GET/PUT /api/v1/admin/limits`
 
@@ -593,19 +637,19 @@ Success `200` (both verbs, same shape):
 
 | Code | Meaning                                                                               | Body                                                                                                                   | Ref                                                                                               |
 | ---- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| 200  | fetch config / publish / rollback / stats / purge                                     | shapes in sections 1, 2, 3, 5, 7                                                                                       | fetch `:445-451,475-481`, releases `:194,257`, stats `:168-173`, purge `:320-335`                         |
+| 200  | fetch config / publish / rollback / stats / purge                                     | shapes in sections 1, 2, 3, 5, 7                                                                                       | fetch `:479-516`, releases `:194,257`, stats `:168-173`, purge `:643-658`                         |
 | 200/400/401/404/409 | promote a release snapshot across envs (new row, fresh etag)                   | shapes in section 3a                                                                                                    | releases handler `postPromoteEnv`, `promoteToNewRow`                                              |
-| 202  | events accepted                                                                       | `{"accepted": N, "status": 202}`                                                                                       | ingest handler `:170`                                                                             |
-| 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:118-126`                                                                                  |
-| 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:454-462`                                                                                  |
-| 400  | bad fetch/publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:80-83,122-125,156-158`, ingest `:173-175`, stats `:140`, purge `:312`, envresolve `resolve.go`, fetch `BuildContext` (`?uid=` presence, bad `userHash`) |
-| 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:338-358`, fetch `:417-426`, stream `stream.go:getStream`                                                     |
-| 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:417-426`, releases `:220-221`                                                             |
+| 202  | events accepted                                                                       | `{"accepted": N, "status": 202}`                                                                                       | ingest handler `:118`                                                                             |
+| 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:141-150`                                                                                  |
+| 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:488-493`                                                                                  |
+| 400  | bad fetch/publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:80-83,122-125,156-158`, ingest `:121-123`, stats `:140`, purge `:635`, envresolve `resolve.go`, fetch `BuildContext` (`?uid=` presence) |
+| 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:491-518`, fetch `:451-457`, stream `stream.go:getStream`                                                     |
+| 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:451-457`, releases `:220-221`                                                             |
 | 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:141-147`                                                                               |
-| 413  | ingest body/event too large; fetch attrs too large is 414                             | `{"message": "body exceeds 128KB.", "status": 413}`                                                                    | ingest `:252-262`                                                                                 |
-| 414  | fetch attrs over 8192 bytes                                                           | `{"message": "attrs too large: max 8192 bytes", "status": 414}`                                                         | fetch `:430-432`                                                                                  |
-| 429  | rate limit hit (single limiter, per-second global/per-key)                                       | `{"message": "Rate limit exceeded.", "status": 429}` with `Retry-After: 1`                        | ingest handler `:124-126`, limits `limits.go:BlockIP`                                                        |
-| 503  | ingest buffer full (cap 2048, retry)                                                  | `{"message": "Ingest buffer full, retry.", "status": 503}`                                                             | ingest handler `:164-168`                                                                         |
+| 413  | ingest body/event too large; fetch attrs too large is 414                             | `{"message": "body exceeds 128KB.", "status": 413}`                                                                    | ingest `:521-530`                                                                                 |
+| 414  | fetch attrs over 8192 bytes                                                           | `{"message": "attrs too large: max 8192 bytes", "status": 414}`                                                         | fetch `:466-468`                                                                                  |
+| 429  | rate limit hit (single limiter, per-second global/per-key)                                       | `{"message": "Rate limit exceeded.", "status": 429}` with `Retry-After: 1`                        | ingest handler `:77-84`, limits `limits.go:BlockIP`                                                        |
+| 503  | ingest buffer full (cap 2048, retry)                                                  | `{"message": "Ingest buffer full, retry.", "status": 503}`                                                             | ingest handler `:112-117`                                                                         |
 
 ## 10. Staleness bound
 
@@ -614,17 +658,36 @@ guarantee). Otherwise freshness is at most `pollInterval` (Dart
 default 15min) plus one fetch: the client poller runs in every state
 (stream healthy, down, or 401), so the bound holds on all paths.
 Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.dart` (RealtimeUpdater), `SECURITY.md` section 7.
-
 ## 11. Retention
 
-Raw `events` rows live 30 days, daily `event_daily` rollups keyed
-`(day, env, flag, variant, version)` live 90 days. Cutoff is strictly-older-than
+Windows are tunable via superuser-only
+`GET/PUT /api/v1/admin/retention` (`{rawDays, rollupDays}`; each field
+optional on PUT, absent/null keeps the stored value). Ref:
+`configwire/retention/api.go:13-26` (routes), `:42-73` (handlers).
+
+| Knob | Default | Bounds | Enforced |
+| ---- | ------- | ------ | -------- |
+| `rawDays` (raw `events` live, then rolled up and deleted) | 30 | 1..1825 | `PUT` rejects outside `1..1825` |
+| `rollupDays` (daily `event_daily` rollups keyed `(day, env, flag, variant, version)` live) | 90 | 1..1825 | `PUT` rejects outside `1..1825`, rejects `rollupDays < rawDays` |
+
+Invariant: `rollupDays >= rawDays` (rollups must outlive the raw rows
+they were built from). Env overrides at boot:
+`CONFIGWIRE_RAW_RETENTION_DAYS`, `CONFIGWIRE_ROLLUP_RETENTION_DAYS`
+(non-numeric falls back to the default); out-of-range or
+invariant-breaking env/DB values are clamped on load (bad knob falls
+back to its default, then `rollupDays` is raised to `rawDays`), never
+fatal on serve. Ref: `configwire/retention/retention.go:30-39`
+(defaults + bounds), `:79-94` (`ValidateConfig`), `:100-116`
+(`clampConfig`), `:68-77` (env), `:155-198` (`ensureLoaded`).
+
+Cutoff is strictly-older-than
 (`ts` before cutoff deleted, exactly-equal kept, zero-ts kept).
 Purge runs cursor-paged (2000 rows per short transaction, ordered by
 `(ts, id)` for raw events and `(day, id)` for stale rollups): each raw
 page is rolled up (that page's rows only) then deleted inside the same
 page transaction — rollup-before-delete per page, never one giant
-transaction — and stale daily rows are deleted page by page the same way.
+transaction — and stale daily rows are deleted page by page the same
+way.
 Upserts are bounded the same way (one page per transaction; a
 high-cardinality upsert splits into sub-batches instead of widening the
 transaction). Crash semantic is per-chunk atomic plus rerun convergence:
