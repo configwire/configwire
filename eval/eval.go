@@ -14,14 +14,19 @@
 //	    (unknown field/op, bad semver, missing seed, unknown attr)
 //	    makes that condition false -> fallthrough to default.
 //
-//	Assign(exp Experiment, userHash string) string
-//	  - Sticky by construction: pure function of (userHash, exp.Seed).
-//	  - Empty userHash or empty Variants -> exp.DefaultVariant.
-//	  - Else variant = cumulative weightBps mapping of Bucket(userHash, Seed).
+//	Assign(exp Experiment, anonID string) string
+//	  - Sticky by construction: pure function of (anonID, exp.Seed).
+//	  - Empty anonID or empty Variants -> exp.DefaultVariant.
+//	  - Else variant = cumulative weightBps mapping of Bucket(anonID, Seed).
+//	  - anonID is the daily-rotating anonymous ID (Context.UserHash).
+//	  - DAILY REBUCKET: daily salt rotation re-randomizes
+//	    fnv64a(newHash+seed)%10000 — intentional Aptabase-style break,
+//	    release note required.
 //
-//	Bucket(userHash, seed string) int
-//	  - Formula: int(fnv64a(userHash+seed) % 10000), range 0..9999.
-//	  - Empty userHash or empty seed -> -1 (invalid; callers treat as false).
+//	Bucket(anonID, seed string) int
+//	  - Formula: int(fnv64a(anonID+seed) % 10000), range 0..9999.
+//	  - Empty anonID or empty seed -> -1 (invalid; callers treat as false).
+//	  - Same rebucket note: a rotated anonID re-randomizes the bucket.
 //
 // Condition JSON schema (field -> allowed ops):
 //
@@ -92,6 +97,9 @@ type Rule struct {
 }
 
 // Context carries the request attributes Evaluate matches rules against.
+// UserHash is the anonID (daily-rotating anonymous ID): clients rotate the
+// salt daily, so bucketing re-randomizes (see Bucket/Assign rebucket note).
+// The JSON field name "userHash" is frozen for wire compat.
 type Context struct {
 	UserHash       string         `json:"userHash"`
 	Platform       string         `json:"platform"`
@@ -110,7 +118,9 @@ type Variant struct {
 	Values    map[string]any `json:"values,omitempty"`
 }
 
-// Experiment splits users across variants by Bucket(userHash, Seed).
+// Experiment splits anonIDs across variants by Bucket(anonID, Seed).
+// Buckets re-randomize when the client rotates the daily anonID salt
+// (intentional Aptabase-style break; see Bucket).
 type Experiment struct {
 	ID             string    `json:"id"`
 	Seed           string    `json:"seed"`
@@ -132,13 +142,14 @@ func Evaluate(flag Flag, rules []Rule, ctx Context) any {
 	return flag.Default
 }
 
-// Assign returns the sticky variant for userHash, or DefaultVariant when
-// userHash is empty or Variants is empty.
-func Assign(exp Experiment, userHash string) string {
-	if userHash == "" || len(exp.Variants) == 0 {
+// Assign returns the sticky variant for anonID, or DefaultVariant when
+// anonID is empty or Variants is empty. Formula unchanged: cumulative
+// weightBps mapping of Bucket(anonID, exp.Seed).
+func Assign(exp Experiment, anonID string) string {
+	if anonID == "" || len(exp.Variants) == 0 {
 		return exp.DefaultVariant
 	}
-	b := Bucket(userHash, exp.Seed)
+	b := Bucket(anonID, exp.Seed)
 	if b < 0 || b > 9999 {
 		return exp.DefaultVariant
 	}
@@ -152,14 +163,18 @@ func Assign(exp Experiment, userHash string) string {
 	return exp.DefaultVariant
 }
 
-// Bucket returns int(fnv64a(userHash+seed)%10000) in 0..9999, or -1 when
-// userHash or seed is empty.
-func Bucket(userHash, seed string) int {
-	if userHash == "" || seed == "" {
+// Bucket returns int(fnv64a(anonID+seed)%10000) in 0..9999, or -1 when
+// anonID or seed is empty. anonID semantics: the input is the
+// daily-rotating anonymous ID, not a stable user identifier.
+// DAILY REBUCKET: daily salt rotation re-randomizes
+// fnv64a(newHash+seed)%10000 — intentional Aptabase-style break, release
+// note required.
+func Bucket(anonID, seed string) int {
+	if anonID == "" || seed == "" {
 		return -1
 	}
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(userHash + seed))
+	_, _ = h.Write([]byte(anonID + seed))
 	return int(h.Sum64() % 10000)
 }
 
@@ -275,7 +290,8 @@ func matchVersionField(actual, op string, target any) bool {
 }
 
 // matchPercentile buckets via Bucket(ctx.UserHash, cond.Seed or
-// ctx.PercentileSeed). Missing/empty seed or userHash -> false.
+// ctx.PercentileSeed), where ctx.UserHash carries the anonID
+// (daily-rotating). Missing/empty seed or anonID -> false.
 // "<=" is inclusive; "between" [lo,hi] is inclusive on both ends.
 func matchPercentile(c Condition, ctx Context) bool {
 	seed := c.Seed

@@ -29,16 +29,22 @@
 //     {"version","etag","values":{key:typed},"variants":{key:variant},
 //     "fetchAt":rfc3339}. A flag whose snapshot default has an unexpected
 //     shape is served as-is (publish-time validation already coerced it).
-//   - Context: userHash->UserHash (absent -> anonymous: rules still evaluate,
-//     Assign falls back to DefaultVariant), platform/appVersion/locale/
-//     country passed through (appVersion=not-semver -> condition false ->
+//   - Context: bucketing identity is server-derived per request via
+//     identity.Manager.AnonID(envID, ClientIP, User-Agent, day), stored in
+//     Context.UserHash (field name kept for eval.Bucket compat); country is
+//     server geo from identity.CountryFromHeaders only — client ?userHash=
+//     (any shape) and ?country= are accepted-but-ignored, and a sent
+//     ?userHash= stamps X-CW-Deprecated-userHash: true. platform/appVersion/
+//     locale pass through (appVersion=not-semver -> condition false ->
 //     defaults fallthrough, still 200, never 400), attrs=<json> parsed as a
-//     flat map for custom.* conditions. Canonical ?userHash= wins (16
-//     lowercase hex when present); legacy ?uid= is hashed server-side as
-//     fallback, flagged deprecated (Task 2 header owns the wire).
+//     flat map for custom.* conditions. ?uid= is sunset: any trimmed
+//     non-empty value is 400 (send userHash instead). Forbidden PII attrs
+//     keys (email and device identifiers, case-insensitive) are 400;
+//     values are never logged.
 //   - attrs error policy: malformed attrs (invalid JSON, or valid JSON that
 //     is not an object) -> 400 documented; attrs longer than 8192 bytes ->
-//     414 documented. Missing attrs -> empty custom map (anonymous attrs).
+//     414 documented; forbidden PII keys -> 400 documented. Missing attrs
+//     -> empty custom map (anonymous attrs).
 //   - exp override: ?exp= is ignored unless CONFIGWIRE_ENABLE_EXP_OVERRIDE==1.
 //   - Gzip: route binds apis.Gzip(), so Accept-Encoding: gzip responses
 //     carry Content-Encoding: gzip.
@@ -62,7 +68,9 @@ import (
 	"time"
 
 	"github.com/configwire/configwire/eval"
+	"github.com/configwire/configwire/identity"
 	"github.com/configwire/configwire/ingest"
+	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
 	"github.com/pocketbase/dbx"
@@ -79,26 +87,37 @@ const emptyReleaseEtag = "none"
 
 const allowHeaders = "X-ConfigWire-Key, If-None-Match"
 
-// deprecatedUidFallbackTotal counts process-local ?uid= fallback uses.
-var deprecatedUidFallbackTotal atomic.Uint64
+// attrsForbidden holds lowercased top-level custom-attr keys that are
+// never accepted (PII/device identifiers). Matched case-insensitively;
+// values are never logged, errors name only the key (PII-free).
+var attrsForbidden = map[string]struct{}{
+	"email": {}, "e-mail": {}, "phone": {}, "ip": {},
+	"deviceid": {}, "device_id": {}, "advertisingid": {},
+	"adid": {}, "idfa": {}, "idfv": {},
+	"androidid": {}, "serial": {}, "mac": {}, "imei": {},
+}
+
+// isForbiddenAttr reports whether a top-level custom-attr key is denied
+// (case-insensitive match against attrsForbidden).
+func isForbiddenAttr(key string) bool {
+	_, ok := attrsForbidden[strings.ToLower(key)]
+	return ok
+}
 
 // deprecatedSnapshotTotal counts process-local legacy-shape snapshot serves.
+//
+// Deprecated: legacy top-level snapshot compat is deprecated and will be
+// removed in the next server major (republish to migrate); the counter
+// goes away with it.
 var deprecatedSnapshotTotal atomic.Uint64
-
-// markDeprecatedUid stamps the compat header + PII-free log/counter.
-// It takes the header (not the request event) so the shared stamping logic
-// stays unit-testable; callers pass re.Response.Header(). Never logs
-// uid/hash values.
-func markDeprecatedUid(h http.Header) {
-	h.Set("X-CW-Deprecated-uid", "true")
-	deprecatedUidFallbackTotal.Add(1)
-	log.Printf("fetch: deprecated ?uid= fallback used (compat window; send userHash)")
-}
 
 // markDeprecatedSnapshot stamps the compat header + PII-free log/counter.
 // It takes the header (not the request event) so the shared stamping logic
 // stays unit-testable; callers pass re.Response.Header(). Never logs
 // snapshot contents (counts/shape only).
+//
+// Deprecated: legacy snapshot compat is deprecated and will be removed in
+// the next server major; do not call from new code.
 func markDeprecatedSnapshot(h http.Header) {
 	h.Set("X-CW-Deprecated-snapshot", "true")
 	deprecatedSnapshotTotal.Add(1)
@@ -121,7 +140,11 @@ func corsOrigin() string {
 }
 
 // Register mounts the SDK delivery endpoint with gzip encoding.
+// It swaps anonManager onto the durable PB-backed salt Store so
+// same-day anonIDs survive restarts; unit tests that never call
+// Register keep the MemoryStore default (see SetAnonManager).
 func Register(se *core.ServeEvent) {
+	anonManager = identity.NewManager(identity.NewPBStore(se.App))
 	se.Router.GET("/api/v1/env/{env}/config", getConfig).Bind(apis.Gzip())
 	se.Router.OPTIONS("/api/v1/env/{env}/config", optionsConfig)
 }
@@ -138,69 +161,82 @@ func optionsConfig(re *core.RequestEvent) error {
 	return re.NoContent(http.StatusNoContent)
 }
 
-// isValidUserHash reports whether s matches ^[0-9a-f]{16}$.
-func isValidUserHash(s string) bool {
-	if len(s) != 16 {
-		return false
+// userHashCompatHeader signals that a client-sent ?userHash= was
+// accepted-but-ignored: bucketing always uses the server-derived anonID.
+const userHashCompatHeader = "X-CW-Deprecated-userHash"
+
+// anonManager derives per-request anonIDs via per-env daily salts.
+// MemoryStore is the in-process default until the identity_salts
+// collection is wired as the durable Store; salts never leave the
+// identity package and raw IPs/user-agents are never persisted.
+var anonManager = identity.NewManager(identity.NewMemoryStore())
+
+// SetAnonManager swaps the anonID manager (tests only).
+func SetAnonManager(m *identity.Manager) {
+	if m != nil {
+		anonManager = m
 	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
-			return false
-		}
+}
+
+// stampUserHashCompat sets the compat header when the client sent a
+// trimmed non-empty ?userHash= (accepted-but-ignored; server anonID
+// wins). Absent/empty/blank sends no header.
+func stampUserHashCompat(h http.Header, q url.Values) {
+	if strings.TrimSpace(q.Get("userHash")) != "" {
+		h.Set(userHashCompatHeader, "true")
 	}
-	return true
 }
 
 // BuildContext maps fetch query params onto an eval.Context purely (no I/O),
-// so it is unit-testable. Precedence: canonical ?userHash= wins when valid
-// (16 lowercase hex); legacy ?uid= is hashed server-side via
-// eval.HashUserID as fallback when userHash is absent/empty (spaces-trimmed);
-// both absent/empty -> anonymous context (empty UserHash/customs).
-// It also reports deprecatedUidUsed (true when trimmed ?uid= is non-empty,
-// even when canonical userHash wins). An invalid (non-empty, non-16-hex)
-// ?userHash= is an error even with ?uid= present.
-// platform/appVersion/locale/country pass through untouched (invalid values
-// evaluate to false downstream, never 400 here); missing/empty userHash ->
-// anonymous context (empty UserHash/customs); malformed userHash, malformed
-// attrs, or attrs over MaxAttrsBytes -> error (caller maps to 400/414).
-// Missing userHash/attrs -> anonymous context (empty UserHash/customs).
-func BuildContext(q url.Values) (eval.Context, bool, error) {
-	h := strings.TrimSpace(q.Get("userHash"))
-	if h != "" && !isValidUserHash(h) {
-		return eval.Context{}, false, fmt.Errorf("invalid userHash: must be 16 lowercase hex.")
-	}
-	uid := strings.TrimSpace(q.Get("uid"))
-	deprecatedUidUsed := uid != ""
-	if h == "" && uid != "" {
-		h = eval.HashUserID(uid)
+// so it is unit-testable. Bucketing identity is server-derived: anonID is
+// the per-request Manager.AnonID(envID, ClientIP, User-Agent, day) value
+// passed in by getConfig and stored in Context.UserHash (field name kept
+// for eval.Bucket compat); country is the server geo from
+// identity.CountryFromHeaders passed in by getConfig. Client ?userHash=
+// (any shape, even malformed) and client ?country= are accepted-but-ignored
+// and never reach eval; getConfig stamps userHashCompatHeader when the
+// client sent ?userHash=. Legacy ?uid= is sunset: any trimmed non-empty
+// ?uid= is a 400 ("raw \"uid\" is forbidden: send \"userHash\" instead."),
+// even alongside anonID; empty ?uid= == absent. platform/appVersion/locale
+// pass through untouched (invalid values evaluate to false downstream,
+// never 400 here). Malformed attrs, forbidden PII attrs keys, or attrs
+// over MaxAttrsBytes -> error (caller maps to 400/414). Missing
+// attrs -> anonymous customs.
+func BuildContext(q url.Values, anonID, country string) (eval.Context, error) {
+	if strings.TrimSpace(q.Get("uid")) != "" {
+		return eval.Context{}, fmt.Errorf(`raw "uid" is forbidden: send "userHash" instead.`)
 	}
 	ctx := eval.Context{
-		UserHash:    h,
+		UserHash:    anonID,
 		Platform:    q.Get("platform"),
 		AppVersion:  q.Get("appVersion"),
 		Locale:      q.Get("locale"),
-		Country:     q.Get("country"),
+		Country:     country,
 		CustomAttrs: map[string]any{},
 	}
 	raw := q.Get("attrs")
 	if raw == "" {
-		return ctx, deprecatedUidUsed, nil
+		return ctx, nil
 	}
 	if len(raw) > MaxAttrsBytes {
-		return ctx, false, fmt.Errorf("attrs too large: max %d bytes", MaxAttrsBytes)
+		return ctx, fmt.Errorf("attrs too large: max %d bytes", MaxAttrsBytes)
 	}
 	var m map[string]any
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.UseNumber()
 	if err := dec.Decode(&m); err != nil {
-		return ctx, false, fmt.Errorf("malformed attrs: not a JSON object")
+		return ctx, fmt.Errorf("malformed attrs: not a JSON object")
 	}
 	if m == nil {
-		return ctx, false, fmt.Errorf("malformed attrs: not a JSON object")
+		return ctx, fmt.Errorf("malformed attrs: not a JSON object")
+	}
+	for k := range m {
+		if isForbiddenAttr(k) {
+			return ctx, fmt.Errorf("attrs key %q is forbidden: remove PII custom attributes", k)
+		}
 	}
 	ctx.CustomAttrs = m
-	return ctx, deprecatedUidUsed, nil
+	return ctx, nil
 }
 
 // expOverride returns ?exp= only when CONFIGWIRE_ENABLE_EXP_OVERRIDE==1, else "".
@@ -438,13 +474,19 @@ func getConfig(re *core.RequestEvent) error {
 		return err
 	}
 
-	ctx, deprecatedUid, cerr := BuildContext(re.Request.URL.Query())
+	anonID, aerr := anonManager.AnonID(env.Id, limits.ClientIP(re), re.Request.UserAgent(), time.Now())
+	if aerr != nil {
+		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Failed to derive identity.", "status": 500})
+	}
+	q := re.Request.URL.Query()
+	ctx, cerr := BuildContext(q, anonID, identity.CountryFromHeaders(re.Request.Header))
 	if cerr != nil {
 		if len(re.Request.URL.Query().Get("attrs")) > MaxAttrsBytes {
 			return re.JSON(http.StatusRequestURITooLong, map[string]any{"message": cerr.Error(), "status": http.StatusRequestURITooLong})
 		}
 		return re.BadRequestError(cerr.Error(), nil)
 	}
+	stampUserHashCompat(re.Response.Header(), q)
 
 	rel, err := latestRelease(re.App, env.Id)
 	if err != nil {
@@ -452,9 +494,6 @@ func getConfig(re *core.RequestEvent) error {
 	}
 	if rel == nil {
 		setFetchCacheHeaders(re)
-		if deprecatedUid {
-			markDeprecatedUid(re.Response.Header())
-		}
 		return re.JSON(http.StatusOK, map[string]any{
 			"version":  0,
 			"etag":     emptyReleaseEtag,
@@ -468,9 +507,6 @@ func getConfig(re *core.RequestEvent) error {
 	re.Response.Header().Set("ETag", etag)
 	if EtagMatches(re.Request.Header.Get("If-None-Match"), etag) {
 		setFetchCacheHeaders(re)
-		if deprecatedUid {
-			markDeprecatedUid(re.Response.Header())
-		}
 		return re.NoContent(http.StatusNotModified)
 	}
 
@@ -482,14 +518,11 @@ func getConfig(re *core.RequestEvent) error {
 
 	values, variants := EvaluateSnapshot(snap, ctx, expOverride(re.Request.URL.Query()))
 	setFetchCacheHeaders(re)
-	if deprecatedUid {
-		markDeprecatedUid(re.Response.Header())
-	}
 	// Legacy-shape snapshots stamp on this 200 config path only: 304/empty
 	// paths intentionally do not load the snapshot to stamp (avoids an
 	// extra DB read); steady-state cached clients learn of deprecation on
-	// next 200. Unlike uid — which stamps all three success paths — the
-	// snapshot stamp hooks here only.
+	// next 200. Deprecated: legacy compat goes away in the next server
+	// major (republish to migrate).
 	if releases.IsLegacyTopLevel(snapBytes) {
 		markDeprecatedSnapshot(re.Response.Header())
 	}

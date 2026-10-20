@@ -163,3 +163,36 @@ func TestExposurePII(t *testing.T) {
 		t.Fatalf("empty userID -> userHash %q, want empty", empty.UserHash)
 	}
 }
+
+func TestDailyRebucketRedistributes(t *testing.T) {
+	exp := testExp5050()
+	const n = 2000
+	sameBucket := 0
+	flips := 0
+	for i := 0; i < n; i++ {
+		day1 := fmt.Sprintf("anon-day1-%d", i)
+		day2 := fmt.Sprintf("anon-day2-%d", i)
+		if Bucket(day1, exp.Seed) == Bucket(day2, exp.Seed) {
+			sameBucket++
+		}
+		if Assign(exp, day1) != Assign(exp, day2) {
+			flips++
+		}
+	}
+	// fnv64a(newHash+seed)%10000 re-randomizes on salt rotation: exact
+	// bucket collisions across days must be rare (random chance ~0.01%).
+	if sameBucket > n/20 {
+		t.Fatalf("daily rebucket must re-randomize buckets: %d/%d same bucket", sameBucket, n)
+	}
+	// 50/50 weights: roughly half the cohort must flip variants day-over-day.
+	// Wide band keeps the pin deterministic; a sticky-across-rotation
+	// implementation fails it outright (0 flips).
+	if flips < n*30/100 || flips > n*70/100 {
+		t.Fatalf("daily rebucket must flip ~half of 50/50 assignments: %d/%d flipped", flips, n)
+	}
+
+	// Empty anonID still falls back to DefaultVariant (anonymous path).
+	if got := Assign(exp, ""); got != exp.DefaultVariant {
+		t.Fatalf("empty anonID -> %q, want DefaultVariant %q", got, exp.DefaultVariant)
+	}
+}
