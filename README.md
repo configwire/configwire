@@ -40,6 +40,10 @@ docker compose pull && docker compose up -d
 Then open **http://localhost:8090** — a fresh instance shows a native
 superuser setup screen (no need to visit PocketBase's `/_/` installer).
 
+> **Exposing this publicly?** Read the pre-exposure checklist first:
+> [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (CORS, TLS, admin
+> allowlist, setup claim, SSO secret, backups, multi-node purge).
+
 ## Run locally
 
 Prereqs: Go (floor per `go.mod`), `make`, `bash`, `curl`, `python3`.

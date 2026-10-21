@@ -4,6 +4,11 @@ Single-binary deployment model (<10k DAU / <100rps). No WAF, no paid
 infra, no external auth provider: the controls below are all in the
 binary plus operator procedure.
 
+> **Exposing an instance?** Start with the pre-exposure checklist:
+> [`PRODUCTION.md`](PRODUCTION.md) — pin CORS, terminate TLS,
+> allowlist admin, claim setup, set the SSO secret, schedule backups,
+> single-node purge. Read it before changing any setting below.
+
 ## 1. SDK keys — storage
 
 - The full key is an opaque string presented in `X-ConfigWire-Key`.
