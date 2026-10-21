@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -90,6 +91,35 @@ func staticDigest() string {
 		return ""
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// parseHSTSMaxAge mirrors retention.parseEnvInt: decimal seconds, strictly
+// positive. Unset/empty/invalid/zero/negative all yield 0 (header disabled),
+// never fatal — the default serve is plain HTTP, so HSTS stays opt-in.
+func parseHSTSMaxAge(raw string) int {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// applyHSTSConfig applies the opt-in CONFIGWIRE_HSTS boot knob once (never
+// per-request). Unset/empty is silent; a present-but-unusable value logs one
+// line naming only the env var (never its value, per logging convention).
+func applyHSTSConfig(raw string) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	if n := parseHSTSMaxAge(raw); n > 0 {
+		security.SetHSTSMaxAge(n)
+		return
+	}
+	log.Print("configwire: CONFIGWIRE_HSTS is invalid, HSTS header disabled")
 }
 
 // setStaticCacheHeaders assigns cache policy to Admin UI static responses
@@ -435,6 +465,7 @@ func main() {
 		if os.Getenv("CONFIGWIRE_CORS_ORIGIN") == "" {
 			log.Printf("configwire: CONFIGWIRE_CORS_ORIGIN is unset, fetch CORS defaults to \"*\"; set CONFIGWIRE_CORS_ORIGIN=https://app.example.com in production")
 		}
+		applyHSTSConfig(os.Getenv("CONFIGWIRE_HSTS"))
 		// Global security headers for every response.
 		se.Router.BindFunc(func(re *core.RequestEvent) error {
 			security.SetHeaders(re)
