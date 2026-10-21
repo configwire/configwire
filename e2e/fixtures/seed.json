@@ -59,7 +59,7 @@
   "sdkKey": { "fetchRps": 1667, "ingestRps": 1667 },
   "fetchCtx": {
     "userHash": "bacd0e96cef6e162",
-    "_comment": "sha256hex16(e2e-user-7): printf %s e2e-user-7 | sha256sum | cut -c1-16; raw uid never sent",
+    "_comment": "sha256hex16(e2e-user-7): printf %s e2e-user-7 | sha256sum | cut -c1-16; raw uid never sent. NOTE: fetch bucketing does NOT use this value (accepted-but-ignored by contract); the pinned arm comes from the fixed identity_salts row + pinned User-Agent seeded by e2e.sh (see expected.json stage2 _variantComment)",
     "platform": "ios",
     "appVersion": "2.1.0"
   },

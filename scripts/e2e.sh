@@ -28,10 +28,22 @@ pass() { PASS=$((PASS + 1)); echo "PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "FAIL: $1"; }
 
 SU_EMAIL="e2e-t17@example.com"
+# Throwaway e2e-only password, scoped to the ephemeral /tmp/cw-t17-pbdata DB — never a real deployment.
 SU_PASS="e2e-t17-super-secret-01"
 SDK_KEY="cw-e2e17-key-0123456789abcdef"
 E2E_RAW_UID="e2e-user-7"
 E2E_UHASH="$(python3 -c "import hashlib; print(hashlib.sha256('$E2E_RAW_UID'.encode()).hexdigest()[:16])")"
+# Pinned fetch identity: bucketing uses the SERVER-derived anonID, not the
+# client ?userHash= (accepted-but-ignored by contract, fetch/fetch.go). The
+# anonID is HMAC(salt_env_day, clientIP + 0x00 + User-Agent)[:16]
+# (identity/identity.go:44). Pin both inputs so the arm is fixed every run:
+# a fixed salt row (seeded below) + this fixed User-Agent on every config
+# fetch (loopback clientIP 127.0.0.1 is already stable).
+CURL_UA="configwire-e2e/1.0"
+# Fixed salt (sha256("configwire-e2e-fixed-salt-v1-0")): anonID =
+# HMAC(salt,"127.0.0.1\x00configwire-e2e/1.0")[:16] = 9dcbf6d3f79018b5;
+# Bucket(anonID+"e2e-seed-1")%10000 = 2492 -> control (50/50 split at 5000).
+E2E_SALT="d69792ba46c441448923c8ccd459deff73ac6431b2c0c669c4686cf8b3e6d141"
 DEAD_PORT="8199"
 
 SERVER_PID=""
@@ -109,6 +121,14 @@ ENV_BODY="{\"project\":\"$PROJ\",\"slug\":\"e2e\"}"
 [ "$(su_post "$C/environments/records" "$ENV_BODY" /tmp/cw-t17-env.json)" = "200" ] \
   && pass "create env e2e" || { fail "create env"; exit 1; }
 ENVID="$(pyid /tmp/cw-t17-env.json id)"
+# Pin the per-(env, day) identity salt BEFORE the first fetch mints a random
+# one: with a fresh data dir every run, SaltForDay would crypto/rand a new
+# salt per run and re-randomize the arm (~50/50 flake). Seeding the fixed
+# E2E_SALT makes the server-derived anonID identical on every run.
+E2E_DAY="$(date -u +%F)"
+SALT_BODY="{\"envID\":\"$ENVID\",\"day\":\"$E2E_DAY\",\"salt\":\"$E2E_SALT\"}"
+[ "$(su_post "$C/identity_salts/records" "$SALT_BODY" /tmp/cw-t17-salt.json)" = "200" ] \
+  && pass "identity salt pinned (fixed anonID)" || { fail "identity salt seed"; exit 1; }
 GROUP_CORE_BODY="{\"name\":\"core\",\"project\":\"$PROJ\"}"
 GROUP_GROWTH_BODY="{\"name\":\"growth\",\"project\":\"$PROJ\"}"
 [ "$(su_post "$C/groups/records" "$GROUP_CORE_BODY" /tmp/cw-t17-g1.json)" = "200" ] \
@@ -159,9 +179,9 @@ echo "v1 etag=$ETAG_V1"
 echo "--- STAGE 2: fetch platform=ios appVersion=2.1.0 (userHash=$E2E_UHASH) ---"
 FQ="userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0"
 CODE1=$(curl -s -o /tmp/cw-t17-fetch1.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?$FQ" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 CODE2=$(curl -s -o /tmp/cw-t17-fetch2.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?$FQ" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE1" = "200" ] && [ "$CODE2" = "200" ] && pass "fetch 200 x2" || fail "fetch 200 x2 ($CODE1/$CODE2)"
 python3 - <<'EOF' && pass "typed values EXACT (string/number/bool/json)" || fail "typed values EXACT"
 import json, sys
@@ -376,7 +396,7 @@ CODE="$(su_post "$BASE_URL/api/v1/admin/env/e2e/publish" '{"note":"t17 v2 breaki
 python3 -c "import json,sys; sys.exit(0 if json.load(open('/tmp/cw-t17-pub2.json')).get('version')==2 else 1)" \
   && pass "publish v2 version==2" || fail "publish v2 version==2"
 curl -s -o /tmp/cw-t17-fetch-v2.json --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
+  "$BASE_URL/api/v1/env/e2e/config?$FQ" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
 python3 - <<'EOF' && pass "fetch v2: new json value + rules intact" || fail "fetch v2 values"
 import json, sys
 d = json.load(open('/tmp/cw-t17-fetch-v2.json'))
@@ -399,7 +419,7 @@ d = json.load(open('/tmp/cw-t17-rb.json'))
 sys.exit(0 if (d.get('version') == 3 and d.get('etag') != '$ETAG_V1') else 1)
 EOF
 curl -s -o /tmp/cw-t17-fetch-v3.json --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
+  "$BASE_URL/api/v1/env/e2e/config?$FQ" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
 python3 - <<'EOF' && pass "fetch v3: v1 values byte-equal + version 3" || fail "fetch v3 restored"
 import json, sys
 old = json.load(open('/tmp/cw-t17-fetch-stage2.json'))
