@@ -11,8 +11,11 @@
 package account
 
 import (
+	"crypto/subtle"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,10 +57,94 @@ const (
 // maxEmailLength caps the trimmed email (matches the _superusers email field).
 const maxEmailLength = 255
 
+// Opt-in first-run claim protection: when CONFIGWIRE_SETUP_TOKEN is set,
+// POST /api/v1/admin/setup requires a matching X-ConfigWire-Setup-Token
+// request header (constant-time compare) else 403. Unset (default) keeps
+// today's public-setup flow. GET /api/v1/admin/setup/status stays public
+// either way (it leaks only needsSetup).
+//
+// The value is read once at route-registration time into setupToken, never
+// per request. The token value is never logged (mismatch logs name the env
+// var only, one line per attempt).
+//
+// NOTE (cloud-sso-bridge interaction, plan §7 risk 1): the cloud
+// orchestrator bootstrap POSTs to this endpoint at provision time and never
+// sets the env, so the default-unset flow is unaffected. A deployment that
+// sets CONFIGWIRE_SETUP_TOKEN must also make its provisioner send the
+// header, or bootstrap claims will 403.
+const (
+	setupTokenEnv    = "CONFIGWIRE_SETUP_TOKEN"
+	setupTokenHeader = "X-ConfigWire-Setup-Token"
+)
+
+// setupToken holds the loadSetupToken() snapshot from Register (empty =
+// unset = public setup, today's flow). Tests in this package set it
+// directly; production sets it only via Register.
+var setupToken string
+
+// setupDeniedMu guards the denial-log throttle below (per-process, like
+// setupToken: no env vars, no knobs).
+var setupDeniedMu sync.Mutex
+
+// setupDeniedLastLog is the last emitted denial-log time. Zero value
+// means never logged, so the first denial always emits. Tests set it
+// directly to advance the window (same testability pattern as
+// setupToken); production only mutates it via setupTokenDenied.
+var setupDeniedLastLog time.Time
+
+// setupDeniedSuppressed counts denials suppressed since the last emitted
+// line; the next emitted line carries it as "(+N suppressed)".
+var setupDeniedSuppressed int
+
+func loadSetupToken() string {
+	return os.Getenv(setupTokenEnv)
+}
+
+// setupTokenDenied reports whether the setup-POST guard blocks this
+// request: false when the env is unset (public setup), otherwise true
+// unless the request header constant-time-matches the env value.
+func setupTokenDenied(re *core.RequestEvent) bool {
+	if setupToken == "" {
+		return false
+	}
+	got := re.Request.Header.Get(setupTokenHeader)
+	if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(setupToken)) != 1 {
+		noteSetupTokenDenied()
+		return true
+	}
+	return false
+}
+
+// noteSetupTokenDenied logs a setup-token denial at most once per second:
+// the first denial in a window emits, denials inside the window only bump
+// the suppressed counter, and the next window's line carries it as
+// "(+N suppressed)". Keeps message text byte-identical to the unthrottled
+// line except the suffix, so brute-force floods stay visible without one
+// line per attempt.
+func noteSetupTokenDenied() {
+	setupDeniedMu.Lock()
+	now := time.Now()
+	if now.Sub(setupDeniedLastLog) < time.Second {
+		setupDeniedSuppressed++
+		setupDeniedMu.Unlock()
+		return
+	}
+	suppressed := setupDeniedSuppressed
+	setupDeniedSuppressed = 0
+	setupDeniedLastLog = now
+	setupDeniedMu.Unlock()
+	msg := "account: setup denied: missing or invalid setup token (" + setupTokenEnv + " is set)"
+	if suppressed > 0 {
+		msg += " (+" + strconv.Itoa(suppressed) + " suppressed)"
+	}
+	log.Print(msg)
+}
+
 // Register mounts the public setup routes (no auth middleware: no
 // superuser can exist yet on first run) and the superuser-only account
 // routes (missing/invalid auth -> 401 via RequireSuperuserAuth).
 func Register(se *core.ServeEvent) {
+	setupToken = loadSetupToken()
 	se.Router.GET("/api/v1/admin/setup/status", getSetupStatus)
 	se.Router.POST("/api/v1/admin/setup", postSetup)
 	se.Router.GET("/api/v1/admin/account/list", listAccounts).Bind(apis.RequireSuperuserAuth())
@@ -258,12 +345,20 @@ func getSetupStatus(re *core.RequestEvent) error {
 	return re.JSON(http.StatusOK, map[string]any{"needsSetup": NeedsSetup(n)})
 }
 
-// postSetup handles POST /api/v1/admin/setup (PUBLIC).
-// Order: 409 (a superuser already exists) -> 400 (validation) ->
+// postSetup handles POST /api/v1/admin/setup (PUBLIC by default; gated
+// by CONFIGWIRE_SETUP_TOKEN when set).
+// Order: 403 (setup token set and header missing/mismatched) -> 409 (a
+// superuser already exists) -> 400 (validation) ->
 // 201 {"id","email"}. Save-time duplicates (setup race) map via
 // mapSaveError. No token is issued: login uses auth-with-password.
 func postSetup(re *core.RequestEvent) error {
 	security.SetHeaders(re)
+	if setupTokenDenied(re) {
+		return re.JSON(http.StatusForbidden, map[string]any{
+			"message": "setup requires a valid setup token.",
+			"status":  http.StatusForbidden,
+		})
+	}
 	var req setupRequest
 	if err := decodeBody(re, &req); err != nil {
 		return err
