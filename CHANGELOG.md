@@ -3,6 +3,23 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.1.13 — 2026-10-21
+
+### Added
+
+- Opt-in HSTS: set `CONFIGWIRE_HSTS=<max-age seconds>` (e.g. `31536000`) to stamp `Strict-Transport-Security: max-age=<n>; includeSubDomains` on every response (`security.SetHeaders`, boot-applied in `main.go`). Unset/empty/invalid leaves the header off — the plain-HTTP default serve is unchanged; a present-but-unusable value logs one boot warning naming only the env var.
+- Opt-in setup-claim guard: set `CONFIGWIRE_SETUP_TOKEN` to require a matching `X-ConfigWire-Setup-Token` header on `POST /api/v1/admin/setup` (constant-time compare, else `403`). Unset keeps the public first-run flow; `GET /api/v1/admin/setup/status` stays public. Runbook: `docs/PRODUCTION.md` §4.
+- Operator docs: new `docs/PRODUCTION.md` pre-exposure checklist (CORS, TLS+HSTS, admin allowlist, setup claim, SSO secret, backups/retention, single-node purge), linked from the README Docker section and `docs/SECURITY.md`.
+
+### Changed
+
+- Hardened SSO redeem: `POST /api/v1/admin/sso/redeem` now carries a fixed per-IP bucket (10 requests/minute; over cap answers `429` with `Retry-After: 1` in the existing limiter body shape) alongside the admin IP allowlist. One redeem per login is far below the bucket, so legitimate use is unaffected; there is no new env var.
+
+### Fixed
+
+- Admin UI no longer silently swallows background-refresh failures: 41 empty `catch` sites across scope/boot/backups/account/keys/router/limits/retention now emit a tagged `console.warn('<module>: <context>', error)` (warn-only — no rethrows, toasts, or behavior change), plus a `js_tests` assertion pinning the pattern.
+- Docs no longer ship copy-pasteable example credentials: the docker-compose superuser example uses `<change-me-32-chars>`, `BACKUPS.md` uses `<access-key>`/`<secret-key>` placeholders, and `e2e.sh` marks its hardcoded password as throwaway scoped to the ephemeral test DB.
+
 ## v0.1.12 — 2026-10-20
 
 ### Added
