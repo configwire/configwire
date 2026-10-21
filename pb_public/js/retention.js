@@ -74,7 +74,7 @@
         if (CW.markFormClean) {
           CW.markFormClean("retention-form");
         }
-        return loadRetention().catch(function () {});
+        return loadRetention().catch(function (e) { console.warn('retention: save list refresh', e); });
       }
       var fail = CW.apiError(out, "Save failed");
       if (resEl) resEl.textContent = fail;

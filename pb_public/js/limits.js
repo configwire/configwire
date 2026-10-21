@@ -198,7 +198,7 @@
           CW.markFormClean("limits-form");
           CW.markFormClean("settings-admin-form");
         }
-        return loadLimits().catch(function () {});
+        return loadLimits().catch(function (e) { console.warn('limits: save list refresh', e); });
       }
       var fail = CW.apiError(out, "Save failed");
       if (resEl) resEl.textContent = fail;

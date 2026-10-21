@@ -184,7 +184,7 @@
         closeProjectDialog();
         loadProjects().then(function () {
           if (newId) { CW.state.projectId = newId; CW.persistScope(); }
-          if (CW.loadHomeStats) CW.loadHomeStats().catch(function () {});
+          if (CW.loadHomeStats) CW.loadHomeStats().catch(function (e) { console.warn('scope: project create home-stats', e); });
           if (newId) {
             window.location.hash = "#/p/" + encodeURIComponent(newId);
             // route() picks it up via hashchange; cover no-change case.
@@ -192,8 +192,8 @@
           }
           return loadEnvs();
         }).then(function () {
-          if (CW.loadFlags) CW.loadFlags().catch(function () {});
-        }).catch(function () {});
+          if (CW.loadFlags) CW.loadFlags().catch(function (e) { console.warn('scope: project create flags', e); });
+        }).catch(function (e) { console.warn('scope: project create', e); });
         return out;
       });
     });
@@ -230,7 +230,7 @@
           : CW.apiError(out, "Env create failed");
         if (ok) {
           CW.toast("Env created: " + (out.data.slug || out.data.id), true);
-          loadEnvs().catch(function () {});
+          loadEnvs().catch(function (e) { console.warn('scope: env create reload', e); });
         }
         return out;
       });
@@ -278,7 +278,7 @@
             }
             CW.persistScope();
             if (CW.renderDetailHeader) CW.renderDetailHeader();
-            if (CW.loadHomeStats) CW.loadHomeStats().catch(function () {});
+            if (CW.loadHomeStats) CW.loadHomeStats().catch(function (e) { console.warn('scope: project rename home-stats', e); });
             CW.toast("Project renamed: " + name, true);
           } else {
             CW.toast(CW.apiError(out, "Rename failed"));
@@ -320,8 +320,8 @@
           if (CW.showHome) CW.showHome();
           else renderProjectEnv();
           loadProjects().then(function () {
-            if (CW.loadHomeStats) CW.loadHomeStats().catch(function () {});
-          }).catch(function () {});
+            if (CW.loadHomeStats) CW.loadHomeStats().catch(function (e) { console.warn('scope: project delete home-stats', e); });
+          }).catch(function (e) { console.warn('scope: project delete', e); });
           return out;
         });
     });
@@ -348,9 +348,9 @@
             if (CW.state.envId === eid) CW.state.envSlug = nextSlug;
             CW.persistScope();
             renderProjectEnv();
-            if (CW.loadReleases) CW.loadReleases().catch(function () {});
-            if (CW.loadKeys) CW.loadKeys().catch(function () {});
-            if (CW.loadStats) CW.loadStats().catch(function () {});
+            if (CW.loadReleases) CW.loadReleases().catch(function (e) { console.warn('scope: env rename releases', e); });
+            if (CW.loadKeys) CW.loadKeys().catch(function (e) { console.warn('scope: env rename keys', e); });
+            if (CW.loadStats) CW.loadStats().catch(function (e) { console.warn('scope: env rename stats', e); });
             CW.toast("Environment renamed: " + nextSlug, true);
           } else {
             CW.toast(CW.apiError(out, "Rename failed"));
@@ -387,10 +387,10 @@
           CW.persistScope();
           CW.toast("Environment deleted: " + label, true);
           loadEnvs().then(function () {
-            if (CW.loadReleases) CW.loadReleases().catch(function () {});
-            if (CW.loadKeys) CW.loadKeys().catch(function () {});
-            if (CW.loadStats) CW.loadStats().catch(function () {});
-          }).catch(function () {});
+            if (CW.loadReleases) CW.loadReleases().catch(function (e) { console.warn('scope: env delete releases', e); });
+            if (CW.loadKeys) CW.loadKeys().catch(function (e) { console.warn('scope: env delete keys', e); });
+            if (CW.loadStats) CW.loadStats().catch(function (e) { console.warn('scope: env delete stats', e); });
+          }).catch(function (e) { console.warn('scope: env delete', e); });
           return out;
         });
     });
@@ -452,7 +452,7 @@
         }
         return; // route()->openProject loads detail scope
       }
-      CW.loadHomeStats().catch(function () {});
+      CW.loadHomeStats().catch(function (e) { console.warn('scope: home refresh', e); });
       // Preload current scope in the background so a card click is instant.
       // Flags first: loadExperiments filters by CW.state.flags and
       // mergedRules resolves against merged flags, so rules/experiments

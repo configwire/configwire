@@ -511,7 +511,7 @@
       var sel = CW.$("home-since");
       if (sel) sel.value = getHomeSince();
     } catch (e) { /* test harness without the select */ }
-    if (CW.state.token) loadHomeStats().catch(function () { });
+    if (CW.state.token) loadHomeStats().catch(function (e) { console.warn('router: home stats', e); });
   }
 
   function scrollBelowSticky(card) {
