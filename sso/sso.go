@@ -10,12 +10,20 @@
 //   - GET /api/v1/admin/auth/mode -> {mode} (public): the UI mode signal
 //     ("standard" default, "sso" when cloud-managed).
 //
-// Rate limiting: redeem deliberately reuses the same protection as the
-// public setup endpoint — both live under /api/v1/admin/ and are gated
-// by the global limits.CheckIP middleware (admin-IP allowlist +
-// per-IP budget). No per-route bucket, identical to setup by
-// construction (mirrors the existing per-process caveat: limits, like
-// the nonce cache below, are per process).
+// Rate limiting: redeem reuses the same protection as the public setup
+// endpoint (both live under /api/v1/admin/ and are gated by the global
+// limits.CheckIP middleware: admin-IP allowlist) PLUS a small per-route
+// per-IP bucket below (RedeemPerIPLimit per RedeemPerIPWindow). Legit
+// redeem is one call per login, so 10/min/IP is far above real use and
+// below brute-force relevance. The bucket key is the client IP via
+// limits.ClientIP (the same trusted-IP resolution the global limiter
+// uses), the 429 shape reuses apireq.TooMany ("Rate limit exceeded." +
+// Retry-After: 1, byte-identical to limits.BlockIP), and the bucket is
+// per-process memory like the nonce cache above — consistent with the
+// documented single-binary model (cf. production-hardening plan §7
+// risk 3: a NAT-shared dashboard brushing 10/min/IP is a false
+// positive; the escape hatch is bumping the constant, not a new env
+// knob).
 //
 // Security: the ticket, secret, MAC, and nonce NEVER appear in logs —
 // log lines carry email= only (existing account.go convention).
@@ -37,6 +45,7 @@ import (
 	"time"
 
 	"github.com/configwire/configwire/internal/apireq"
+	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/security"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -296,6 +305,64 @@ func (c *NonceCache) Claim(nonce string) bool {
 	return false
 }
 
+// RedeemPerIPLimit caps POST /api/v1/admin/sso/redeem at 10 requests
+// per RedeemPerIPWindow per client IP. Code constant by decision (no
+// knob sprawl): legit redeem is one call per login, so 10/min/IP is far
+// above real use — if a NAT-shared dashboard ever brushes it (plan §7
+// risk 3), bump this constant.
+const RedeemPerIPLimit = 10
+
+const RedeemPerIPWindow = time.Minute
+
+// redeemBucket is a minimal per-IP fixed-window counter (stdlib only).
+// limits.Limiter is not reused: its window is hardcoded to 1s with no
+// per-route budget, while redeem needs a 1-minute window — importing
+// limits only for ClientIP keeps the trusted-IP resolution identical to
+// the global limiter without duplicating it. Per-process memory like
+// NonceCache and limits (single-binary model); opportunistic sweeps
+// (<=1/window) drop entries idle for >2 windows.
+type redeemBucket struct {
+	mu        sync.Mutex
+	windows   map[string]*redeemWindow
+	lastSweep time.Time
+}
+
+type redeemWindow struct {
+	start time.Time
+	count int
+}
+
+func newRedeemBucket() *redeemBucket {
+	return &redeemBucket{windows: make(map[string]*redeemWindow)}
+}
+
+// allow consumes one token for ip, reporting false when the window is
+// exhausted. Empty ip shares one "unknown" bucket instead of
+// fail-opening (mirrors limits.CheckIP).
+func (b *redeemBucket) allow(ip string) bool {
+	if ip == "" {
+		ip = "unknown"
+	}
+	now := time.Now()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	w, ok := b.windows[ip]
+	if !ok || now.Sub(w.start) >= RedeemPerIPWindow {
+		w = &redeemWindow{start: now}
+		b.windows[ip] = w
+	}
+	w.count++
+	if now.Sub(b.lastSweep) >= RedeemPerIPWindow {
+		b.lastSweep = now
+		for k, v := range b.windows {
+			if now.Sub(v.start) >= 2*RedeemPerIPWindow {
+				delete(b.windows, k)
+			}
+		}
+	}
+	return w.count <= RedeemPerIPLimit
+}
+
 // superusersCollection is the PocketBase auth collection holding admins.
 const superusersCollection = core.CollectionNameSuperusers
 
@@ -318,6 +385,21 @@ type server struct {
 	secret   []byte
 	cache    *NonceCache
 	cloudURL string
+
+	mu     sync.Mutex
+	redeem *redeemBucket
+}
+
+// allowRedeem consumes one per-IP redeem token, lazily creating the
+// bucket so zero-value servers (incl. older test literals) keep working.
+func (s *server) allowRedeem(ip string) bool {
+	s.mu.Lock()
+	if s.redeem == nil {
+		s.redeem = newRedeemBucket()
+	}
+	b := s.redeem
+	s.mu.Unlock()
+	return b.allow(ip)
 }
 
 // Register mounts the public SSO routes (no auth middleware: redeem
@@ -331,7 +413,7 @@ func Register(se *core.ServeEvent, cfg Config) {
 	if cache == nil {
 		cache = NewNonceCache(NonceTTL)
 	}
-	s := &server{mode: mode, secret: cfg.Secret, cache: cache, cloudURL: strings.TrimSpace(cfg.CloudURL)}
+	s := &server{mode: mode, secret: cfg.Secret, cache: cache, cloudURL: strings.TrimSpace(cfg.CloudURL), redeem: newRedeemBucket()}
 	se.Router.GET("/api/v1/admin/auth/mode", s.getMode)
 	se.Router.POST("/api/v1/admin/sso/redeem", s.postRedeem)
 }
@@ -364,6 +446,12 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 			"message": msgSSODisabled,
 			"status":  http.StatusNotFound,
 		})
+	}
+	// Cheap reject before any HMAC work: per-IP bucket keyed by the same
+	// trusted-IP resolution the global limiter uses. 429 shape reuses
+	// apireq.TooMany so it is byte-identical to limits.BlockIP.
+	if !s.allowRedeem(limits.ClientIP(re)) {
+		return apireq.TooMany(re, "Rate limit exceeded.")
 	}
 	var req redeemRequest
 	if err := apireq.DecodeBody(re, &req); err != nil {
