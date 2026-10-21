@@ -121,7 +121,7 @@
       } else {
         CW.toast(CW.$("account-result").textContent);
       }
-      loadAccounts().catch(function () {});
+      loadAccounts().catch(function (e) { console.warn('account: create list refresh', e); });
       return out;
     });
   }
@@ -140,7 +140,7 @@
             ? "Password changed."
             : CW.apiError(out, "Password change failed");
           CW.toast(CW.$("account-result").textContent, ok);
-          if (ok) loadAccounts().catch(function () {});
+          if (ok) loadAccounts().catch(function (e) { console.warn('account: password change list refresh', e); });
           return out;
         });
     });
@@ -162,7 +162,7 @@
             ? "Admin deleted."
             : CW.apiError(out, "Delete failed");
           CW.toast(CW.$("account-result").textContent, ok);
-          if (ok) loadAccounts().catch(function () {});
+          if (ok) loadAccounts().catch(function (e) { console.warn('account: delete list refresh', e); });
           return out;
         });
     });

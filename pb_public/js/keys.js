@@ -109,7 +109,7 @@
       } else {
         CW.$("key-result").textContent = CW.apiError(out, "Key create failed");
       }
-      loadKeys().catch(function () {});
+      loadKeys().catch(function (e) { console.warn('keys: create list refresh', e); });
       return out;
     });
   }
@@ -121,9 +121,9 @@
         CW.toast(keyOk
           ? "Key revoked."
           : CW.apiError(out, "Revoke failed"), keyOk);
-        loadKeys().catch(function () {});
+        loadKeys().catch(function (e) { console.warn('keys: revoke list refresh', e); });
         return out;
-      });
+    });
   }
 
   function parseRpsOrNull(raw) {
@@ -187,7 +187,7 @@
         ? "Key limits updated."
         : CW.apiError(out, "Update failed"), ok);
       if (ok) closeKeyLimitsDialog();
-      loadKeys().catch(function () {});
+      loadKeys().catch(function (e) { console.warn('keys: limits save list refresh', e); });
       return out;
     });
   }

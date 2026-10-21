@@ -83,11 +83,11 @@
         }
         CW.setLoggedIn(false);
         if (CW.syncSidebar) CW.syncSidebar();
-        if (CW.checkSetup) CW.checkSetup().catch(function () {});
+        if (CW.checkSetup) CW.checkSetup().catch(function (e) { console.warn('boot: setup check', e); });
       }, function () {
         CW.setLoggedIn(false);
         if (CW.syncSidebar) CW.syncSidebar();
-        if (CW.checkSetup) CW.checkSetup().catch(function () {});
+        if (CW.checkSetup) CW.checkSetup().catch(function (e) { console.warn('boot: setup recheck', e); });
       });
     }
     function normalBoot() {
@@ -203,17 +203,17 @@
       CW.bumpScopeGen();
       var eg = CW.$("env-group-name");
       if (eg) eg.textContent = (sel && sel.slug) || CW.state.envSlug || "env";
-      CW.loadReleases().catch(function () {});
-      CW.loadKeys().catch(function () {});
-      CW.loadStats().catch(function () {});
+      CW.loadReleases().catch(function (e) { console.warn('boot: env switch releases', e); });
+      CW.loadKeys().catch(function (e) { console.warn('boot: env switch keys', e); });
+      CW.loadStats().catch(function (e) { console.warn('boot: env switch stats', e); });
     });
-    CW.on("stats-since", "change", function () { CW.loadStats().catch(function () {}); });
+    CW.on("stats-since", "change", function () { CW.loadStats().catch(function (e) { console.warn('boot: stats since change', e); }); });
     CW.on("home-since", "change", function () {
       CW.setHomeSince(CW.$("home-since").value);
       CW.showHome();
     });
-    CW.on("stats-flag", "change", function () { CW.loadStats().catch(function () {}); });
-    CW.on("stats-flag", "input", function () { CW.loadStats().catch(function () {}); });
+    CW.on("stats-flag", "change", function () { CW.loadStats().catch(function (e) { console.warn('boot: stats flag change', e); }); });
+    CW.on("stats-flag", "input", function () { CW.loadStats().catch(function (e) { console.warn('boot: stats flag input', e); }); });
     CW.on("stats-view", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var btn = null;
@@ -1071,7 +1071,7 @@
         CW.$("publish-result").textContent = out.status === 200
           ? "Rolled back: now v" + out.data.version
           : CW.apiError(out, "Rollback failed");
-        CW.loadReleases().catch(function () {});
+        CW.loadReleases().catch(function (e) { console.warn('boot: rollback releases', e); });
       });
     });
 
@@ -1123,7 +1123,7 @@
       function reloadPublishedCollections() {
         function loadRest() {
           if (CW.loadRules) {
-            try { CW.loadRules().catch(function () {}); } catch (e) { /* best-effort */ }
+            try { CW.loadRules().catch(function (e2) { console.warn('boot: publish reload rules', e2); }); } catch (e) { /* best-effort */ }
           }
           if (CW.loadExperiments) {
             try { CW.loadExperiments().catch(CW.toastErr); } catch (e3) { /* best-effort */ }
@@ -1151,7 +1151,7 @@
           }
           CW.loadReleases().then(function () {
             if (out.status !== 200 && CW.markUnpublished) CW.markUnpublished();
-          }).catch(function () {});
+          }).catch(function (e) { console.warn('boot: publish reload releases', e); });
           reloadPublishedCollections();
         }, function (e) {
           finishApply();

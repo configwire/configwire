@@ -205,7 +205,7 @@
         if (input) input.value = "";
         backupStatus("Backup created.", true);
         if (CW.markFormClean) CW.markFormClean("backup-create-form");
-        loadBackups().catch(function () { });
+        loadBackups().catch(function (e) { console.warn('backups: create list refresh', e); });
         return out;
       }
       var fail = isBackupBusy(out)
@@ -230,7 +230,7 @@
           : (isBackupBusy(out)
             ? "Backup is in progress and cannot be deleted yet."
             : CW.apiError(out, "Delete failed")), done || undefined);
-        if (done) loadBackups().catch(function () { });
+        if (done) loadBackups().catch(function (e) { console.warn('backups: delete list refresh', e); });
         return out;
       });
     });
@@ -306,7 +306,7 @@
     var hasApi = (typeof FormData !== "undefined");
     var f = input && input.files ? input.files[0] : null;
     var bad = validateBackupUploadFile(f, hasApi);
-    if (bad !== "") { try { var ri = CW.$("backup-upload-file"); if (ri) ri.value = ""; } catch (e3) { } backupUploadStatus(bad); return Promise.resolve({ status: 0, data: null }); }
+    if (bad !== "") { try { var ri = CW.$("backup-upload-file"); if (ri) ri.value = ""; } catch (e3) { console.warn('backups: upload input reset', e3); } backupUploadStatus(bad); return Promise.resolve({ status: 0, data: null }); }
     var fd;
     try { fd = new FormData(); fd.append("file", f, f.name || "backup.zip"); }
     catch (e) { backupUploadStatus((e && e.message) || "Upload failed"); return Promise.resolve({ status: 0, data: null }); }
@@ -317,15 +317,15 @@
       throw err;
     }).then(function (out) {
       if (out.status === 401 || out.status === 403) {
-        if (CW.logout) try { CW.logout(); } catch (e) { }
+        if (CW.logout) try { CW.logout(); } catch (e) { console.warn('backups: upload logout', e); }
         backupUploadStatus(CW.apiError(out, "Upload failed"));
         return out;
       }
       var done = (out.status === 200 || out.status === 204);
       if (done) {
-        try { if (input) input.value = ""; } catch (e) { }
+        try { if (input) input.value = ""; } catch (e) { console.warn('backups: upload input clear', e); }
         backupUploadStatus("Backup uploaded.", true);
-        loadBackups().catch(function () { });
+        loadBackups().catch(function (e) { console.warn('backups: upload list refresh', e); });
         return out;
       }
       var fail = isBackupBusy(out) ? "Backup already in progress — try again when it finishes." : CW.apiError(out, "Upload failed");
