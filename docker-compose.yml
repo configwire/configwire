@@ -7,7 +7,8 @@
 # Local dev (build from this checkout, run from this dir):
 #   docker compose -f docker-compose-dev.yml up -d --build
 # First superuser (same flags as README quickstart):
-#   docker compose exec configwire ./configwire superuser upsert admin@example.com password123 --dir /app/pb_data
+#   Use a real password here — never ship the default.
+#   docker compose exec configwire ./configwire superuser upsert admin@example.com <change-me-32-chars> --dir /app/pb_data
 # Monorepo usage (run from repo root):
 #   docker compose -f configwire/docker-compose.yml up -d
 name: configwire

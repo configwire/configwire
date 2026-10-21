@@ -185,13 +185,13 @@ CONFIGWIRE_BACKUP_S3_ENABLED=1 \
 CONFIGWIRE_BACKUP_S3_ENDPOINT=http://minio:9000 \
 CONFIGWIRE_BACKUP_S3_BUCKET=configwire-backups \
 CONFIGWIRE_BACKUP_S3_REGION=us-east-1 \
-CONFIGWIRE_BACKUP_S3_ACCESS_KEY=minioadmin \
-CONFIGWIRE_BACKUP_S3_SECRET=minioadmin \
+CONFIGWIRE_BACKUP_S3_ACCESS_KEY=<access-key> \
+CONFIGWIRE_BACKUP_S3_SECRET=<secret-key> \
 CONFIGWIRE_BACKUP_S3_FORCE_PATH_STYLE=true \
 go run . serve
 ```
 
-MinIO needs `forcePathStyle` true. Create the `configwire-backups` bucket before the first backup; the server does not create buckets.
+MinIO needs `forcePathStyle` true. Create the `configwire-backups` bucket before the first backup; the server does not create buckets. Never ship the MinIO defaults — replace `<access-key>`/`<secret-key>` with real secrets.
 
 Test the S3 config without taking a backup. In the Admin UI, open the Backups card and use its Check connection button: Check saves the form with S3 enabled, then tests the stored settings, and on success morphs into Save S3 Settings. To test from the API instead, save first, then call:
 
