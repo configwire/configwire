@@ -246,6 +246,74 @@ CODE_ANON=$(curl -s -o /tmp/cw-t17-anon.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_ANON" = "200" ] && pass "anonymous fetch 200" || fail "anonymous fetch (code $CODE_ANON)"
 
+# ---- STAGE 2N (?b= stable bucket, T10 additive): mint -> echo hold -> 400 matrix ----
+# Old-client expectations above are byte-identical (expected.json untouched);
+# this block only ADDS ?b= cases reusing the stage2_fetch value map.
+echo "--- STAGE 2N (?b=): cold mint -> echo hold -> 400 matrix ---"
+CODE_B1=$(curl -s -o /tmp/cw-t17-b1.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_B1" = "200" ] && pass "cold fetch (no ?b=) 200 with minted bucket" || fail "cold fetch mint (code $CODE_B1)"
+python3 - <<'EOF' && pass "minted bucket canonical 0-9999" || fail "minted bucket canonical"
+import json, re, sys
+d = json.load(open('/tmp/cw-t17-b1.json'))
+b = d.get('bucket')
+ok = isinstance(b, str) and re.fullmatch(r'(0|[1-9][0-9]{0,3})', b) is not None and 0 <= int(b) <= 9999
+sys.exit(0 if ok else 1)
+EOF
+B_MINT="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-b1.json'))['bucket'])")"
+echo "minted bucket=$B_MINT"
+for i in 1 2; do
+  CODE_BX=$(curl -s -o /tmp/cw-t17-bx$i.json -w "%{http_code}" --max-time 10 \
+    "$BASE_URL/api/v1/env/e2e/config?b=$B_MINT&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  [ "$CODE_BX" = "200" ] && pass "?b= echo fetch $i 200" || fail "?b= echo fetch $i (code $CODE_BX)"
+done
+python3 - <<'EOF' && pass "?b= echo holds field + sticky arm + value-consistent" || fail "?b= echo hold"
+import json, sys
+a = json.load(open('/tmp/cw-t17-bx1.json'))
+b = json.load(open('/tmp/cw-t17-bx2.json'))
+exp = json.load(open('e2e/fixtures/expected.json'))['stage2_fetch']['exp_bool_values_by_variant']
+ok = (a.get('bucket') == b.get('bucket')
+      and a.get('variants', {}).get('exp_bool') == b.get('variants', {}).get('exp_bool')
+      and a['values'].get('exp_bool') is exp[a['variants']['exp_bool']])
+sys.exit(0 if ok else 1)
+EOF
+ETAG_B="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-bx1.json'))['etag'])")"
+CODE_B304=$(curl -s -o /tmp/cw-t17-b304.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?b=$B_MINT&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" -H "If-None-Match: $ETAG_B" 2>/dev/null || echo "000")
+[ "$CODE_B304" = "304" ] && pass "?b= conditional fetch 304 (keeps bucket)" || fail "?b= conditional 304 (code $CODE_B304)"
+for BAD in abc -1 10000 007; do
+  CODE_BAD=$(curl -s -o /tmp/cw-t17-bbad.json -w "%{http_code}" --max-time 10 \
+    "$BASE_URL/api/v1/env/e2e/config?b=$BAD&platform=ios" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  [ "$CODE_BAD" = "400" ] && pass "?b=$BAD malformed 400" || fail "?b=$BAD malformed (code $CODE_BAD)"
+done
+python3 - <<'EOF' && pass "malformed ?b= body names the bucket rule" || fail "malformed ?b= body"
+import json, sys
+d = json.load(open('/tmp/cw-t17-bbad.json'))
+# PocketBase Sentenize() capitalises the first letter over the wire.
+sys.exit(0 if 'invalid "b"' in d.get('message', '').lower() else 1)
+EOF
+CODE_BUID=$(curl -s -o /tmp/cw-t17-buid.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?b=$B_MINT&uid=$E2E_RAW_UID&platform=ios" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_BUID" = "400" ] && pass "?b=+?uid= 400 (uid wins)" || fail "?b=+?uid= (code $CODE_BUID)"
+curl -s -o /tmp/cw-t17-bhash.json --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?b=$B_MINT&userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
+python3 - <<'EOF' && pass "?b=+userHash -> ?b= arm wins" || fail "?b=+userHash arm"
+import json, sys
+a = json.load(open('/tmp/cw-t17-bx1.json'))
+c = json.load(open('/tmp/cw-t17-bhash.json'))
+ok = (c.get('bucket') == a.get('bucket')
+      and c.get('variants', {}).get('exp_bool') == a.get('variants', {}).get('exp_bool'))
+sys.exit(0 if ok else 1)
+EOF
+curl -s -o /tmp/cw-t17-bcold2.json --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
+python3 - <<'EOF' && pass "old-client (no ?b=) arm byte-identical post-bucket traffic" || fail "old-client arm drift"
+import json, sys
+a = json.load(open('/tmp/cw-t17-bcold2.json'))
+exp = json.load(open('e2e/fixtures/expected.json'))['stage2_fetch']
+sys.exit(0 if a.get('variants', {}).get('exp_bool') == exp['exp_bool_variant'] else 1)
+EOF
+
 # ---- STAGE 3: exposures via T9 route + stats --------------------------------
 echo "--- STAGE 3: 1 fetch + 3 exposures -> stats ---"
 EV='{"events":[{"kind":"fetch","flag":"exp_bool","variant":"","userHash":"aaaabbbbccccdddd"},{"kind":"exposure","flag":"exp_bool","variant":"control","userHash":"aaaabbbbccccdddd"},{"kind":"exposure","flag":"exp_bool","variant":"control","userHash":"bbbbccccddddeeee"},{"kind":"exposure","flag":"exp_bool","variant":"treatment","userHash":"ccccddddeeeeffff"}]}'
