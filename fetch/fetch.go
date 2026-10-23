@@ -29,12 +29,14 @@
 //     {"version","etag","values":{key:typed},"variants":{key:variant},
 //     "fetchAt":rfc3339}. A flag whose snapshot default has an unexpected
 //     shape is served as-is (publish-time validation already coerced it).
-//   - Context: bucketing identity is server-derived per request via
-//     identity.Manager.AnonID(envID, ClientIP, User-Agent, day), stored in
-//     Context.UserHash (field name kept for eval.Bucket compat); country is
-//     server geo from identity.CountryFromHeaders only — client ?userHash=
-//     (any shape) and ?country= are accepted-but-ignored, and a sent
-//     ?userHash= stamps X-CW-Deprecated-userHash: true. platform/appVersion/
+//   - Context: bucketing identity is the honored client hash when
+//     ?userHash= matches ^[0-9a-f]{16}$ (identity.IsValidAnonID),
+//     else the server-derived anonID via identity.Manager.AnonID
+//     (envID, ClientIP, User-Agent, day), stored in Context.UserHash
+//     (field name kept for eval.Bucket compat); country is server geo
+//     from identity.CountryFromHeaders only — client ?country= is
+//     accepted-but-ignored. Malformed/absent ?userHash=
+//     falls back silently (never 400). platform/appVersion/
 //     locale pass through (appVersion=not-semver -> condition false ->
 //     defaults fallthrough, still 200, never 400), attrs=<json> parsed as a
 //     flat map for custom.* conditions. ?uid= is sunset: any trimmed
@@ -56,13 +58,16 @@
 package fetch
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -161,10 +166,6 @@ func optionsConfig(re *core.RequestEvent) error {
 	return re.NoContent(http.StatusNoContent)
 }
 
-// userHashCompatHeader signals that a client-sent ?userHash= was
-// accepted-but-ignored: bucketing always uses the server-derived anonID.
-const userHashCompatHeader = "X-CW-Deprecated-userHash"
-
 // anonManager derives per-request anonIDs via per-env daily salts.
 // MemoryStore is the in-process default until the identity_salts
 // collection is wired as the durable Store; salts never leave the
@@ -178,27 +179,97 @@ func SetAnonManager(m *identity.Manager) {
 	}
 }
 
-// stampUserHashCompat sets the compat header when the client sent a
-// trimmed non-empty ?userHash= (accepted-but-ignored; server anonID
-// wins). Absent/empty/blank sends no header.
-func stampUserHashCompat(h http.Header, q url.Values) {
-	if strings.TrimSpace(q.Get("userHash")) != "" {
-		h.Set(userHashCompatHeader, "true")
+// ParseBucket validates the stable-bucket ?b= query param (clean seam for
+// the T2 mint branch and the T7 events/ingest ?b= honor — both reuse this
+// rule so fetch arms and event attribution stay joined).
+//
+// Thin delegate over identity.ParseBucketParam, the single canonical rule
+// (plain int string "0"-"9999", no coercion). Returns ("", nil) when
+// absent, (canonical, nil) when valid, ("", error) when malformed
+// (caller maps to 400, mirroring the ?uid= sunset).
+func ParseBucket(q url.Values) (string, error) {
+	return identity.ParseBucketParam(q.Get("b"))
+}
+
+// effectiveUserHash resolves one fetch's bucketing identity with the
+// stable-bucket precedence chain: valid ?b= > valid ?userHash= > daily
+// anonID fallback. A valid ?b= arm wins even alongside a valid
+// ?userHash= (one-time reshuffle for upgraded seeded installs: an
+// install that previously bucketed on its honored seed hash re-rolls
+// onto its minted number once it starts sending ?b= — accepted by
+// owner). A malformed ?b= falls through here so BuildContext owns the
+// single 400 (this helper never errors, preserving the silent-fallback
+// contract for ?userHash=); see identity.ResolveHonoredHash.
+func effectiveUserHash(q url.Values, anonID string) string {
+	if b, err := ParseBucket(q); err == nil && b != "" {
+		return b
+	}
+	return identity.ResolveHonoredHash(q.Get("userHash"), anonID)
+}
+
+// MintBucket mints one stable-bucket number as its canonical string
+// "0"-"9999", uniform over 10000 via crypto/rand (stdlib only, no seed
+// state — mirrors identity.GenerateSalt's rand.Read discipline, bounded
+// with rand.Int). Stateless per-response randomness: the server persists
+// nothing; first-write-wins persistence lives client-side (T5).
+func MintBucket() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(10000))
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(n.Int64(), 10), nil
+}
+
+// EffectiveBucket resolves the response bucket field: the client's valid
+// ?b= wins verbatim (no mint override), else a fresh MintBucket. Malformed
+// ?b= returns the single ParseBucket 400-mapped error (unreachable from
+// getConfig — BuildContext already owns that 400 — but kept so this seam
+// never invents a second validation rule).
+func EffectiveBucket(q url.Values) (string, error) {
+	if b, err := ParseBucket(q); err != nil {
+		return "", err
+	} else if b != "" {
+		return b, nil
+	}
+	return MintBucket()
+}
+
+// emptyReleaseBody builds the fresh-env 200 shape: version 0, etag "none",
+// EMPTY values — and NO bucket field (nothing to arm yet).
+func emptyReleaseBody(fetchAt string) map[string]any {
+	return map[string]any{
+		"version":  0,
+		"etag":     emptyReleaseEtag,
+		"values":   map[string]any{},
+		"variants": map[string]string{},
+		"fetchAt":  fetchAt,
+	}
+}
+
+// evaluatedBody builds the evaluated 200 shape: version/etag/values/
+// variants plus the EFFECTIVE bucket (client's valid ?b= else fresh mint).
+// The 304 path returns empty before this is ever called, so a 304 never
+// mints.
+func evaluatedBody(version int, etag string, values map[string]any, variants map[string]string, bucket, fetchAt string) map[string]any {
+	return map[string]any{
+		"version":  version,
+		"etag":     etag,
+		"values":   values,
+		"variants": variants,
+		"bucket":   bucket,
+		"fetchAt":  fetchAt,
 	}
 }
 
 // BuildContext maps fetch query params onto an eval.Context purely (no I/O),
-// so it is unit-testable. Bucketing identity is server-derived: anonID is
-// the per-request Manager.AnonID(envID, ClientIP, User-Agent, day) value
-// passed in by getConfig and stored in Context.UserHash (field name kept
-// for eval.Bucket compat); country is the server geo from the limits
-// country-header order (identity.CountryFromHeadersWith) passed in by
-// getConfig. Client ?userHash=
-// (any shape, even malformed) and client ?country= are accepted-but-ignored
-// and never reach eval; getConfig stamps userHashCompatHeader when the
-// client sent ?userHash=. Legacy ?uid= is sunset: any trimmed non-empty
-// ?uid= is a 400 ("raw \"uid\" is forbidden: send \"userHash\" instead."),
-// even alongside anonID; empty ?uid= == absent. platform/appVersion/locale
+// so it is unit-testable. Bucketing identity is the caller-resolved value:
+// getConfig passes effectiveUserHash(q, anonID) as anonID and it is stored
+// in Context.UserHash (field name kept for eval.Bucket compat); country is
+// the server geo from the limits country-header order (passed in by
+// getConfig). Client ?country= is accepted-but-ignored and never reaches
+// eval. Legacy ?uid= is sunset: any trimmed non-empty ?uid= is a
+// 400 ("raw \"uid\" is forbidden: send \"userHash\" instead."), even
+// alongside anonID; empty ?uid= == absent. platform/appVersion/locale
 // pass through untouched (invalid values evaluate to false downstream,
 // never 400 here). Malformed attrs, forbidden PII attrs keys, or attrs
 // over MaxAttrsBytes -> error (caller maps to 400/414). Missing
@@ -207,8 +278,20 @@ func BuildContext(q url.Values, anonID, country string) (eval.Context, error) {
 	if strings.TrimSpace(q.Get("uid")) != "" {
 		return eval.Context{}, fmt.Errorf(`raw "uid" is forbidden: send "userHash" instead.`)
 	}
+	// Stable bucket wins over the caller-resolved identity (which already
+	// encodes honored-?userHash= > anonID): ctx.UserHash carries the
+	// canonical number string so eval.Bucket(number+seed) evaluates the
+	// minted arm. Malformed ?b= is 400 here (single error owner;
+	// effectiveUserHash falls through on malformed so this branch owns
+	// it). ?uid= above wins over ?b= (uid checked first).
+	userHash := anonID
+	if b, berr := ParseBucket(q); berr != nil {
+		return eval.Context{}, berr
+	} else if b != "" {
+		userHash = b
+	}
 	ctx := eval.Context{
-		UserHash:    anonID,
+		UserHash:    userHash,
 		Platform:    q.Get("platform"),
 		AppVersion:  q.Get("appVersion"),
 		Locale:      q.Get("locale"),
@@ -480,14 +563,13 @@ func getConfig(re *core.RequestEvent) error {
 		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Failed to derive identity.", "status": 500})
 	}
 	q := re.Request.URL.Query()
-	ctx, cerr := BuildContext(q, anonID, identity.CountryFromHeadersWith(re.Request.Header, limits.GetConfig().CountryHeaders))
+	ctx, cerr := BuildContext(q, effectiveUserHash(q, anonID), identity.CountryFromHeadersWith(re.Request.Header, limits.GetConfig().CountryHeaders))
 	if cerr != nil {
 		if len(re.Request.URL.Query().Get("attrs")) > MaxAttrsBytes {
 			return re.JSON(http.StatusRequestURITooLong, map[string]any{"message": cerr.Error(), "status": http.StatusRequestURITooLong})
 		}
 		return re.BadRequestError(cerr.Error(), nil)
 	}
-	stampUserHashCompat(re.Response.Header(), q)
 
 	rel, err := latestRelease(re.App, env.Id)
 	if err != nil {
@@ -495,13 +577,7 @@ func getConfig(re *core.RequestEvent) error {
 	}
 	if rel == nil {
 		setFetchCacheHeaders(re)
-		return re.JSON(http.StatusOK, map[string]any{
-			"version":  0,
-			"etag":     emptyReleaseEtag,
-			"values":   map[string]any{},
-			"variants": map[string]string{},
-			"fetchAt":  time.Now().UTC().Format(time.RFC3339Nano),
-		})
+		return re.JSON(http.StatusOK, emptyReleaseBody(time.Now().UTC().Format(time.RFC3339Nano)))
 	}
 
 	etag := rel.GetString("etag")
@@ -527,11 +603,22 @@ func getConfig(re *core.RequestEvent) error {
 	if releases.IsLegacyTopLevel(snapBytes) {
 		markDeprecatedSnapshot(re.Response.Header())
 	}
-	return re.JSON(http.StatusOK, map[string]any{
-		"version":  rel.GetInt("version"),
-		"etag":     etag,
-		"values":   values,
-		"variants": variants,
-		"fetchAt":  time.Now().UTC().Format(time.RFC3339Nano),
-	})
+	// 200-only mint: this runs after the 304 early-return above, so a
+	// 304 never mints. BuildContext already 400s malformed ?b=; the error
+	// here is unreachable (mint entropy failure -> 500).
+	bucket, berr := EffectiveBucket(q)
+	if berr != nil {
+		if _, perr := ParseBucket(q); perr != nil {
+			return re.BadRequestError(berr.Error(), nil)
+		}
+		return re.JSON(http.StatusInternalServerError, map[string]any{"message": "Failed to mint bucket.", "status": 500})
+	}
+	return re.JSON(http.StatusOK, evaluatedBody(
+		rel.GetInt("version"),
+		etag,
+		values,
+		variants,
+		bucket,
+		time.Now().UTC().Format(time.RFC3339Nano),
+	))
 }
