@@ -23,30 +23,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"regexp"
-	"strings"
 	"time"
 )
 
-// anonIDRe is the frozen 16-lowercase-hex shape shared with fetch's
-// isValidUserHash and ingest.HashUser: every DeriveAnonID output must
-// match it.
+// anonIDRe is the frozen 16-lowercase-hex shape of every DeriveAnonID
+// output (server-derived daily anonID).
 var anonIDRe = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
-// IsValidAnonID reports whether s matches ^[0-9a-f]{16}$ — the same
-// contract fetch enforces on ?userHash=.
+// IsValidAnonID reports whether s matches ^[0-9a-f]{16}$ — the daily
+// anonID shape.
 func IsValidAnonID(s string) bool {
 	return anonIDRe.MatchString(s)
-}
-
-// ResolveHonoredHash returns the request identity: the trimmed client hash
-// when it satisfies IsValidAnonID, else the fallback. Never errors, so
-// callers never 400 on userHash. Fetch and ingest share it so both
-// identities join on the same value.
-func ResolveHonoredHash(clientHash, fallback string) string {
-	if s := strings.TrimSpace(clientHash); IsValidAnonID(s) {
-		return s
-	}
-	return fallback
 }
 
 // DeriveAnonID is the pure derivation: hex(HMAC_SHA256(salt,

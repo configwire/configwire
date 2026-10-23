@@ -29,14 +29,14 @@
 //     {"version","etag","values":{key:typed},"variants":{key:variant},
 //     "fetchAt":rfc3339}. A flag whose snapshot default has an unexpected
 //     shape is served as-is (publish-time validation already coerced it).
-//   - Context: bucketing identity is the honored client hash when
-//     ?userHash= matches ^[0-9a-f]{16}$ (identity.IsValidAnonID),
-//     else the server-derived anonID via identity.Manager.AnonID
-//     (envID, ClientIP, User-Agent, day), stored in Context.UserHash
-//     (field name kept for eval.Bucket compat); country is server geo
-//     from identity.CountryFromHeaders only — client ?country= is
-//     accepted-but-ignored. Malformed/absent ?userHash=
-//     falls back silently (never 400). platform/appVersion/
+//   - Context: bucketing identity is server-derived per request via
+//     identity.Manager.AnonID(envID, ClientIP, User-Agent, day), stored in
+//     Context.UserHash (field name kept for eval.Bucket compat); country is
+//     server geo from identity.CountryFromHeaders only — client ?userHash=
+//     (any shape) and ?country= are accepted-but-ignored, and a sent
+//     ?userHash= stamps X-CW-Deprecated-userHash: true. A valid stable
+//     ?b= wins over the anonID (fetch/ingest bucket join); malformed
+//     ?b= is 400. platform/appVersion/
 //     locale pass through (appVersion=not-semver -> condition false ->
 //     defaults fallthrough, still 200, never 400), attrs=<json> parsed as a
 //     flat map for custom.* conditions. ?uid= is sunset: any trimmed
@@ -166,6 +166,10 @@ func optionsConfig(re *core.RequestEvent) error {
 	return re.NoContent(http.StatusNoContent)
 }
 
+// userHashCompatHeader signals that a client-sent ?userHash= was
+// accepted-but-ignored: bucketing always uses the server-derived anonID.
+const userHashCompatHeader = "X-CW-Deprecated-userHash"
+
 // anonManager derives per-request anonIDs via per-env daily salts.
 // MemoryStore is the in-process default until the identity_salts
 // collection is wired as the durable Store; salts never leave the
@@ -191,20 +195,27 @@ func ParseBucket(q url.Values) (string, error) {
 	return identity.ParseBucketParam(q.Get("b"))
 }
 
+// stampUserHashCompat sets the compat header when the client sent a
+// trimmed non-empty ?userHash= (accepted-but-ignored; server anonID
+// wins). Absent/empty/blank sends no header.
+func stampUserHashCompat(h http.Header, q url.Values) {
+	if strings.TrimSpace(q.Get("userHash")) != "" {
+		h.Set(userHashCompatHeader, "true")
+	}
+}
+
 // effectiveUserHash resolves one fetch's bucketing identity with the
-// stable-bucket precedence chain: valid ?b= > valid ?userHash= > daily
-// anonID fallback. A valid ?b= arm wins even alongside a valid
-// ?userHash= (one-time reshuffle for upgraded seeded installs: an
-// install that previously bucketed on its honored seed hash re-rolls
-// onto its minted number once it starts sending ?b= — accepted by
-// owner). A malformed ?b= falls through here so BuildContext owns the
-// single 400 (this helper never errors, preserving the silent-fallback
-// contract for ?userHash=); see identity.ResolveHonoredHash.
+// stable-bucket precedence: valid ?b= wins, else the daily anonID
+// fallback. Client ?userHash= (any shape) is accepted-but-ignored and
+// never reaches eval; getConfig stamps userHashCompatHeader when one is
+// sent. A malformed ?b= falls through here so BuildContext owns the
+// single 400 (this helper never errors, preserving the silent-ignore
+// contract for ?userHash=).
 func effectiveUserHash(q url.Values, anonID string) string {
 	if b, err := ParseBucket(q); err == nil && b != "" {
 		return b
 	}
-	return identity.ResolveHonoredHash(q.Get("userHash"), anonID)
+	return anonID
 }
 
 // MintBucket mints one stable-bucket number as its canonical string
@@ -266,8 +277,9 @@ func evaluatedBody(version int, etag string, values map[string]any, variants map
 // getConfig passes effectiveUserHash(q, anonID) as anonID and it is stored
 // in Context.UserHash (field name kept for eval.Bucket compat); country is
 // the server geo from the limits country-header order (passed in by
-// getConfig). Client ?country= is accepted-but-ignored and never reaches
-// eval. Legacy ?uid= is sunset: any trimmed non-empty ?uid= is a
+// getConfig). Client ?userHash= (any shape, even malformed) and client
+// ?country= are accepted-but-ignored and never reach eval; getConfig
+// stamps userHashCompatHeader when the client sent ?userHash=. Legacy ?uid= is sunset: any trimmed non-empty ?uid= is a
 // 400 ("raw \"uid\" is forbidden: send \"userHash\" instead."), even
 // alongside anonID; empty ?uid= == absent. platform/appVersion/locale
 // pass through untouched (invalid values evaluate to false downstream,
@@ -278,8 +290,8 @@ func BuildContext(q url.Values, anonID, country string) (eval.Context, error) {
 	if strings.TrimSpace(q.Get("uid")) != "" {
 		return eval.Context{}, fmt.Errorf(`raw "uid" is forbidden: send "userHash" instead.`)
 	}
-	// Stable bucket wins over the caller-resolved identity (which already
-	// encodes honored-?userHash= > anonID): ctx.UserHash carries the
+	// Stable bucket wins over the caller-resolved identity (which is the
+	// server-derived anonID — ?userHash= is ignored): ctx.UserHash carries the
 	// canonical number string so eval.Bucket(number+seed) evaluates the
 	// minted arm. Malformed ?b= is 400 here (single error owner;
 	// effectiveUserHash falls through on malformed so this branch owns
@@ -570,6 +582,7 @@ func getConfig(re *core.RequestEvent) error {
 		}
 		return re.BadRequestError(cerr.Error(), nil)
 	}
+	stampUserHashCompat(re.Response.Header(), q)
 
 	rel, err := latestRelease(re.App, env.Id)
 	if err != nil {

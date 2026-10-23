@@ -222,13 +222,12 @@ func TestMarkDeprecatedSnapshot_StampsHeaderAndCounts(t *testing.T) {
 }
 
 // TestAuthOrder_BuildContextStoresVerbatim pins that BuildContext stores
-// the caller-resolved value verbatim: it never reads ?userHash= itself,
-// so every client ?userHash= shape (valid, malformed, empty, absent)
-// yields ctx.UserHash == anon when anon is passed through. Honoring a
-// valid hash is the caller's job — getConfig passes
-// effectiveUserHash(q, anonID) (identity.ResolveHonoredHash) as anonID,
-// mirrored in ingest by deriveIdentity — so bucketing honors a valid
-// ?userHash= at the system level; this seam only stores what it is given.
+// the caller-resolved value verbatim: it never reads ?userHash= itself
+// (any client ?userHash= shape is accepted-but-ignored upstream), so
+// passing anon yields ctx.UserHash == anon for every ?userHash= shape,
+// and passing a valid ?b= arm stores the bucket. Bucketing honors a
+// valid ?b= at the system level and ignores ?userHash=; this seam only
+// stores what it is given.
 func TestAuthOrder_BuildContextStoresVerbatim(t *testing.T) {
 	const anon = "0123456789abcdef"
 	for name, raw := range map[string]string{
@@ -253,69 +252,86 @@ func TestAuthOrder_BuildContextStoresVerbatim(t *testing.T) {
 			t.Errorf("%s: UserHash = %q, want caller-resolved value %q", name, ctx.UserHash, anon)
 		}
 	}
-	// Verbatim, not ignoring: whatever the caller resolved (e.g. a valid
-	// hash honored via effectiveUserHash/ResolveHonoredHash) is stored as-is.
-	q, err := url.ParseQuery(`userHash=092081140b677b45`)
+	// Verbatim, not ignoring at this seam: whatever the caller resolved
+	// (e.g. a ?b= arm via effectiveUserHash) is stored as-is.
+	q, err := url.ParseQuery(`b=42&userHash=092081140b677b45`)
 	if err != nil {
 		t.Fatalf("bad test query: %v", err)
 	}
 	resolved := effectiveUserHash(q, anon)
-	if resolved == anon {
-		t.Fatalf("test setup wrong: valid hash must resolve to itself, got fallback %q", resolved)
+	if resolved != "42" {
+		t.Fatalf("test setup wrong: valid ?b= must resolve to the bucket, got %q", resolved)
 	}
 	ctx, err := BuildContext(q, resolved, "")
 	if err != nil {
-		t.Fatalf("honored hash must not error, got %v", err)
+		t.Fatalf("bucket arm must not error, got %v", err)
 	}
 	if ctx.UserHash != resolved {
-		t.Errorf("UserHash = %q, want caller-resolved honored hash %q", ctx.UserHash, resolved)
+		t.Errorf("UserHash = %q, want caller-resolved bucket %q", ctx.UserHash, resolved)
 	}
 }
 
-// Honored valid ?userHash= resolves to itself; absent/malformed falls
-// back, never 400.
-func TestAuthOrder_HonoredUserHash(t *testing.T) {
+// Ignored ?userHash= resolves to the server anonID in every shape;
+// absent/malformed/valid all fall back silently, never 400, and a sent
+// ?userHash= stamps the compat header.
+func TestAuthOrder_UserHashIgnored(t *testing.T) {
 	const anon = "0123456789abcdef"
-	honored := map[string]string{
+	ignored := map[string]string{
 		"valid-hex":      `userHash=092081140b677b45`,
 		"all-f":          `userHash=ffffffffffffffff`,
 		"all-digits":     `userHash=0000000000000000`,
 		"trimmed":        `userHash=++092081140b677b45++`,
 		"with-attrs":     `userHash=092081140b677b45&platform=ios`,
 		"with-uid-empty": `userHash=092081140b677b45&uid=`,
+		"absent":         `platform=ios`,
+		"empty-value":    `userHash=`,
+		"blank":          `userHash=+++`,
+		"too-short":      `userHash=abc123`,
+		"too-long":       `userHash=0123456789abcdef00`,
+		"uppercase":      `userHash=0123456789ABCDEF`,
+		"non-hex":        `userHash=0123456789abcdeg`,
+		"raw-uid":        `userHash=user-7`,
 	}
-	for name, raw := range honored {
-		q, err := url.ParseQuery(raw)
-		if err != nil {
-			t.Fatalf("%s: bad test query: %v", name, err)
-		}
-		if got := effectiveUserHash(q, anon); got != strings.TrimSpace(q.Get("userHash")) {
-			t.Errorf("%s: effective = %q, want honored hash %q", name, got, strings.TrimSpace(q.Get("userHash")))
-		}
-		if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err != nil {
-			t.Errorf("%s: honored hash must not error, got %v", name, err)
-		}
-	}
-	fallback := map[string]string{
-		"absent":      `platform=ios`,
-		"empty-value": `userHash=`,
-		"blank":       `userHash=+++`,
-		"too-short":   `userHash=abc123`,
-		"too-long":    `userHash=0123456789abcdef00`,
-		"uppercase":   `userHash=0123456789ABCDEF`,
-		"non-hex":     `userHash=0123456789abcdeg`,
-		"raw-uid":     `userHash=user-7`,
-	}
-	for name, raw := range fallback {
+	for name, raw := range ignored {
 		q, err := url.ParseQuery(raw)
 		if err != nil {
 			t.Fatalf("%s: bad test query: %v", name, err)
 		}
 		if got := effectiveUserHash(q, anon); got != anon {
-			t.Errorf("%s: effective = %q, want fallback anonID %q", name, got, anon)
+			t.Errorf("%s: effective = %q, want server anonID %q (userHash ignored)", name, got, anon)
 		}
 		if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err != nil {
-			t.Errorf("%s: malformed userHash must be 200-eligible (no 400), got %v", name, err)
+			t.Errorf("%s: ignored userHash must be 200-eligible (no 400), got %v", name, err)
+		}
+	}
+	// Compat header: trimmed non-empty ?userHash= stamps, absent/empty/blank does not.
+	for name, raw := range map[string]string{
+		"valid-hex": `userHash=092081140b677b45`,
+		"non-hex":   `userHash=abc123`,
+	} {
+		q, err := url.ParseQuery(raw)
+		if err != nil {
+			t.Fatalf("%s: bad test query: %v", name, err)
+		}
+		h := http.Header{}
+		stampUserHashCompat(h, q)
+		if got := h.Get(userHashCompatHeader); got != "true" {
+			t.Errorf("%s: header = %q, want %q", name, got, "true")
+		}
+	}
+	for name, raw := range map[string]string{
+		"absent": `platform=ios`,
+		"empty":  `userHash=`,
+		"blank":  `userHash=+++`,
+	} {
+		q, err := url.ParseQuery(raw)
+		if err != nil {
+			t.Fatalf("%s: bad test query: %v", name, err)
+		}
+		h := http.Header{}
+		stampUserHashCompat(h, q)
+		if got := h.Get(userHashCompatHeader); got != "" {
+			t.Errorf("%s: header = %q, want absent", name, got)
 		}
 	}
 }
@@ -363,14 +379,14 @@ func TestAuthOrder_CORSDefault(t *testing.T) {
 // seams (TestResponseBucketMintedWhenAbsent, TestResponseBucketEchoesClientBucket);
 // T8 compat_bucket_guard_test.go owns the old-client byte-identical arms. This
 // block pins only the owner-confirmed contract surface: canonical honored, the
-// 4-value malformed 400 matrix (abc/-1/10000/007), ?b= > ?userHash= arm,
+// 4-value malformed 400 matrix (abc/-1/10000/007), ?b= > ignored-?userHash= arm,
 // ?uid=-wins 400. 304-keeps-bucket and empty-release no-mint live in
 // fetch_test.go (response-shape home) — see
 // TestFetch_StableBucket304KeepsBucket and TestFetch_StableBucketEmptyReleaseNoMint.
 
 // TestContract_StableBucketCanonicalHonored pins: canonical "0"/"42"/"9999"
 // ?b= reaches ctx.UserHash verbatim (Bucket(number+seed) arm), even alongside
-// a valid ?userHash= (precedence resolved by effectiveUserHash before
+// a (ignored) ?userHash= (precedence resolved by effectiveUserHash before
 // BuildContext stores it).
 func TestContract_StableBucketCanonicalHonored(t *testing.T) {
 	const anon = "0123456789abcdef"
@@ -406,9 +422,9 @@ func TestContract_StableBucketMalformed400Matrix(t *testing.T) {
 	}
 }
 
-// TestContract_StableBucketWinsOverUserHashArm pins the precedence flip at
-// the arm level: ?b=42 + valid ?userHash= evaluates the Bucket("42"+seed)
-// arm (eval.Assign on the canonical number), not the honored-hash arm.
+// TestContract_StableBucketWinsOverUserHashArm pins the precedence at
+// the arm level: ?b=42 + (ignored) ?userHash= evaluates the Bucket("42"+seed)
+// arm (eval.Assign on the canonical number), not the client-hash arm.
 func TestContract_StableBucketWinsOverUserHashArm(t *testing.T) {
 	const anon = "0123456789abcdef"
 	q := query(`b=42&userHash=092081140b677b45&platform=ios`)
@@ -434,7 +450,7 @@ func TestContract_StableBucketWinsOverUserHashArm(t *testing.T) {
 			{Name: "treatment", WeightBps: 5000},
 		},
 	}, "092081140b677b45"); variants["new_ui"] == hon && hon != want {
-		t.Fatalf("?b= arm collapsed onto honored-hash arm %q (precedence lost)", hon)
+		t.Fatalf("?b= arm collapsed onto ignored-hash arm %q (precedence lost)", hon)
 	}
 }
 

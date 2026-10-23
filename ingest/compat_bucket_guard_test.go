@@ -7,7 +7,7 @@ package ingest
 //   - body userHash accepted-but-ignored by schema: TestValidateBodyUserHashAcceptedButIgnored
 //   - anonID-only storage (userHash column stays empty): TestSaveStoredEventWritesAnonIDOnly
 //   - country header normalization without ?b=: TestCountryHeaderFlowsToStorage
-//   - no-?b= honored-hash and anonID fallback: TestDeriveIdentityHonorsValidHashElseAnonID
+//   - no-?b= ignored-hash and anonID fallback: TestDeriveIdentityIgnoresUserHashUsesAnonID
 //   - ?b= honored / malformed-400 / absent-fallback: TestDeriveIdentityBucketHonored,
 //     TestDeriveIdentityBucketMalformedIs400, TestDeriveIdentityBucketAbsentFallsBack
 //   - fetch/ingest ?b= join: TestFetchIngestBucketJoin

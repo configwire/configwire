@@ -8,8 +8,8 @@ package ingest
 // ingest for RequireKeyEnv, so ingest cannot import fetch back —
 // import cycle). Single rule: fetch.ParseBucket is canonical; the
 // copy here (parseBucketCanonical) must stay byte-identical in
-// behavior. Malformed ?b= -> 400; absent -> honored-?userHash= ->
-// anonID; ?b= wins over valid ?userHash=.
+// behavior. Malformed ?b= -> 400; absent -> anonID (?userHash= of any
+// shape is ignored); ?b= wins over an ignored ?userHash=.
 
 import (
 	"testing"
@@ -22,8 +22,7 @@ import (
 const wantBucketErr = `invalid "b": send "0"-"9999".`
 
 // TestDeriveIdentityBucketHonored pins ?b= precedence: canonical
-// ?b= wins verbatim, including over a valid ?userHash= (one-time
-// reshuffle for upgraded seeded installs, owner-accepted).
+// ?b= wins verbatim, including over an (ignored) ?userHash=.
 func TestDeriveIdentityBucketHonored(t *testing.T) {
 	SetIdentityManager(identity.NewManager(identity.NewMemoryStore()))
 	now := time.Now().UTC()
@@ -82,25 +81,29 @@ func TestDeriveIdentityBucketMalformedIs400(t *testing.T) {
 }
 
 // TestDeriveIdentityBucketAbsentFallsBack pins the fallthrough:
-// absent ?b= keeps today's rule (honored-?userHash= -> anonID).
+// absent ?b= keeps today's rule (ignored-?userHash= -> anonID).
 func TestDeriveIdentityBucketAbsentFallsBack(t *testing.T) {
 	SetIdentityManager(identity.NewManager(identity.NewMemoryStore()))
 	now := time.Now().UTC()
 	const envID = "env-bucket-join"
 
-	// Absent ?b= + valid ?userHash= -> honored hash.
+	// Absent ?b= + valid ?userHash= -> ignored, daily manager anonID wins.
 	re := requestForIdentity("/api/v1/env/dev/events?userHash=092081140b677b45", nil)
+	want, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
+	if err != nil {
+		t.Fatalf("manager anonID err = %v", err)
+	}
 	got, _, aerr := deriveIdentity(re, envID, now)
 	if aerr != nil {
-		t.Fatalf("honored path err = %v", aerr)
+		t.Fatalf("ignored path err = %v", aerr)
 	}
-	if got != "092081140b677b45" {
-		t.Fatalf("absent ?b= + valid hash: identity = %q, want honored hash", got)
+	if got != want || got == "" {
+		t.Fatalf("absent ?b= + valid hash: identity = %q, want daily anonID %q (userHash ignored)", got, want)
 	}
 
 	// Absent ?b= + malformed ?userHash= -> daily manager anonID.
 	re = requestForIdentity("/api/v1/env/dev/events?userHash=nothex", nil)
-	want, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
+	want, err = idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
 	if err != nil {
 		t.Fatalf("manager anonID err = %v", err)
 	}

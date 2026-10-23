@@ -7,7 +7,7 @@ package fetch
 // Already pinned elsewhere (referenced, not duplicated):
 //   - ?uid=x -> 400 even with valid ?b= : TestBucketWithUidStill400UidWins
 //   - empty release omits bucket/version-0/etag-none shape: TestEmptyReleaseBodyOmitsBucket, TestAuthOrder_EmptyReleaseShape
-//   - honored-?userHash=/anonID selection without ?b=: TestBucketAbsentFallsBackToHonoredHashThenAnon
+//   - ignored-?userHash=/anonID selection without ?b=: TestBucketAbsentIgnoresUserHashFallsBackToAnon
 //   - ?country= ignored without ?b=: TestBuildContextCountryServerOnly
 //   - nested/legacy fold without ?b=: TestEvaluateSnapshotNestedLegacyIdentical, TestOldTopLevelCompatDecodesSame
 //   - 304 exact-etag without ?b=: TestAuthOrder_EtagExactMatchIs304
@@ -38,31 +38,34 @@ func canonJSON(v any) string {
 	return string(b)
 }
 
-// TestCompatOldClientHonoredArmByteIdentical pins that an old client
-// (no ?b=) with a valid honored ?userHash= evaluates the byte-identical
-// arm as the direct eval.Assign on that hash: the bucket era adds a
-// ?b= branch but never moves the honored path.
-func TestCompatOldClientHonoredArmByteIdentical(t *testing.T) {
-	const honored = "092081140b677b45"
+// TestCompatOldClientIgnoredHashArmByteIdentical pins that an old client
+// (no ?b=) with a valid ?userHash= is accepted-but-ignored: it evaluates
+// the byte-identical arm as the direct eval.Assign on the server anonID,
+// not on the client hash. The bucket era keeps the ignore+replace rule,
+// adding only the ?b= branch.
+func TestCompatOldClientIgnoredHashArmByteIdentical(t *testing.T) {
+	const anon = "0123456789abcdef"
 	snap := fakeSnapshot()
-	q := query(`userHash=` + honored + `&platform=ios`)
-	ctx, err := BuildContext(q, effectiveUserHash(q, "0123456789abcdef"), "US")
-	if err != nil {
-		t.Fatalf("old-client honored fetch err = %v", err)
-	}
-	if ctx.UserHash != honored {
-		t.Fatalf("old-client UserHash = %q, want honored %q", ctx.UserHash, honored)
-	}
-	_, variants := EvaluateSnapshot(snap, ctx, "")
-	want := eval.Assign(eval.Experiment{
-		Seed: "seed-1",
-		Variants: []eval.Variant{
-			{Name: "control", WeightBps: 5000},
-			{Name: "treatment", WeightBps: 5000},
-		},
-	}, honored)
-	if variants["new_ui"] != want {
-		t.Fatalf("old-client arm = %q, want honored-path arm %q", variants["new_ui"], want)
+	for _, clientHash := range []string{"092081140b677b45", "ffffffffffffffff"} {
+		q := query(`userHash=` + clientHash + `&platform=ios`)
+		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+		if err != nil {
+			t.Fatalf("old-client ignored-hash fetch err = %v", err)
+		}
+		if ctx.UserHash != anon {
+			t.Fatalf("old-client UserHash = %q, want server anonID %q (userHash ignored)", ctx.UserHash, anon)
+		}
+		_, variants := EvaluateSnapshot(snap, ctx, "")
+		want := eval.Assign(eval.Experiment{
+			Seed: "seed-1",
+			Variants: []eval.Variant{
+				{Name: "control", WeightBps: 5000},
+				{Name: "treatment", WeightBps: 5000},
+			},
+		}, anon)
+		if variants["new_ui"] != want {
+			t.Fatalf("old-client arm = %q, want anonID-path arm %q", variants["new_ui"], want)
+		}
 	}
 }
 

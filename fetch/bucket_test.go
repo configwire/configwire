@@ -97,16 +97,16 @@ func TestBucketPrecedenceWinsOverUserHash(t *testing.T) {
 	}
 }
 
-func TestBucketAbsentFallsBackToHonoredHashThenAnon(t *testing.T) {
+func TestBucketAbsentIgnoresUserHashFallsBackToAnon(t *testing.T) {
 	const anon = "0123456789abcdef"
-	// Absent ?b= + valid ?userHash= -> honored hash.
+	// Absent ?b= + valid ?userHash= -> ignored, server anonID wins.
 	q := query(`userHash=092081140b677b45&platform=ios`)
 	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
 	if err != nil {
-		t.Fatalf("honored err = %v", err)
+		t.Fatalf("ignored err = %v", err)
 	}
-	if ctx.UserHash != "092081140b677b45" {
-		t.Fatalf("absent ?b= + valid hash: UserHash = %q, want honored hash", ctx.UserHash)
+	if ctx.UserHash != anon {
+		t.Fatalf("absent ?b= + valid hash: UserHash = %q, want server anonID %q (userHash ignored)", ctx.UserHash, anon)
 	}
 	// Absent ?b= + malformed ?userHash= -> anonID fallback, never 400.
 	q = query(`userHash=nothex&platform=ios`)
@@ -116,6 +116,22 @@ func TestBucketAbsentFallsBackToHonoredHashThenAnon(t *testing.T) {
 	}
 	if ctx.UserHash != anon {
 		t.Fatalf("malformed fallback UserHash = %q, want anonID %q", ctx.UserHash, anon)
+	}
+	// Different ?userHash= values yield the SAME bucketing (server anonID).
+	for _, raw := range []string{
+		`userHash=092081140b677b45`,
+		`userHash=ffffffffffffffff`,
+		`userHash=nothex`,
+		`platform=ios`,
+	} {
+		q := query(raw)
+		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+		if err != nil {
+			t.Fatalf("%s: err = %v", raw, err)
+		}
+		if ctx.UserHash != anon {
+			t.Fatalf("%s: UserHash = %q, want server anonID %q", raw, ctx.UserHash, anon)
+		}
 	}
 }
 

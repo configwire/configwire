@@ -17,7 +17,7 @@ import "testing"
 
 // TestCompatEvalNeverValidatesBucketStrings pins the layering: eval
 // computes for any input string (no error concept here) and repeats
-// deterministically, so old honored hashes and new bucket numbers share
+// deterministically, so old client hashes and new bucket numbers share
 // one code path with no bucket special-case.
 func TestCompatEvalNeverValidatesBucketStrings(t *testing.T) {
 	exp := Experiment{

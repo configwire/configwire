@@ -89,75 +89,74 @@ func requestForIdentity(target string, setHeaders func(h http.Header)) *core.Req
 	return re
 }
 
-// Same honored-hash rule as fetch; vectors mirror TestEffectiveUserHash.
-func TestDeriveIdentityHonorsValidHashElseAnonID(t *testing.T) {
+// Ignore+replace rule (matches fetch): any client ?userHash= shape is
+// accepted-but-ignored — identity is always the daily manager anonID
+// (identical to the value fetch buckets on for the same request); a valid
+// ?b= still wins verbatim (see bucket_join_test.go).
+func TestDeriveIdentityIgnoresUserHashUsesAnonID(t *testing.T) {
 	SetIdentityManager(identity.NewManager(identity.NewMemoryStore()))
 	now := time.Now().UTC()
 	const envID = "env-parity"
 
-	// Honor path: well-formed hashes return verbatim (no derivation).
-	for name, tc := range map[string]struct {
-		target string
-		want   string
-	}{
-		"honor-valid-hash": {"/api/v1/env/dev/events?userHash=092081140b677b45", "092081140b677b45"},
-		"honor-trimmed":    {"/api/v1/env/dev/events?userHash=++092081140b677b45++", "092081140b677b45"},
-		"honor-all-f":      {"/api/v1/env/dev/events?userHash=ffffffffffffffff", "ffffffffffffffff"},
-		"honor-extra-keys": {"/api/v1/env/dev/events?userHash=092081140b677b45&platform=ios", "092081140b677b45"},
-	} {
-		re := requestForIdentity(tc.target, nil)
-		got, country, aerr := deriveIdentity(re, envID, now)
-		if aerr != nil {
-			t.Errorf("%s: no ?b= must not error, got %v", name, aerr)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("%s: identity = %q, want honored hash %q", name, got, tc.want)
-		}
-		if country != "" {
-			t.Errorf("%s: country = %q, want empty (no headers)", name, country)
-		}
-	}
-
-	// Fallback path: absent/malformed returns the daily manager anonID,
-	// identical to the value fetch would bucket on for the same request.
+	// Ignore path: every ?userHash= shape returns the daily manager anonID.
 	for name, target := range map[string]string{
-		"absent-fallback": "/api/v1/env/dev/events?platform=ios",
-		"empty-fallback":  "/api/v1/env/dev/events?userHash=",
-		"blank-fallback":  "/api/v1/env/dev/events?userHash=+++",
-		"too-short":       "/api/v1/env/dev/events?userHash=abc123",
-		"too-long":        "/api/v1/env/dev/events?userHash=0123456789abcdef00",
-		"uppercase":       "/api/v1/env/dev/events?userHash=0123456789ABCDEF",
-		"non-hex":         "/api/v1/env/dev/events?userHash=0123456789abcdeg",
-		"raw-uid":         "/api/v1/env/dev/events?userHash=user-7",
+		"ignore-valid-hash": "/api/v1/env/dev/events?userHash=092081140b677b45",
+		"ignore-trimmed":    "/api/v1/env/dev/events?userHash=++092081140b677b45++",
+		"ignore-all-f":      "/api/v1/env/dev/events?userHash=ffffffffffffffff",
+		"ignore-extra-keys": "/api/v1/env/dev/events?userHash=092081140b677b45&platform=ios",
+		"absent-fallback":   "/api/v1/env/dev/events?platform=ios",
+		"empty-fallback":    "/api/v1/env/dev/events?userHash=",
+		"blank-fallback":    "/api/v1/env/dev/events?userHash=+++",
+		"too-short":         "/api/v1/env/dev/events?userHash=abc123",
+		"too-long":          "/api/v1/env/dev/events?userHash=0123456789abcdef00",
+		"uppercase":         "/api/v1/env/dev/events?userHash=0123456789ABCDEF",
+		"non-hex":           "/api/v1/env/dev/events?userHash=0123456789abcdeg",
+		"raw-uid":           "/api/v1/env/dev/events?userHash=user-7",
 	} {
 		re := requestForIdentity(target, nil)
 		want, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
 		if err != nil {
 			t.Fatalf("%s: manager anonID err = %v", name, err)
 		}
-		got, _, aerr := deriveIdentity(re, envID, now)
+		got, country, aerr := deriveIdentity(re, envID, now)
 		if aerr != nil {
 			t.Errorf("%s: no ?b= must not error, got %v", name, aerr)
 			continue
 		}
 		if got != want || got == "" {
-			t.Errorf("%s: identity = %q, want fallback anonID %q", name, got, want)
+			t.Errorf("%s: identity = %q, want daily anonID %q (userHash ignored)", name, got, want)
 		}
-		if honored := identity.ResolveHonoredHash(re.Request.URL.Query().Get("userHash"), want); honored != want {
-			t.Errorf("%s: fetch-side rule = %q, want same fallback %q", name, honored, want)
+		if country != "" {
+			t.Errorf("%s: country = %q, want empty (no headers)", name, country)
 		}
 	}
 
-	// Country still flows on the honored path.
+	// Different ?userHash= values yield the SAME identity (server anonID).
+	first, _, aerr := deriveIdentity(requestForIdentity("/api/v1/env/dev/events?userHash=092081140b677b45", nil), envID, now)
+	if aerr != nil {
+		t.Fatalf("same-identity setup err = %v", aerr)
+	}
+	second, _, aerr := deriveIdentity(requestForIdentity("/api/v1/env/dev/events?userHash=ffffffffffffffff", nil), envID, now)
+	if aerr != nil {
+		t.Fatalf("same-identity setup err = %v", aerr)
+	}
+	if first != second {
+		t.Errorf("different ?userHash= yielded different identities %q vs %q (must be the same anonID)", first, second)
+	}
+
+	// Country still flows alongside an ignored ?userHash=.
 	re := requestForIdentity("/api/v1/env/dev/events?userHash=092081140b677b45", func(h http.Header) {
 		h.Set("CF-IPCountry", "us")
 	})
+	want, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
+	if err != nil {
+		t.Fatalf("manager anonID err = %v", err)
+	}
 	got, country, aerr := deriveIdentity(re, envID, now)
 	if aerr != nil {
-		t.Fatalf("honored+country err = %v", aerr)
+		t.Fatalf("ignored+country err = %v", aerr)
 	}
-	if got != "092081140b677b45" || country != "US" {
-		t.Errorf("honored+country = (%q, %q), want (hash, US)", got, country)
+	if got != want || country != "US" {
+		t.Errorf("ignored+country = (%q, %q), want (%q, US)", got, country, want)
 	}
 }

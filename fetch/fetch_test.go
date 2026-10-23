@@ -103,26 +103,29 @@ func TestBuildContextCountryServerOnly(t *testing.T) {
 	}
 }
 
-// TestUserHashCompatHeader pins the removal: no X-CW-Deprecated-userHash
-// header is ever sent, regardless of client ?userHash= shape (compat
-// signal removed; server-derived anonID still wins via effectiveUserHash).
+// TestUserHashCompatHeader pins the compat signal: any trimmed non-empty
+// client ?userHash= stamps X-CW-Deprecated-userHash=true (server-derived
+// anonID still wins); absent/empty/blank sends no header.
 func TestUserHashCompatHeader(t *testing.T) {
+	if userHashCompatHeader != "X-CW-Deprecated-userHash" {
+		t.Fatalf("compat header = %q, want %q", userHashCompatHeader, "X-CW-Deprecated-userHash")
+	}
 	for _, raw := range []string{
 		`userHash=ffffffffffffffff`,
 		`userHash=abc123`,
 		`userHash=user-7&platform=ios`,
-		``,
-		`platform=ios`,
-		`userHash=`,
-		`userHash=+++`,
 	} {
 		h := http.Header{}
-		_ = query(raw) // parsed but never stamped: compat signal removed
-		if got := h.Get("X-CW-Deprecated-userHash"); got != "" {
-			t.Errorf("%s: header = %q, want absent (compat signal removed)", raw, got)
+		stampUserHashCompat(h, query(raw))
+		if got := h.Get(userHashCompatHeader); got != "true" {
+			t.Errorf("%s: header = %q, want %q", raw, got, "true")
 		}
-		if _, ok := h["X-Cw-Deprecated-Userhash"]; ok {
-			t.Errorf("%s: canonical header key present, want absent", raw)
+	}
+	for _, raw := range []string{``, `platform=ios`, `userHash=`, `userHash=+++`} {
+		h := http.Header{}
+		stampUserHashCompat(h, query(raw))
+		if got := h.Get(userHashCompatHeader); got != "" {
+			t.Errorf("%s: header = %q, want absent", raw, got)
 		}
 	}
 }
@@ -393,24 +396,26 @@ func TestBuildContextAttrsDenylist(t *testing.T) {
 	}
 }
 
-// Honored valid ?userHash= wins; absent/malformed falls back silently,
-// never 400.
+// Client ?userHash= (any shape) is accepted-but-ignored: effective
+// identity is always the server anonID unless a valid ?b= wins.
+// Never 400 on ?userHash=.
 func TestEffectiveUserHash(t *testing.T) {
 	const anon = "0123456789abcdef"
 	for name, tc := range map[string]struct {
 		raw  string
 		want string
 	}{
-		"honor-valid-hash": {`userHash=092081140b677b45`, "092081140b677b45"},
-		"honor-trimmed":    {`userHash=++092081140b677b45++`, "092081140b677b45"},
-		"absent-fallback":  {`platform=ios`, anon},
-		"empty-fallback":   {`userHash=`, anon},
-		"blank-fallback":   {`userHash=+++`, anon},
-		"too-short":        {`userHash=abc123`, anon},
-		"too-long":         {`userHash=0123456789abcdef00`, anon},
-		"uppercase":        {`userHash=0123456789ABCDEF`, anon},
-		"non-hex":          {`userHash=0123456789abcdeg`, anon},
-		"raw-uid":          {`userHash=user-7`, anon},
+		"ignore-valid-hash": {`userHash=092081140b677b45`, anon},
+		"ignore-trimmed":    {`userHash=++092081140b677b45++`, anon},
+		"absent-fallback":   {`platform=ios`, anon},
+		"empty-fallback":    {`userHash=`, anon},
+		"blank-fallback":    {`userHash=+++`, anon},
+		"too-short":         {`userHash=abc123`, anon},
+		"too-long":          {`userHash=0123456789abcdef00`, anon},
+		"uppercase":         {`userHash=0123456789ABCDEF`, anon},
+		"non-hex":           {`userHash=0123456789abcdeg`, anon},
+		"raw-uid":           {`userHash=user-7`, anon},
+		"bucket-wins":       {`b=42&userHash=092081140b677b45`, "42"},
 	} {
 		if got := effectiveUserHash(query(tc.raw), anon); got != tc.want {
 			t.Errorf("%s: effective = %q, want %q", name, got, tc.want)
@@ -418,24 +423,32 @@ func TestEffectiveUserHash(t *testing.T) {
 	}
 }
 
-// effectiveUserHash output reaches ctx.UserHash verbatim.
+// effectiveUserHash output reaches ctx.UserHash verbatim: different
+// ?userHash= values yield the SAME bucketing (server anonID), while a
+// valid ?b= still overrides the anonID.
 func TestEffectiveUserHashFeedsBuildContext(t *testing.T) {
 	const anon = "aaaa0000bbbb1111"
-	q := query(`userHash=092081140b677b45&platform=ios`)
+	for _, raw := range []string{
+		`userHash=092081140b677b45&platform=ios`,
+		`userHash=ffffffffffffffff&platform=ios`,
+		`userHash=nothex&platform=ios`,
+	} {
+		q := query(raw)
+		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+		if err != nil {
+			t.Fatalf("%s: BuildContext err = %v", raw, err)
+		}
+		if ctx.UserHash != anon {
+			t.Fatalf("%s: ctx.UserHash = %q, want server anonID %q (userHash ignored)", raw, ctx.UserHash, anon)
+		}
+	}
+	q := query(`b=42&userHash=092081140b677b45&platform=ios`)
 	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
 	if err != nil {
 		t.Fatalf("BuildContext err = %v", err)
 	}
-	if ctx.UserHash != "092081140b677b45" {
-		t.Fatalf("honored ctx.UserHash = %q, want client hash", ctx.UserHash)
-	}
-	q = query(`userHash=nothex&platform=ios`)
-	ctx, err = BuildContext(q, effectiveUserHash(q, anon), "US")
-	if err != nil {
-		t.Fatalf("malformed hash must not error, got %v", err)
-	}
-	if ctx.UserHash != anon {
-		t.Fatalf("malformed fallback ctx.UserHash = %q, want anonID %q", ctx.UserHash, anon)
+	if ctx.UserHash != "42" {
+		t.Fatalf("ctx.UserHash = %q, want bucket %q (?b= wins)", ctx.UserHash, "42")
 	}
 }
 

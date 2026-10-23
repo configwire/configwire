@@ -8,10 +8,12 @@
 //	Body: {"events":[{"kind":"fetch|exposure","flag":"<key>","variant":"<name>",
 //	    "userHash":"<opaque>", "ts":"2026-09-22T00:00:00Z | 1726870000"}]}
 //	flag/variant/userHash/ts are all optional; ts accepts RFC3339 string or
-//	unix-seconds number, absent means server time. Identity is the honored
-//	?userHash= query value when well-formed (^[0-9a-f]{16}$), else the
+//	unix-seconds number, absent means server time. Identity is the
 //	server-derived daily anonID via identity.Manager (limits.ClientIP +
-//	User-Agent + per-env daily salt) plus country from headers; events
+//	User-Agent + per-env daily salt) plus country from headers, with a
+//	valid stable ?b= winning verbatim over the anonID (fetch/ingest bucket
+//	join); client ?userHash= (any shape) is accepted-but-ignored and never
+//	becomes the anonID. Events
 //	store anonId + country with the body userHash column left empty
 //	(compat). Raw "userId"/"ip" keys and
 //	PII/device-identifier keys (email, phone, device IDs; case-insensitive)
@@ -79,8 +81,8 @@ const (
 // EventIn is one validated ingest event with server-normalized timestamp.
 // UserHash carries the client-supplied body value verbatim through
 // validation (length/NUL checked) but is ignored at storage: the handler
-// stores deriveIdentity (honored ?userHash= query value else daily
-// anonID) in anonId, leaving the userHash column empty.
+// stores deriveIdentity (valid ?b= else daily anonID) in anonId,
+// leaving the userHash column empty.
 type EventIn struct {
 	Kind     string
 	Flag     string
@@ -136,7 +138,7 @@ var forbiddenEventKeys = map[string]struct{}{
 // no raw "userId"/"ip" or PII/device-identifier keys (case-insensitive),
 // parseable ts. A client body "userHash" key is accepted (length/NUL
 // checked) but ignored downstream — the handler stores deriveIdentity
-// (honored ?userHash= query value else daily anonID).
+// (valid ?b= else daily anonID).
 func ValidateBody(body []byte) ([]EventIn, *apiError) {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil, badRequest("empty body: expected {\"events\":[...]}.")

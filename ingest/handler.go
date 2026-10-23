@@ -29,15 +29,15 @@ func SetIdentityManager(m *identity.Manager) {
 	}
 }
 
-// deriveIdentity resolves (anonID, country) for one ingest request. Identity
-// follows the identical rule as fetch: valid ?b= wins, else honored valid
-// ?userHash= (identity.ResolveHonoredHash), else the daily manager anonID
-// ("" on derivation error — the event still stores, unattributed); country
-// = first valid ISO-2 in the country-header order ("" when absent).
+// deriveIdentity resolves (anonID, country) for one ingest request.
+// Identity follows the identical rule as fetch: valid ?b= wins, else the
+// daily manager anonID ("" on derivation error — the event still stores,
+// unattributed); client ?userHash= (any shape) is accepted-but-ignored and
+// never becomes the anonID; country = first valid ISO-2 in the
+// country-header order ("" when absent).
 // A malformed ?b= is a 400 (returned as *apiError, mirroring the fetch
 // ?b=/?uid= 400s) — never a silent fallback, so fetch arms and exposure
-// attribution stay joined per install. A non-empty honored result with an
-// empty fallback is always honored, so that path skips salt derivation.
+// attribution stay joined per install.
 //
 // Canonical ?b= rule lives in identity.ParseBucketParam — fetch
 // imports ingest (RequireKeyEnv), so ingest cannot import fetch back
@@ -53,9 +53,6 @@ func deriveIdentity(re *core.RequestEvent, envID string, now time.Time) (string,
 			return "", "", err
 		}
 		return b, country, nil
-	}
-	if honored := identity.ResolveHonoredHash(q.Get("userHash"), ""); honored != "" {
-		return honored, country, nil
 	}
 	anonID, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
 	if err != nil {
@@ -141,10 +138,11 @@ func postEvents(re *core.RequestEvent) error {
 		if ts.IsZero() {
 			ts = now
 		}
-		// Honored-hash storage: a well-formed ?userHash= query value
-		// (^[0-9a-f]{16}$) is the stored anonID so exposures join with
-		// fetch bucketing; otherwise the server-derived daily anonID
-		// wins. Per-event body userHash stays accepted-but-ignored;
+		// anonID-only storage: a client ?userHash= query value of any shape
+		// is accepted-but-ignored; the server-derived daily anonID always
+		// wins, so fetch bucketing and exposures join on the same value
+		// (stable ?b= excepted — it wins verbatim on both paths).
+		// Per-event body userHash stays accepted-but-ignored;
 		// userHash column stores empty.
 		stored = append(stored, StoredEvent{
 			EnvID: env.Id,
