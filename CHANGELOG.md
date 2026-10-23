@@ -3,6 +3,25 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Honored client identity with daily-anonID fallback
+  (`configwire/identity/identity.go` `ResolveHonoredHash`,
+  `configwire/fetch/fetch.go` `effectiveUserHash`,
+  `configwire/ingest/handler.go` `deriveIdentity`): a well-formed
+  client `?userHash=` (`^[0-9a-f]{16}$`) is honored for bucketing and
+  exposure identity, with silent fallback to the server-derived daily
+  anonID on malformed/absent values (never `400`). Fetch and ingest
+  share the rule so exposures join with bucketing. `?country=` stays
+  accepted-but-ignored in favor of server header geo. No compat header
+  is stamped.
+  Hash-only on the wire and in the store; the 48h identity scrub is
+  unchanged. Grindable-by-design: bucketing is not an entitlement
+  boundary — never gate paid access, quotas, or one-per-user rewards
+  on experiment assignment alone. See `docs/CONTRACT.md` section 1.
+
 ## v0.1.13 — 2026-10-21
 
 ### Added
