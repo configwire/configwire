@@ -206,7 +206,7 @@ ok = (arm in ('control', 'treatment')
       and b['values'].get('exp_bool') is exp[arm])
 sys.exit(0 if ok else 1)
 EOF
-python3 - <<'EOF' && pass "variant arm pinned for hashed identity (control)" || fail "variant arm pinned"
+python3 - <<'EOF' && pass "variant arm pinned for server anonID (control)" || fail "variant arm pinned"
 import json, sys
 a = json.load(open('/tmp/cw-t17-fetch1.json'))
 exp = json.load(open('e2e/fixtures/expected.json'))['stage2_fetch']
@@ -245,6 +245,38 @@ CODE_BADHASH=$(curl -s -o /tmp/cw-t17-badhash.json -w "%{http_code}" --max-time 
 CODE_ANON=$(curl -s -o /tmp/cw-t17-anon.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_ANON" = "200" ] && pass "anonymous fetch 200" || fail "anonymous fetch (code $CODE_ANON)"
+# Ignore rule: ?userHash= (any shape) is accepted-but-ignored — bucketing
+# uses the server-derived anonID, so a different valid hash and a malformed
+# hash must land on the SAME arm as the anonymous fetch. A sent ?userHash=
+# stamps X-CW-Deprecated-userHash: true; absent sends no header.
+OTHER_UHASH="ffffffffffffffff"
+CODE_H1=$(curl -s -D /tmp/cw-t17-hash1-hdr.txt -o /tmp/cw-t17-hash1.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?userHash=$OTHER_UHASH&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_H1" = "200" ] && pass "different valid userHash 200 (ignored)" || fail "different valid userHash (code $CODE_H1)"
+grep -qi "^X-CW-Deprecated-userHash: *true" /tmp/cw-t17-hash1-hdr.txt 2>/dev/null \
+  && pass "different userHash stamps deprecated header" || fail "different userHash deprecated header"
+CODE_HBAD=$(curl -s -D /tmp/cw-t17-hashbad-hdr.txt -o /tmp/cw-t17-hashbad.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?userHash=user-7&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_HBAD" = "200" ] && pass "malformed userHash 200 (ignored, header path)" || fail "malformed userHash header path (code $CODE_HBAD)"
+grep -qi "^X-CW-Deprecated-userHash: *true" /tmp/cw-t17-hashbad-hdr.txt 2>/dev/null \
+  && pass "malformed userHash stamps deprecated header" || fail "malformed userHash deprecated header"
+CODE_ANON2=$(curl -s -D /tmp/cw-t17-anon-hdr.txt -o /tmp/cw-t17-anon2.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_ANON2" = "200" ] && pass "anonymous fetch 200 (ignore baseline)" || fail "anonymous fetch baseline (code $CODE_ANON2)"
+! grep -qi "^X-CW-Deprecated-userHash:" /tmp/cw-t17-anon-hdr.txt 2>/dev/null \
+  && pass "anonymous fetch sends no deprecated header" || fail "anonymous deprecated header"
+python3 - <<'EOF' && pass "ignore: different/malformed userHash same arm as anonymous" || fail "ignore same-arm"
+import json, sys
+anon = json.load(open('/tmp/cw-t17-anon2.json'))
+h1 = json.load(open('/tmp/cw-t17-hash1.json'))
+hb = json.load(open('/tmp/cw-t17-hashbad.json'))
+arm = anon.get('variants', {}).get('exp_bool')
+ok = (arm in ('control', 'treatment')
+      and h1.get('variants', {}).get('exp_bool') == arm
+      and hb.get('variants', {}).get('exp_bool') == arm
+      and h1.get('values', {}).get('exp_bool') is anon.get('values', {}).get('exp_bool'))
+sys.exit(0 if ok else 1)
+EOF
 
 # ---- STAGE 2N (?b= stable bucket, T10 additive): mint -> echo hold -> 400 matrix ----
 # Old-client expectations above are byte-identical (expected.json untouched);
@@ -516,6 +548,94 @@ if [ "$NEG_EXIT" -ne 0 ]; then
 else
   fail "negative: dead-port fetch unexpectedly succeeded ($NEG_OUT)"
 fi
+
+# ---- STAGE 7: stable bucket ?b= (additive, existing stages untouched) --------
+echo "--- STAGE 7: stable bucket ?b= mint/echo/304/fresh/join/400 ---"
+# 7a cold fetch without ?b= -> 200 mints canonical 0-9999
+CODE=$(curl -s -o /tmp/cw-t17-bucket-cold.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?$FQ" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE" = "200" ] && pass "bucket cold fetch 200" || fail "bucket cold fetch (code $CODE)"
+python3 - <<'EOF' && pass "bucket cold mints canonical 0-9999" || fail "bucket cold mint canonical"
+import json, re, sys
+d = json.load(open('/tmp/cw-t17-bucket-cold.json'))
+b = d.get('bucket', None)
+ok = isinstance(b, str) and re.fullmatch(r'(0|[1-9][0-9]{0,3})', b) is not None
+try:
+    ok = ok and 0 <= int(b) <= 9999
+except Exception:
+    ok = False
+sys.exit(0 if ok else 1)
+EOF
+MINTED="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-bucket-cold.json'))['bucket'])")"
+echo "minted bucket=$MINTED"
+# 7b refetch ?b=<minted> twice -> 200 echoes verbatim + sticky arm
+CODE=$(curl -s -o /tmp/cw-t17-bucket-echo.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE" = "200" ] && pass "bucket refetch 200" || fail "bucket refetch (code $CODE)"
+CODE2=$(curl -s -o /tmp/cw-t17-bucket-echo2.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE2" = "200" ] && pass "bucket refetch2 200" || fail "bucket refetch2 (code $CODE2)"
+python3 - <<'EOF' && pass "bucket echo verbatim + sticky arm" || fail "bucket echo/arm"
+import json, sys
+a = json.load(open('/tmp/cw-t17-bucket-echo.json'))
+b = json.load(open('/tmp/cw-t17-bucket-echo2.json'))
+ok = (a.get('bucket') == b.get('bucket')
+      and a.get('variants', {}).get('exp_bool') == b.get('variants', {}).get('exp_bool')
+      and a.get('bucket') is not None)
+sys.exit(0 if ok else 1)
+EOF
+ECHOED="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-bucket-echo.json')).get('bucket',''))")"
+[ "$ECHOED" = "$MINTED" ] && pass "bucket echo equals minted" || fail "bucket echo minted ($ECHOED vs $MINTED)"
+# 7c If-None-Match -> 304 empty, client keeps bucket
+ETAG_B="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-bucket-echo.json'))['etag'])")"
+CODE=$(curl -s -D /tmp/cw-t17-bucket-304-hdr.txt -o /tmp/cw-t17-bucket-304.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" -H "If-None-Match: $ETAG_B" 2>/dev/null || echo "000")
+[ "$CODE" = "304" ] && pass "bucket 304 on etag match" || fail "bucket 304 (code $CODE)"
+if [ ! -s /tmp/cw-t17-bucket-304.json ]; then pass "bucket 304 empty, client keeps bucket"; else fail "bucket 304 body"; fi
+# 7d fresh env -> 200 version-0/etag-none/no bucket
+FRESH_ENV_BODY="{\"project\":\"$PROJ\",\"slug\":\"e2e-fresh\"}"
+[ "$(su_post "$C/environments/records" "$FRESH_ENV_BODY" /tmp/cw-t17-fresh-env.json)" = "200" ] \
+  && pass "bucket fresh env create" || fail "bucket fresh env create"
+FRESH_ENVID="$(pyid /tmp/cw-t17-fresh-env.json id)"
+FRESH_KEY="cw-e2e17-fresh-key-abcdef123456"
+FRESH_PREFIX="${FRESH_KEY:0:8}"
+FRESH_HASH="$(python3 -c "import hashlib; print(hashlib.sha256('$FRESH_KEY'.encode()).hexdigest())")"
+FRESH_KEY_BODY="{\"prefix\":\"$FRESH_PREFIX\",\"hash\":\"$FRESH_HASH\",\"env\":\"$FRESH_ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}"
+[ "$(su_post "$C/sdk_keys/records" "$FRESH_KEY_BODY" /tmp/cw-t17-fresh-key.json)" = "200" ] \
+  && pass "bucket fresh sdk key" || fail "bucket fresh sdk key"
+CODE=$(curl -s -o /tmp/cw-t17-bucket-fresh.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e-fresh/config?platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $FRESH_KEY" 2>/dev/null || echo "000")
+[ "$CODE" = "200" ] && pass "bucket fresh env fetch 200" || fail "bucket fresh env fetch (code $CODE)"
+python3 - <<'EOF' && pass "bucket fresh version-0/etag-none/no bucket" || fail "bucket fresh shape"
+import json, sys
+d = json.load(open('/tmp/cw-t17-bucket-fresh.json'))
+ok = (d.get('version') == 0 and d.get('etag') == 'none' and 'bucket' not in d)
+sys.exit(0 if ok else 1)
+EOF
+# 7e ingest POST same ?b= -> joins fetch arm (202)
+EV_B="{\"events\":[{\"kind\":\"exposure\",\"flag\":\"exp_bool\",\"variant\":\"control\"}]}"
+CODE=$(curl -s -o /tmp/cw-t17-bucket-ingest.json -w "%{http_code}" --max-time 10 -X POST \
+  "$BASE_URL/api/v1/env/e2e/events?b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" \
+  -H "Content-Type: application/json" -d "$EV_B" 2>/dev/null || echo "000")
+[ "$CODE" = "202" ] && pass "bucket ingest join 202" || fail "bucket ingest join (code $CODE)"
+# 7f malformed ?b=007 -> 400 both fetch+ingest, single message
+CODE=$(curl -s -o /tmp/cw-t17-bucket-bad-fetch.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=007" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE" = "400" ] && pass "bucket malformed fetch 400" || fail "bucket malformed fetch (code $CODE)"
+python3 - <<'EOF' && pass "bucket malformed fetch message" || fail "bucket malformed fetch message"
+import json, sys
+d = json.load(open('/tmp/cw-t17-bucket-bad-fetch.json'))
+sys.exit(0 if d.get('message', '').lower() == 'invalid "b": send "0"-"9999".' else 1)
+EOF
+CODE=$(curl -s -o /tmp/cw-t17-bucket-bad-ingest.json -w "%{http_code}" --max-time 10 -X POST \
+  "$BASE_URL/api/v1/env/e2e/events?b=007" -H "X-ConfigWire-Key: $SDK_KEY" \
+  -H "Content-Type: application/json" -d "$EV_B" 2>/dev/null || echo "000")
+[ "$CODE" = "400" ] && pass "bucket malformed ingest 400" || fail "bucket malformed ingest (code $CODE)"
+python3 - <<'EOF' && pass "bucket malformed ingest message" || fail "bucket malformed ingest message"
+import json, sys
+d = json.load(open('/tmp/cw-t17-bucket-bad-ingest.json'))
+sys.exit(0 if d.get('message') == 'invalid "b": send "0"-"9999".' else 1)
+EOF
 
 # ---- summary -----------------------------------------------------------------
 echo "=== T17 e2e summary: PASS=$PASS FAIL=$FAIL ==="
