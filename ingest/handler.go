@@ -29,19 +29,53 @@ func SetIdentityManager(m *identity.Manager) {
 	}
 }
 
-// deriveIdentity resolves (anonID, country) for one ingest request:
-// anonID = identity.Manager over limits.ClientIP + User-Agent for the
-// event env's UTC day ("" on derivation error — the event still stores,
-// unattributed); country = first valid ISO-2 value in the limits
-// country-header order ("" when absent).
-func deriveIdentity(re *core.RequestEvent, envID string, now time.Time) (string, string) {
+// deriveIdentity resolves (anonID, country) for one ingest request. Identity
+// follows the identical rule as fetch: valid ?b= wins, else honored valid
+// ?userHash= (identity.ResolveHonoredHash), else the daily manager anonID
+// ("" on derivation error — the event still stores, unattributed); country
+// = first valid ISO-2 in the country-header order ("" when absent).
+// A malformed ?b= is a 400 (returned as *apiError, mirroring the fetch
+// ?b=/?uid= 400s) — never a silent fallback, so fetch arms and exposure
+// attribution stay joined per install. A non-empty honored result with an
+// empty fallback is always honored, so that path skips salt derivation.
+//
+// Canonical ?b= rule lives in identity.ParseBucketParam — fetch
+// imports ingest (RequireKeyEnv), so ingest cannot import fetch back
+// (import cycle); both delegate to identity (stdlib-only leaf).
+// parseBucketCanonical below wraps the identity error in badRequest so
+// the 400 text stays byte-identical.
+func deriveIdentity(re *core.RequestEvent, envID string, now time.Time) (string, string, *apiError) {
 	country := identity.CountryFromHeadersWith(re.Request.Header, limits.GetConfig().CountryHeaders)
+	q := re.Request.URL.Query()
+	if raw := q.Get("b"); raw != "" {
+		b, err := parseBucketCanonical(raw)
+		if err != nil {
+			return "", "", err
+		}
+		return b, country, nil
+	}
+	if honored := identity.ResolveHonoredHash(q.Get("userHash"), ""); honored != "" {
+		return honored, country, nil
+	}
 	anonID, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
 	if err != nil {
 		log.Printf("ingest: anonID derivation failed, storing unattributed: %v", err)
-		return "", country
+		return "", country, nil
 	}
-	return anonID, country
+	return anonID, country, nil
+}
+
+// parseBucketCanonical validates the stable-bucket ?b= query param.
+// Thin delegate over identity.ParseBucketParam (canonical; see above why
+// fetch and ingest share the rule via identity instead of duplicating
+// it): plain int string "0"-"9999", no coercion. Wraps the identity
+// error in badRequest so the 400 text stays byte-identical.
+func parseBucketCanonical(raw string) (string, *apiError) {
+	b, err := identity.ParseBucketParam(raw)
+	if err != nil {
+		return "", badRequest(err.Error())
+	}
+	return b, nil
 }
 
 // Register mounts the events ingest route and starts the flush pipeline.
@@ -97,16 +131,21 @@ func postEvents(re *core.RequestEvent) error {
 	}
 	now := time.Now().UTC()
 	flagIDs := resolveFlagIDs(re.App, env.GetString("project"), events)
-	anonID, country := deriveIdentity(re, env.Id, now)
+	anonID, country, derr := deriveIdentity(re, env.Id, now)
+	if derr != nil {
+		return writeAPIError(re, derr)
+	}
 	stored := make([]StoredEvent, 0, len(events))
 	for _, ev := range events {
 		ts := ev.Ts
 		if ts.IsZero() {
 			ts = now
 		}
-		// anonID-only storage: the client userHash is accepted by the
-		// schema but ignored — the server-derived anonID always wins
-		// (documented ignore+replace choice). userHash stores empty.
+		// Honored-hash storage: a well-formed ?userHash= query value
+		// (^[0-9a-f]{16}$) is the stored anonID so exposures join with
+		// fetch bucketing; otherwise the server-derived daily anonID
+		// wins. Per-event body userHash stays accepted-but-ignored;
+		// userHash column stores empty.
 		stored = append(stored, StoredEvent{
 			EnvID: env.Id,
 			Kind:  ev.Kind, Flag: flagIDs[ev.Flag], Variant: ev.Variant,
