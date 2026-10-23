@@ -11,29 +11,44 @@ Conventions used below:
 
 ## 1. Fetch — `GET /api/v1/env/{env}/config`
 
-Ref: `configwire/fetch/fetch.go:187-222` (`BuildContext`),
-`:153-170` (compat header), `:448-471` (handler order), route + gzip
-`:136-139`.
+Ref: `configwire/fetch/fetch.go:216-251` (`BuildContext`),
+`configwire/identity/identity.go` (`IsValidAnonID`,
+`ResolveHonoredHash`), `:167-190` (compat header + `effectiveUserHash`),
+`:477-500` (handler order), route + gzip `:146-154`.
 
-Identity is server-derived: bucketing uses
-`anonID = Manager.AnonID(envID, ClientIP, User-Agent, day)`
-(`HMAC_SHA256(per-env daily salt, ip + 0x00 + ua)`, 16 lowercase hex),
-stored in `Context.UserHash` (field name kept for `eval.Bucket`
-compat); country is server geo from `identity.CountryFromHeaders`
-only. Client `?userHash=` (any shape, even malformed) and `?country=`
-are accepted-but-ignored and never reach eval; a sent `?userHash=`
-(trimmed non-empty) stamps `X-CW-Deprecated-userHash: true` on the
-response. Client identity material must migrate to nothing: stop
-sending `userHash`/`country`, the server derives both.
+Identity is the honored client hash with a daily-anonID fallback:
+bucketing uses the trimmed client `?userHash=` when it matches
+`^[0-9a-f]{16}$` (`identity.IsValidAnonID` — 16 lowercase hex, the
+`sha256hex16(installID)` the SDK sends; raw install IDs never leave
+the device), else `anonID = Manager.AnonID(envID, ClientIP,
+User-Agent, day)` (`HMAC_SHA256(per-env daily salt, ip + 0x00 + ua)`,
+same 16-hex shape), stored in `Context.UserHash` (field name kept for
+`eval.Bucket` compat); country is server geo from
+`identity.CountryFromHeaders` only. Client `?country=` is
+accepted-but-ignored and never reaches eval. Hash-only on the wire: the
+server persists no raw identity — only the 16-hex hash (honored or
+derived) reaches the store, and the 48h identity scrub
+(`purge/purge.go: ScrubCutoff`, unchanged) still nulls `anonId` on
+rows older than 48h.
+
+Grindable-by-design: the honored hash is client-chosen input, so a
+caller can re-hash arbitrary install IDs to sample buckets until one
+lands in a favored variant. This is accepted (same trade-off as
+LaunchDarkly/Unleash/ConfigCat and ConfigWire 0.2.x): bucketing is
+not an entitlement boundary — never gate paid access, quotas, or
+one-per-user rewards on experiment assignment alone; enforce those
+server-side on authenticated identity.
 
 Removal notice: the `?uid=` compat alias is removed. Any trimmed
 non-empty `?uid=` returns `400` (empty equals absent). Clients must
 send no `uid` at all.
 
-Precedence: both absent or empty stays `200` (anonymous: rules still
-evaluate, bucketing uses the server anonID, which is always
-non-empty on success). Ref: `configwire/fetch/fetch.go:187-198`
-(`BuildContext`), `:163-170` (header stamp).
+Precedence: absent/malformed `?userHash=` stays `200` (rules still
+evaluate, bucketing uses the derived anonID, which is always
+non-empty on success) — there is no `400` for `userHash`, only the
+fallback. Ref: `configwire/fetch/fetch.go:195-199`
+(`effectiveUserHash`), `:216-251` (`BuildContext`), `:167-190`
+(header stamp).
 
 Auth/env order: CORS stamp then 401 (key) then 404 (unknown env slug)
 then 401 (key not scoped to this env) then 429 (rate) then 400/414
@@ -75,7 +90,8 @@ Ref: `:477-485`. Values are empty, not flag defaults; SDKs use in-app defaults.
 
 `If-None-Match` equals the stored etag by exact string match only
 (`W/`-prefixed or quoted values do not match) then `304` with an
-empty body. Ref: `:232-237,488-493`.
+empty body. `304` returns before evaluation, so daily rotation or
+honored-hash change only takes effect on the next `200`. Ref: `:232-237,488-493`.
 
 ### 1d. Fetch errors
 
@@ -90,10 +106,11 @@ Empty `uid` equals absent (no error, anonymous path). Ref:
 `configwire/fetch/fetch.go:187-190` (`BuildContext`, caller maps to
 `400` via `re.BadRequestError`).
 
-Client `?userHash=` is never an error: any shape (including malformed)
-is accepted-but-ignored, stamping `X-CW-Deprecated-userHash: true`
-when trimmed non-empty. There is no `400` for `userHash`. Ref:
-`:163-170` (`stampUserHashCompat`), `:464-471` (handler).
+Client `?userHash=` is never an error: a well-formed value
+(`^[0-9a-f]{16}$`) is honored for bucketing, any other shape
+(including malformed) falls back to the derived anonID. There is no
+`400` for `userHash`. Ref: `:185-199` (`effectiveUserHash`),
+`:488-498` (handler).
 
 Malformed `attrs` (bad JSON, or valid JSON that is not an object):
 
@@ -120,6 +137,57 @@ Ref: `:199-222,464-469`. `attrs` shape errors come from `re.BadRequestError`
 (PocketBase `data/message/status` shape); oversize comes from explicit
 `re.JSON` with `message/status` only. Unknown `appVersion` values fall
 through to defaults with `200`, never `400`.
+
+### 1e. Stable bucket `?b=`
+
+- `?b=<n>` pins one install to a stable bucket arm: canonical form
+  is the plain int string `"0"`-`"9999"`
+  (`^(0|[1-9][0-9]{0,3})$`, range-checked; `"0"` valid,
+  `"007"`/`"00"`/whitespace-padded/out-of-range not canonical).
+  Ref: `configwire/identity/bucket.go:12` (`ErrInvalidBucketMessage`),
+  `:17-36` (`IsCanonicalBucket`), `:41-53` (`ParseBucketParam`);
+  thin delegates at `configwire/fetch/fetch.go:190` (`ParseBucket`),
+  `configwire/ingest/handler.go:73` (`parseBucketCanonical`).
+- Malformed (non-empty, non-canonical) `?b=` returns `400`
+  (`invalid "b": send "0"-"9999".`), mirroring the `?uid=` sunset;
+  empty equals absent. `?uid=` still wins when both are present
+  (`uid` checked first). Ref:
+  `configwire/fetch/fetch.go:277` (`BuildContext`),
+  `configwire/ingest/handler.go:47` (`deriveIdentity`).
+- Precedence: valid `?b=` > valid `?userHash=` > derived anonID.
+  `ctx.UserHash` carries the canonical number string so
+  `eval.Bucket(number+seed)` evaluates the minted arm. Ref:
+  `configwire/fetch/fetch.go:203` (`effectiveUserHash`),
+  `:277` (`BuildContext`),
+  `configwire/eval/eval.go:172-179` (`Bucket`).
+- One-time reshuffle (disclosed, accepted): an upgraded seeded
+  install that previously bucketed on its honored hash re-rolls onto
+  its minted number the first time it sends `?b=`. Ref:
+  `configwire/fetch/fetch.go:203`.
+- Response `bucket` is 200-only: an evaluated `200` carries
+  `"bucket": "<n>"` (the client's valid `?b=` verbatim, else a fresh
+  `MintBucket` uniform over 10000 via `crypto/rand`); `304` carries
+  no body (never mints); empty-release `200` carries no `bucket`
+  field. Ref: `configwire/fetch/fetch.go:215-235` (`MintBucket`,
+  `EffectiveBucket`), `:253-262` (`evaluatedBody`),
+  `:239-250` (`emptyReleaseBody`), 304 early-return before the 200-only
+  mint in `getConfig`.
+- Events join: ingest honors the same `?b=` rule via the shared
+  `identity.ParseBucketParam` (thin delegate `parseBucketCanonical`), so
+  exposures attribute to the fetch arm. Ref:
+  `configwire/ingest/handler.go:47`, `:73`.
+- Balance (gate-measured, coarse bins only):
+  `Bucket("0"-"9999")` over one seed lands deciles 931-1062
+  (E=1000), 100-bin chi2 91-153 (df=99, bound 200); cross-seed 50/50
+  agreement 4968-5091/10000 (E=5000). Coarse-bin balance plus
+  cross-seed decorrelation only; no per-bucket claim.
+- Grindable-by-design (same note as section 1): `?b=` is
+  client-enumerable (`0`-`9999`), so bucketing is not an entitlement
+  boundary; enforce paid access, quotas, or one-per-user rewards
+  server-side on authenticated identity.
+- Cohort-size hedge: in tiny envs a bucket cohort can be a
+  singleton, so bucket arms carry no k-anonymity promise without a
+  traffic floor; aggregate counts only, same as section 1.
 
 ## 2. Publish — `POST /api/v1/admin/env/{env}/publish`
 
@@ -337,7 +405,7 @@ Ref: `configwire/ingest/handler.go:74-76` (order), `configwire/ingest/ingest.go:
 Order: 401 (key) then 404 (unknown env slug) / 400 (ambiguous slug,
 key-less callers only) / 401 (env-scope mismatch) then 429 (rate)
 then 400/413 (body) then 202.
-Ref: `configwire/ingest/handler.go:74-84`.
+Ref: `configwire/ingest/handler.go:92-102`.
 
 Request:
 
@@ -354,16 +422,26 @@ Request:
   SDK fetch events carry it); absent means 0. Negative then `400`.
 - `ts` accepts RFC3339 string, unix-seconds number, or absent/null
   (server time). Anything else then `400`.
-- Identity is server-derived (ignore+replace): a client `userHash`
-  key is accepted by the schema (length/NUL checked) but IGNORED at
-  storage — the handler derives `anonID` via
+- Identity is the honored client hash with a daily-anonID fallback
+  (identical rule to fetch, so exposures join with bucketing): the
+  trimmed `?userHash=` query value when it matches `^[0-9a-f]{16}$`
+  (`identity.IsValidAnonID`, shared via
+  `identity.ResolveHonoredHash`), else `anonID` via
   `identity.Manager` (`limits.ClientIP` + User-Agent + per-env daily
-  salt) plus `country` from headers, stores
+  salt) plus `country` from headers. The handler stores
   `events.anonId` + `events.country`, and stores `userHash` empty
-  (column kept nullable for compat). Client-sent `anonId`/`country`
-  keys are unknown to the schema and ignored; the server values always
-  win. Ref: `configwire/ingest/handler.go:32-44` (`deriveIdentity`),
-  `:93-111` (ignore+replace), `configwire/ingest/batcher.go:223-239`
+  (column kept nullable for compat); per-event body `userHash` keys
+  stay accepted-but-ignored (length/NUL checked). Client-sent
+  `anonId`/`country` keys are unknown to the schema and ignored; the
+  server values always win. Malformed/absent `?userHash=` falls back
+  silently, never a `400`. Hash-only on the wire: raw install IDs,
+  IPs, and user-agents never reach the store — only the 16-hex hash
+  (honored or derived) — and the 48h identity scrub
+  (`purge/purge.go: ScrubCutoff`, unchanged) still nulls `anonId` on
+  rows older than 48h. Grindable-by-design (same note as fetch
+  section 1): bucketing is not an entitlement boundary.
+  Ref: `configwire/ingest/handler.go:32-55` (`deriveIdentity`),
+  `:92-124` (honored-hash storage), `configwire/ingest/batcher.go`
   (`saveStoredEvent`).
 - Raw `userId`/`ip` keys are strictly rejected (presence, not value,
   even null-valued) then `400`. PII/device-identifier keys (`email`,

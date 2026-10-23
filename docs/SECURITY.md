@@ -79,7 +79,7 @@ binary plus operator procedure.
   `(envID, day, salt)` reaches the salt store. Ref:
   `configwire/identity/identity.go:40-68` (`DeriveAnonID`, `AnonID`),
   `configwire/identity/geo.go:21-41` (`CountryFromHeaders`,
-  `NormalizeCountry`), `configwire/ingest/handler.go:32-44`
+  `NormalizeCountry`), `configwire/ingest/handler.go:38-49`
   (`deriveIdentity`).
 - Lifecycle: salts rotate at UTC midnight (per-env daily salt,
   32 bytes from `crypto/rand`); old salts are pruned past 48h
@@ -92,17 +92,21 @@ binary plus operator procedure.
   `configwire/identity/salt.go:10-24` (salt size, `pruneAfter`),
   `:89-158` (`SaltForDay`, `Prune`), `configwire/eval/eval.go:166-179`
   (`Bucket` + rebucket note).
-- The fetch path takes identity as server-derived only: client
-  `?userHash=` (any shape) and `?country=` are accepted-but-ignored,
-  and a sent `?userHash=` stamps `X-CW-Deprecated-userHash: true` so
-  callers can find and remove it. Stop sending both; the server
-  derives them. Ref: `configwire/fetch/fetch.go:153-170`,
-  `:187-198`, `:459-471`.
+- The fetch path honors a well-formed client `?userHash=`
+  (`^[0-9a-f]{16}$` via `identity.ResolveHonoredHash`) for bucketing
+  and exposure identity, with silent fallback to the server-derived
+  daily anonID on malformed/absent values; `?country=` stays
+  accepted-but-ignored in favor of server geo. Ref:
+  `configwire/fetch/fetch.go:194-199` (`effectiveUserHash`),
+  `:493` (call site),
+  `configwire/identity/identity.go` (`ResolveHonoredHash`).
 - Removal notice: the `?uid=` compat alias is removed. Any trimmed
   non-empty `?uid=` returns `400`
   (`raw "uid" is forbidden: send "userHash" instead.`). Never send raw
   identity on the wire or in URLs. Ref:
   `configwire/fetch/fetch.go:187-190`.
+- Stable bucket `?b=` (mint/echo/precedence): wire shape lives in
+  `CONTRACT.md` section 1e; no new storage claim here.
 - The fetch `attrs` map denies PII/device-identifier keys
   (`email`, `phone`, `ip`, `deviceId`, `advertisingId`, `adid`,
   `idfa`, `idfv`, `androidId`, `serial`, `mac`, `imei`,
