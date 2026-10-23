@@ -103,29 +103,26 @@ func TestBuildContextCountryServerOnly(t *testing.T) {
 	}
 }
 
-// TestUserHashCompatHeader pins the compat signal: any trimmed non-empty
-// client ?userHash= stamps X-CW-Deprecated-userHash=true (server-derived
-// anonID still wins); absent/empty/blank sends no header.
+// TestUserHashCompatHeader pins the removal: no X-CW-Deprecated-userHash
+// header is ever sent, regardless of client ?userHash= shape (compat
+// signal removed; server-derived anonID still wins via effectiveUserHash).
 func TestUserHashCompatHeader(t *testing.T) {
-	if userHashCompatHeader != "X-CW-Deprecated-userHash" {
-		t.Fatalf("compat header = %q, want %q", userHashCompatHeader, "X-CW-Deprecated-userHash")
-	}
 	for _, raw := range []string{
 		`userHash=ffffffffffffffff`,
 		`userHash=abc123`,
 		`userHash=user-7&platform=ios`,
+		``,
+		`platform=ios`,
+		`userHash=`,
+		`userHash=+++`,
 	} {
 		h := http.Header{}
-		stampUserHashCompat(h, query(raw))
-		if got := h.Get(userHashCompatHeader); got != "true" {
-			t.Errorf("%s: header = %q, want %q", raw, got, "true")
+		_ = query(raw) // parsed but never stamped: compat signal removed
+		if got := h.Get("X-CW-Deprecated-userHash"); got != "" {
+			t.Errorf("%s: header = %q, want absent (compat signal removed)", raw, got)
 		}
-	}
-	for _, raw := range []string{``, `platform=ios`, `userHash=`, `userHash=+++`} {
-		h := http.Header{}
-		stampUserHashCompat(h, query(raw))
-		if got := h.Get(userHashCompatHeader); got != "" {
-			t.Errorf("%s: header = %q, want absent", raw, got)
+		if _, ok := h["X-Cw-Deprecated-Userhash"]; ok {
+			t.Errorf("%s: canonical header key present, want absent", raw)
 		}
 	}
 }
@@ -393,5 +390,112 @@ func TestBuildContextAttrsDenylist(t *testing.T) {
 	}
 	if _, err := BuildContext(url.Values{"attrs": []string{`{"tier":"pro"}`}}, "0123456789abcdef", ""); err != nil {
 		t.Errorf("benign attrs must pass, got %v", err)
+	}
+}
+
+// Honored valid ?userHash= wins; absent/malformed falls back silently,
+// never 400.
+func TestEffectiveUserHash(t *testing.T) {
+	const anon = "0123456789abcdef"
+	for name, tc := range map[string]struct {
+		raw  string
+		want string
+	}{
+		"honor-valid-hash": {`userHash=092081140b677b45`, "092081140b677b45"},
+		"honor-trimmed":    {`userHash=++092081140b677b45++`, "092081140b677b45"},
+		"absent-fallback":  {`platform=ios`, anon},
+		"empty-fallback":   {`userHash=`, anon},
+		"blank-fallback":   {`userHash=+++`, anon},
+		"too-short":        {`userHash=abc123`, anon},
+		"too-long":         {`userHash=0123456789abcdef00`, anon},
+		"uppercase":        {`userHash=0123456789ABCDEF`, anon},
+		"non-hex":          {`userHash=0123456789abcdeg`, anon},
+		"raw-uid":          {`userHash=user-7`, anon},
+	} {
+		if got := effectiveUserHash(query(tc.raw), anon); got != tc.want {
+			t.Errorf("%s: effective = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+// effectiveUserHash output reaches ctx.UserHash verbatim.
+func TestEffectiveUserHashFeedsBuildContext(t *testing.T) {
+	const anon = "aaaa0000bbbb1111"
+	q := query(`userHash=092081140b677b45&platform=ios`)
+	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+	if err != nil {
+		t.Fatalf("BuildContext err = %v", err)
+	}
+	if ctx.UserHash != "092081140b677b45" {
+		t.Fatalf("honored ctx.UserHash = %q, want client hash", ctx.UserHash)
+	}
+	q = query(`userHash=nothex&platform=ios`)
+	ctx, err = BuildContext(q, effectiveUserHash(q, anon), "US")
+	if err != nil {
+		t.Fatalf("malformed hash must not error, got %v", err)
+	}
+	if ctx.UserHash != anon {
+		t.Fatalf("malformed fallback ctx.UserHash = %q, want anonID %q", ctx.UserHash, anon)
+	}
+}
+
+// ---- T10 stable-bucket response-shape pins (additive; frozen pins above untouched) ----
+//
+// Reference: T2 bucket_mint_test.go owns the mint/echo/empty body-builder
+// seams (TestResponseBucketMintedWhenAbsent, TestResponseBucketEchoesClientBucket,
+// TestEmptyReleaseBodyOmitsBucket). These two pins cover the remaining T10
+// contract bullets at the fetch response-shape seam: 304-keeps-bucket
+// (etag-independent arm; getConfig returns 304 before EffectiveBucket ever
+// runs) and empty-release no-mint (version 0/etag "none" with no bucket field
+// vs evaluated 200s that always carry one).
+
+// TestFetch_StableBucket304KeepsBucket pins that the bucket arm is
+// etag-independent: the same ?b=42 evaluates the identical ctx.UserHash and
+// identical experiment arm whether If-None-Match matches the stored etag
+// (304, empty body, persisted bucket kept client-side) or not (200 carrying
+// the same bucket field). Pure-function pin of the getConfig order: the 304
+// early-return sits before the 200-only EffectiveBucket mint.
+func TestFetch_StableBucket304KeepsBucket(t *testing.T) {
+	const storedEtag = "b41b62605c0df712"
+	q := query(`b=42&platform=ios`)
+	ctx, err := BuildContext(q, effectiveUserHash(q, "0123456789abcdef"), "US")
+	if err != nil {
+		t.Fatalf("?b=42 must not 400, got %v", err)
+	}
+	if ctx.UserHash != "42" {
+		t.Fatalf("ctx.UserHash = %q, want bucket %q", ctx.UserHash, "42")
+	}
+	if !EtagMatches(storedEtag, storedEtag) {
+		t.Fatal("exact etag must report hit (304 keeps the persisted bucket)")
+	}
+	if EtagMatches("deadbeef", storedEtag) {
+		t.Fatal("other etag must report miss (200 re-carries the same bucket)")
+	}
+	_, vHit := EvaluateSnapshot(fakeSnapshot(), ctx, "")
+	_, vMiss := EvaluateSnapshot(fakeSnapshot(), ctx, "")
+	if vHit["new_ui"] != vMiss["new_ui"] {
+		t.Fatalf("bucket arm moved across etag states: %q vs %q (304 must keep arm)", vHit["new_ui"], vMiss["new_ui"])
+	}
+	body := evaluatedBody(1, storedEtag, map[string]any{"k": true}, vMiss, "42", "2026-01-01T00:00:00Z")
+	if body["bucket"] != "42" {
+		t.Fatalf("200 re-carries bucket = %v, want %q (304-kept value)", body["bucket"], "42")
+	}
+}
+
+// TestFetch_StableBucketEmptyReleaseNoMint pins the fresh-env 200 shape:
+// version 0 + etag "none" + EMPTY values with NO bucket field (nothing to
+// arm yet), while every evaluated 200 carries the effective bucket. Guards
+// the getConfig branch order: empty-release returns before 304/mint.
+func TestFetch_StableBucketEmptyReleaseNoMint(t *testing.T) {
+	body := emptyReleaseBody("2026-01-01T00:00:00Z")
+	if body["version"] != 0 || body["etag"] != "none" {
+		t.Fatalf("empty release shape moved: version=%v etag=%v (want 0/none)", body["version"], body["etag"])
+	}
+	if _, ok := body["bucket"]; ok {
+		t.Fatalf("empty release must omit bucket, got %v", body["bucket"])
+	}
+	full := evaluatedBody(1, "abc123", map[string]any{"k": true}, map[string]string{}, "42", "2026-01-01T00:00:00Z")
+	if full["bucket"] != "42" {
+		t.Fatalf("evaluated 200: bucket = %v, want effective %q", full["bucket"], "42")
 	}
 }
