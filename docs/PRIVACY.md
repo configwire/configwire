@@ -21,9 +21,7 @@ S3, or CDN in front, those are your subprocessors, not ours.
 Edge we state up front: raw `?uid=` is rejected with `400`
 (`raw "uid" is forbidden: send "userHash" instead.`) and never
 reaches storage or logs, so it cannot linger past the request line.
-A well-formed client `?userHash=` is honored for bucketing and
-exposure identity, with silent fallback to the server-derived anonID
-below. See [CONTRACT.md](CONTRACT.md)
+Use server-derived identity only. See [CONTRACT.md](CONTRACT.md)
 section 1 and [SECURITY.md](SECURITY.md) section 3.
 
 Numbers below are verified against shipped code
@@ -32,16 +30,14 @@ Numbers below are verified against shipped code
 ## 2. End users (people using your app)
 
 What your SDK sends: flag fetch and exposure events carrying an opaque
-`userHash` (16 lowercase hex, `sha256hex16` of a random per-install ID
-generated on-device; the raw install ID never leaves the device). SDKs
-never send raw user IDs or IP addresses in event bodies; the server
-rejects `userId`/`ip` keys with `400`. A client-sent `?userHash=` on
-fetch/ingest is honored for bucketing and exposure identity when
-well-formed (`^[0-9a-f]{16}$`, `identity.ResolveHonoredHash`) and
-otherwise falls back to the server-derived anonID below (malformed or
-absent values never error, never `400`); a client-sent `?country=` is
+`userHash` (16 lowercase hex), flag key, variant, version, and
+timestamp. No device IDs are collected. SDKs never send raw user IDs or
+IP addresses in event bodies; the server rejects `userId`/`ip` keys
+with `400`. A client-sent `?userHash=` on fetch is accepted but
+ignored for bucketing (the server stamps
+`X-CW-Deprecated-userHash: true`); a client-sent `?country=` is
 likewise ignored in favor of server geo
-(`fetch/fetch.go:195-199`, `ingest/handler.go:32-55`).
+(`fetch/fetch.go:201-214`, `ingest/handler.go:47-63`).
 
 What the server derives: for bucketing and coarse geo only, the
 server keeps IP and User-Agent in memory, never writes them to disk,
@@ -66,12 +62,12 @@ configurable country-header order, default `CF-IPCountry` /
  `anonId` + `country` with the legacy `userHash` column left empty
   (`ingest/handler.go:102-121`).
 So per-device rows are pseudonymous, never anonymous: unlinkable
-across days by design for anonymous traffic (daily-rotating anonID),
-joined within a day by the anonID. Seeded traffic — requests carrying
-a stable client install hash — is pseudonymous across days by
-construction: the same hash buckets and attributes the same install
-until the app reinstalls or clears its data. We do not claim anonymity
-for seeded traffic, only pseudonymity plus deletion. Mitigations, all
+across days by design, joined within a day by the anonID. We do not
+claim full anonymity, only daily-rotating pseudonymity plus deletion.
+Stable-bucket traffic — requests carrying a client-persisted `?b=` —
+reuses the same arm until the client rotates it; `?b=` is
+client-enumerable (`0`-`9999`), so bucketing is not an entitlement
+boundary. Mitigations, all
 shipped:
 - hash-only on the wire and in the store: only 16-hex hashes travel
   and persist; raw IPs and user-agents are never written to disk —

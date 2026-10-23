@@ -23,13 +23,11 @@ Purpose: serve remote config and measure flag fetch and exposure
 counts. Nature: server-derived ephemeral anonID
 `hex(HMAC_SHA256(per-env daily salt, ip + 0x00 + ua))[:16]`
 with UTC-midnight salt rotation, IP and UA in memory only, country-only
-geo, and aggregation into count-only rollups. A well-formed client
-`?userHash=` (`^[0-9a-f]{16}$`) is honored for bucketing and exposure
-identity with silent fallback to the server-derived anonID below
-(`identity.ResolveHonoredHash`, shared by fetch and ingest);
-ingest stores the honored-or-derived 16-hex hash as `anonId` plus
-country, leaving the legacy `userHash` column empty
- (`ingest/handler.go:102-121`). No device IDs, no OAuth
+geo, and aggregation into count-only rollups. Client `?userHash=`
+(any shape) is accepted-but-ignored for bucketing with
+`X-CW-Deprecated-userHash` stamped (`fetch/fetch.go:201-214`); ingest
+stores the legacy `userHash` column empty, server anonID plus country
+win (`ingest/handler.go:141-146`). No device IDs, no OAuth
 profile data. Previous-day salts are kept up to 48h for late events,
 then pruned by the daily ticker (`purge/purge.go:787`: boot run plus
 23-25h jitter, scrub then purge then salt-prune); salts live in the
@@ -44,16 +42,17 @@ API, never called from the ticker.
 
 Subjects: end users of the operator's app; operator staff holding
 email-only admin accounts. Data: flag, variant, version, timestamp,
-identity hash (honored client hash when well-formed, else daily-rotating
-anonID unlinkable across days), country. The legacy `userHash` column
+ephemeral anonID (daily-rotating, unlinkable across days), country.
+Client `userHash` is accepted-but-ignored and stored empty; server
+anonID plus country win. The legacy `userHash` column
 stays empty; raw rows default 30 days, rollups default 90
 days, tunable 1 day to 1825 days with rollups outliving raw rows.
 Request logs off by default.
 
 ## 4. Processor obligations
 
-Process only on documented instructions. Keep hash-only storage
-(only the honored-or-derived 16-hex hash persists as `anonId`;
+Process only on documented instructions. Keep anonID-only storage
+(client `userHash` accepted-but-ignored, stored empty;
 raw `userId`/`ip` rejected), keep IP/UA out of persistent storage,
 honor the daily salt rotation and 48h salt-prune bound, apply the
  configured retention via the daily ticker (scrub, purge, salt-prune)

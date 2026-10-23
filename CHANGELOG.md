@@ -3,32 +3,14 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
-## Unreleased
-
-### Changed
-
-- Honored client identity with daily-anonID fallback
-  (`configwire/identity/identity.go` `ResolveHonoredHash`,
-  `configwire/fetch/fetch.go` `effectiveUserHash`,
-  `configwire/ingest/handler.go` `deriveIdentity`): a well-formed
-  client `?userHash=` (`^[0-9a-f]{16}$`) is honored for bucketing and
-  exposure identity, with silent fallback to the server-derived daily
-  anonID on malformed/absent values (never `400`). Fetch and ingest
-  share the rule so exposures join with bucketing. `?country=` stays
-  accepted-but-ignored in favor of server header geo. No compat header
-  is stamped.
-  Hash-only on the wire and in the store; the 48h identity scrub is
-  unchanged. Grindable-by-design: bucketing is not an entitlement
-  boundary — never gate paid access, quotas, or one-per-user rewards
-  on experiment assignment alone. See `docs/CONTRACT.md` section 1.
-
-## v0.1.13 — 2026-10-21
+## v0.1.13 (Unreleased)
 
 ### Added
 
 - Opt-in HSTS: set `CONFIGWIRE_HSTS=<max-age seconds>` (e.g. `31536000`) to stamp `Strict-Transport-Security: max-age=<n>; includeSubDomains` on every response (`security.SetHeaders`, boot-applied in `main.go`). Unset/empty/invalid leaves the header off — the plain-HTTP default serve is unchanged; a present-but-unusable value logs one boot warning naming only the env var.
 - Opt-in setup-claim guard: set `CONFIGWIRE_SETUP_TOKEN` to require a matching `X-ConfigWire-Setup-Token` header on `POST /api/v1/admin/setup` (constant-time compare, else `403`). Unset keeps the public first-run flow; `GET /api/v1/admin/setup/status` stays public. Runbook: `docs/PRODUCTION.md` §4.
 - Operator docs: new `docs/PRODUCTION.md` pre-exposure checklist (CORS, TLS+HSTS, admin allowlist, setup claim, SSO secret, backups/retention, single-node purge), linked from the README Docker section and `docs/SECURITY.md`.
+- Stable bucket `?b=` (`configwire/identity/bucket.go` `ParseBucketParam`, `configwire/fetch/fetch.go` `MintBucket`/`EffectiveBucket`, `configwire/ingest/handler.go` `parseBucketCanonical`): canonical plain-int `"0"`–`"9999"` pins one install to a stable arm; malformed non-empty values answer `400` (`invalid "b": send "0"-"9999".`, mirroring the `?uid=` sunset; empty equals absent). Precedence is valid `?b=` > server-derived daily anonID. An evaluated `200` carries `"bucket"` (client `?b=` verbatim, else a fresh `crypto/rand` mint over 10000); `304` carries no body and never mints; empty-release `200` carries no `bucket` field. Ingest honors the same `?b=` rule via the shared validator so exposures join the fetch arm. See `docs/CONTRACT.md` §1e.
 
 ### Changed
 
@@ -38,6 +20,7 @@ All notable changes to the ConfigWire server (`configwire/`, image
 
 - Admin UI no longer silently swallows background-refresh failures: 41 empty `catch` sites across scope/boot/backups/account/keys/router/limits/retention now emit a tagged `console.warn('<module>: <context>', error)` (warn-only — no rethrows, toasts, or behavior change), plus a `js_tests` assertion pinning the pattern.
 - Docs no longer ship copy-pasteable example credentials: the docker-compose superuser example uses `<change-me-32-chars>`, `BACKUPS.md` uses `<access-key>`/`<secret-key>` placeholders, and `e2e.sh` marks its hardcoded password as throwaway scoped to the ephemeral test DB.
+- Admin UI Settings saves the edited country/IP headers instead of silently keeping stale values (`pb_public/js/limits.js` reads the live DOM on save) and shows the active header defaults as input value text, with `js_tests/test-limits.js` pinning both.
 
 ## v0.1.12 — 2026-10-20
 

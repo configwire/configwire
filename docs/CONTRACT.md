@@ -11,49 +11,42 @@ Conventions used below:
 
 ## 1. Fetch — `GET /api/v1/env/{env}/config`
 
-Ref: `configwire/fetch/fetch.go:216-251` (`BuildContext`),
-`configwire/identity/identity.go` (`IsValidAnonID`,
-`ResolveHonoredHash`), `:167-190` (compat header + `effectiveUserHash`),
-`:477-500` (handler order), route + gzip `:146-154`.
+Ref: `configwire/fetch/fetch.go:289` (`BuildContext`),
+`configwire/identity/identity.go` (`AnonID`), `:201`
+(`stampUserHashCompat`), `:214` (`effectiveUserHash`), `:562`
+(handler order), route `:151`, preflight `:159`.
 
-Identity is the honored client hash with a daily-anonID fallback:
-bucketing uses the trimmed client `?userHash=` when it matches
-`^[0-9a-f]{16}$` (`identity.IsValidAnonID` — 16 lowercase hex, the
-`sha256hex16(installID)` the SDK sends; raw install IDs never leave
-the device), else `anonID = Manager.AnonID(envID, ClientIP,
-User-Agent, day)` (`HMAC_SHA256(per-env daily salt, ip + 0x00 + ua)`,
-same 16-hex shape), stored in `Context.UserHash` (field name kept for
-`eval.Bucket` compat); country is server geo from
-`identity.CountryFromHeaders` only. Client `?country=` is
-accepted-but-ignored and never reaches eval. Hash-only on the wire: the
-server persists no raw identity — only the 16-hex hash (honored or
-derived) reaches the store, and the 48h identity scrub
-(`purge/purge.go: ScrubCutoff`, unchanged) still nulls `anonId` on
-rows older than 48h.
-
-Grindable-by-design: the honored hash is client-chosen input, so a
-caller can re-hash arbitrary install IDs to sample buckets until one
-lands in a favored variant. This is accepted (same trade-off as
-LaunchDarkly/Unleash/ConfigCat and ConfigWire 0.2.x): bucketing is
-not an entitlement boundary — never gate paid access, quotas, or
-one-per-user rewards on experiment assignment alone; enforce those
-server-side on authenticated identity.
+Identity is server-derived: bucketing uses
+`anonID = Manager.AnonID(envID, ClientIP, User-Agent, day)`
+(`HMAC_SHA256(per-env daily salt, ip + 0x00 + ua)`, 16 lowercase hex),
+stored in `Context.UserHash` (field name kept for `eval.Bucket`
+compat); a valid `?b=` wins over the derived anonID (see §1e).
+Country is server geo from `identity.CountryFromHeaders` only.
+Client `?userHash=` (any shape, even malformed) and `?country=`
+are accepted-but-ignored and never reach eval; a sent `?userHash=`
+(trimmed non-empty) stamps `X-CW-Deprecated-userHash: true` on the
+response. Client identity material should migrate to nothing: stop
+sending `userHash`/`country`, the server derives both. Hash-only on
+the wire: the server persists no raw identity — only the derived
+anonID (or the canonical `?b=` number, see §1e) reaches the store,
+and the 48h identity scrub (`purge/purge.go: ScrubCutoff`, unchanged)
+still nulls `anonId` on rows older than 48h.
 
 Removal notice: the `?uid=` compat alias is removed. Any trimmed
 non-empty `?uid=` returns `400` (empty equals absent). Clients must
 send no `uid` at all.
 
-Precedence: absent/malformed `?userHash=` stays `200` (rules still
-evaluate, bucketing uses the derived anonID, which is always
-non-empty on success) — there is no `400` for `userHash`, only the
-fallback. Ref: `configwire/fetch/fetch.go:195-199`
-(`effectiveUserHash`), `:216-251` (`BuildContext`), `:167-190`
-(header stamp).
+Precedence: valid `?b=` > derived anonID. Absent/malformed
+`?userHash=` stays `200` (rules still evaluate, bucketing uses the
+derived anonID, which is always non-empty on success) — there is no
+`400` for `userHash`, only the ignore. Ref:
+`configwire/fetch/fetch.go:214` (`effectiveUserHash`), `:289`
+(`BuildContext`), `:201` (header stamp).
 
 Auth/env order: CORS stamp then 401 (key) then 404 (unknown env slug)
 then 401 (key not scoped to this env) then 429 (rate) then 400/414
 (attrs) then 200 (empty release) then 304/200.
-Ref: `configwire/fetch/fetch.go:444-447`.
+Ref: `configwire/fetch/fetch.go:559-562`.
 
 Multi-project slugs: the env is resolved deterministically from the
 key's env record (the key's env IS the env), so a slug shared by
@@ -90,8 +83,9 @@ Ref: `:477-485`. Values are empty, not flag defaults; SDKs use in-app defaults.
 
 `If-None-Match` equals the stored etag by exact string match only
 (`W/`-prefixed or quoted values do not match) then `304` with an
-empty body. `304` returns before evaluation, so daily rotation or
-honored-hash change only takes effect on the next `200`. Ref: `:232-237,488-493`.
+empty body. `304` returns before evaluation, so daily rotation only
+takes effect on the next `200`. Ref: `:349` (`EtagMatches`),
+`:596-601` (304 early-return).
 
 ### 1d. Fetch errors
 
@@ -106,11 +100,11 @@ Empty `uid` equals absent (no error, anonymous path). Ref:
 `configwire/fetch/fetch.go:187-190` (`BuildContext`, caller maps to
 `400` via `re.BadRequestError`).
 
-Client `?userHash=` is never an error: a well-formed value
-(`^[0-9a-f]{16}$`) is honored for bucketing, any other shape
-(including malformed) falls back to the derived anonID. There is no
-`400` for `userHash`. Ref: `:185-199` (`effectiveUserHash`),
-`:488-498` (handler).
+Client `?userHash=` is never an error: any shape (including
+malformed) is accepted-but-ignored, stamping
+`X-CW-Deprecated-userHash: true` when trimmed non-empty. There is
+no `400` for `userHash`. Ref: `:201` (`stampUserHashCompat`),
+`:578-585` (call site + stamp).
 
 Malformed `attrs` (bad JSON, or valid JSON that is not an object):
 
@@ -146,24 +140,24 @@ through to defaults with `200`, never `400`.
   `"007"`/`"00"`/whitespace-padded/out-of-range not canonical).
   Ref: `configwire/identity/bucket.go:12` (`ErrInvalidBucketMessage`),
   `:17-36` (`IsCanonicalBucket`), `:41-53` (`ParseBucketParam`);
-  thin delegates at `configwire/fetch/fetch.go:190` (`ParseBucket`),
-  `configwire/ingest/handler.go:73` (`parseBucketCanonical`).
+  thin delegates at `configwire/fetch/fetch.go:194` (`ParseBucket`),
+  `configwire/ingest/handler.go:70` (`parseBucketCanonical`).
 - Malformed (non-empty, non-canonical) `?b=` returns `400`
   (`invalid "b": send "0"-"9999".`), mirroring the `?uid=` sunset;
-  empty equals absent. `?uid=` still wins when both are present
+  empty equals absent.   `?uid=` still wins when both are present
   (`uid` checked first). Ref:
-  `configwire/fetch/fetch.go:277` (`BuildContext`),
+  `configwire/fetch/fetch.go:289` (`BuildContext`),
   `configwire/ingest/handler.go:47` (`deriveIdentity`).
-- Precedence: valid `?b=` > valid `?userHash=` > derived anonID.
+- Precedence: valid `?b=` > derived anonID.
   `ctx.UserHash` carries the canonical number string so
   `eval.Bucket(number+seed)` evaluates the minted arm. Ref:
-  `configwire/fetch/fetch.go:203` (`effectiveUserHash`),
-  `:277` (`BuildContext`),
+  `configwire/fetch/fetch.go:214` (`effectiveUserHash`),
+  `:289` (`BuildContext`),
   `configwire/eval/eval.go:172-179` (`Bucket`).
-- One-time reshuffle (disclosed, accepted): an upgraded seeded
-  install that previously bucketed on its honored hash re-rolls onto
-  its minted number the first time it sends `?b=`. Ref:
-  `configwire/fetch/fetch.go:203`.
+- One-time reshuffle (disclosed, accepted): a client that previously
+  bucketed on its derived anonID re-rolls onto its minted number the
+  first time it sends `?b=`. Ref:
+  `configwire/fetch/fetch.go:214`.
 - Response `bucket` is 200-only: an evaluated `200` carries
   `"bucket": "<n>"` (the client's valid `?b=` verbatim, else a fresh
   `MintBucket` uniform over 10000 via `crypto/rand`); `304` carries
@@ -175,7 +169,7 @@ through to defaults with `200`, never `400`.
 - Events join: ingest honors the same `?b=` rule via the shared
   `identity.ParseBucketParam` (thin delegate `parseBucketCanonical`), so
   exposures attribute to the fetch arm. Ref:
-  `configwire/ingest/handler.go:47`, `:73`.
+  `configwire/ingest/handler.go:47` (`deriveIdentity`), `:70`.
 - Balance (gate-measured, coarse bins only):
   `Bucket("0"-"9999")` over one seed lands deciles 931-1062
   (E=1000), 100-bin chi2 91-153 (df=99, bound 200); cross-seed 50/50
@@ -422,26 +416,25 @@ Request:
   SDK fetch events carry it); absent means 0. Negative then `400`.
 - `ts` accepts RFC3339 string, unix-seconds number, or absent/null
   (server time). Anything else then `400`.
-- Identity is the honored client hash with a daily-anonID fallback
-  (identical rule to fetch, so exposures join with bucketing): the
-  trimmed `?userHash=` query value when it matches `^[0-9a-f]{16}$`
-  (`identity.IsValidAnonID`, shared via
-  `identity.ResolveHonoredHash`), else `anonID` via
+- Identity is server-derived (ignore+replace): a client `userHash`
+  key is accepted by the schema (length/NUL checked) but IGNORED at
+  storage — the handler derives `anonID` via
   `identity.Manager` (`limits.ClientIP` + User-Agent + per-env daily
-  salt) plus `country` from headers. The handler stores
+  salt) plus `country` from headers, stores
   `events.anonId` + `events.country`, and stores `userHash` empty
-  (column kept nullable for compat); per-event body `userHash` keys
-  stay accepted-but-ignored (length/NUL checked). Client-sent
-  `anonId`/`country` keys are unknown to the schema and ignored; the
-  server values always win. Malformed/absent `?userHash=` falls back
-  silently, never a `400`. Hash-only on the wire: raw install IDs,
-  IPs, and user-agents never reach the store — only the 16-hex hash
-  (honored or derived) — and the 48h identity scrub
+  (column kept nullable for compat). A valid `?b=` wins over the
+  derived anonID so exposures join the fetch arm; malformed `?b=` is
+  `400`. Client-sent `anonId`/`country` keys are unknown to the
+  schema and ignored; the server values always win.
+  Malformed/absent `?userHash=` is silently ignored, never a `400`.
+  Hash-only on the wire: raw install IDs, IPs, and user-agents never
+  reach the store — only the derived anonID (or the canonical `?b=`
+  number) — and the 48h identity scrub
   (`purge/purge.go: ScrubCutoff`, unchanged) still nulls `anonId` on
-  rows older than 48h. Grindable-by-design (same note as fetch
-  section 1): bucketing is not an entitlement boundary.
-  Ref: `configwire/ingest/handler.go:32-55` (`deriveIdentity`),
-  `:92-124` (honored-hash storage), `configwire/ingest/batcher.go`
+  rows older than 48h. Bucketing is not an entitlement boundary
+  (same note as fetch section 1e).
+  Ref: `configwire/ingest/handler.go:47-63` (`deriveIdentity`),
+  `:141-146` (anonID-only storage), `configwire/ingest/batcher.go`
   (`saveStoredEvent`).
 - Raw `userId`/`ip` keys are strictly rejected (presence, not value,
   even null-valued) then `400`. PII/device-identifier keys (`email`,
