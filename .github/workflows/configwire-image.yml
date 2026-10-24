@@ -1,4 +1,4 @@
-name: docker-publish
+name: configwire-image
 
 on:
   push:
@@ -87,8 +87,8 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
           # Per-arch cache scope: amd64/arm64 layers must not share entries.
-          cache-from: type=gha,scope=docker-publish-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=docker-publish-${{ matrix.arch }}
+          cache-from: type=gha,scope=configwire-image-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=configwire-image-${{ matrix.arch }}
 
           # Supply-chain metadata.
           provenance: mode=max
