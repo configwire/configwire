@@ -219,6 +219,7 @@ func stampUidCompat(h http.Header, q url.Values) {
 		h.Set(uidCompatHeader, "true")
 	}
 }
+
 // effectiveUserHash resolves one fetch's bucketing identity with the
 // stable-bucket precedence: valid ?b= wins, else the daily anonID
 // fallback. Client ?userHash= and ?uid= (any shape) are accepted-but-ignored

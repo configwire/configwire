@@ -3,7 +3,7 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
-## v0.1.13 (Unreleased)
+## v0.1.13 — 2026-10-24
 
 ### Added
 
