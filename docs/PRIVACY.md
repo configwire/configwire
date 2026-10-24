@@ -18,11 +18,12 @@ no GitHub/Google OAuth. For a pure self-host there is no vendor
 subprocessor, so no vendor DPA is needed. If you add your own hosting,
 S3, or CDN in front, those are your subprocessors, not ours.
 
-Edge we state up front: raw `?uid=` is rejected with `400`
-(`raw "uid" is forbidden: send "userHash" instead.`) and never
-reaches storage or logs, so it cannot linger past the request line.
-Use server-derived identity only. See [CONTRACT.md](CONTRACT.md)
-section 1 and [SECURITY.md](SECURITY.md) section 3.
+Edge we state up front: any-shape `?uid=` is accepted-but-ignored
+(never `400`; trimmed non-empty stamps `X-CW-Deprecated-uid: true`)
+and never reaches storage or logs, so it cannot linger past the
+request line. Use server-derived identity only. See
+[CONTRACT.md](CONTRACT.md) section 1 and [SECURITY.md](SECURITY.md)
+section 3.
 
 Numbers below are verified against shipped code
 (`configwire/identity`, `configwire/retention`, `configwire/purge`).

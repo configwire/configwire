@@ -32,9 +32,11 @@ anonID (or the canonical `?b=` number, see §1e) reaches the store,
 and the 48h identity scrub (`purge/purge.go: ScrubCutoff`, unchanged)
 still nulls `anonId` on rows older than 48h.
 
-Removal notice: the `?uid=` compat alias is removed. Any trimmed
-non-empty `?uid=` returns `400` (empty equals absent). Clients must
-send no `uid` at all.
+Compat: any-shape `?uid=` is accepted-but-ignored, never `400`.
+A trimmed non-empty `?uid=` stamps `X-CW-Deprecated-uid: true` on the
+response; empty equals absent (no header, anonymous path). Bucketing
+still uses the server-derived daily anonID unless a valid `?b=`
+overrides it (see §1e). Clients must send no `uid` at all.
 
 Precedence: valid `?b=` > derived anonID. Absent/malformed
 `?userHash=` stays `200` (rules still evaluate, bucketing uses the
@@ -89,16 +91,12 @@ takes effect on the next `200`. Ref: `:349` (`EtagMatches`),
 
 ### 1d. Fetch errors
 
-Removal notice: the `?uid=` compat alias is removed. Any trimmed
-non-empty `?uid=` returns `400`:
-
-```json
-{"data": {}, "message": "raw \"uid\" is forbidden: send \"userHash\" instead.", "status": 400}
-```
-
-Empty `uid` equals absent (no error, anonymous path). Ref:
-`configwire/fetch/fetch.go:187-190` (`BuildContext`, caller maps to
-`400` via `re.BadRequestError`).
+Compat: any-shape `?uid=` is accepted-but-ignored, never `400`.
+A trimmed non-empty `?uid=` stamps `X-CW-Deprecated-uid: true` on the
+response; empty `uid` equals absent (no header, anonymous path).
+Bucketing still uses the server-derived daily anonID unless a valid
+`?b=` wins (see §1e). Ref: `configwire/fetch/fetch.go`
+(`BuildContext` ignore + header stamp).
 
 Client `?userHash=` is never an error: any shape (including
 malformed) is accepted-but-ignored, stamping
@@ -143,9 +141,9 @@ through to defaults with `200`, never `400`.
   thin delegates at `configwire/fetch/fetch.go:194` (`ParseBucket`),
   `configwire/ingest/handler.go:70` (`parseBucketCanonical`).
 - Malformed (non-empty, non-canonical) `?b=` returns `400`
-  (`invalid "b": send "0"-"9999".`), mirroring the `?uid=` sunset;
-  empty equals absent.   `?uid=` still wins when both are present
-  (`uid` checked first). Ref:
+  (`invalid "b": send "0"-"9999".`); empty equals absent. `?uid=`
+  is ignored and never wins: with both present a valid `?b=` still
+  wins, and `?uid=` alone never errors. Ref:
   `configwire/fetch/fetch.go:289` (`BuildContext`),
   `configwire/ingest/handler.go:47` (`deriveIdentity`).
 - Precedence: valid `?b=` > derived anonID.
@@ -424,7 +422,10 @@ Request:
   `events.anonId` + `events.country`, and stores `userHash` empty
   (column kept nullable for compat). A valid `?b=` wins over the
   derived anonID so exposures join the fetch arm; malformed `?b=` is
-  `400`. Client-sent `anonId`/`country` keys are unknown to the
+  `400`. Any-shape `?uid=` is likewise accepted-but-ignored (never a
+  `400`): a trimmed non-empty `?uid=` stamps
+  `X-CW-Deprecated-uid: true`, empty equals absent, and a valid `?b=`
+  still wins. Client-sent `anonId`/`country` keys are unknown to the
   schema and ignored; the server values always win.
   Malformed/absent `?userHash=` is silently ignored, never a `400`.
   Hash-only on the wire: raw install IDs, IPs, and user-agents never
@@ -725,7 +726,7 @@ Success `200` (both verbs, same shape):
 | 202  | events accepted                                                                       | `{"accepted": N, "status": 202}`                                                                                       | ingest handler `:118`                                                                             |
 | 204  | fetch CORS preflight (`OPTIONS`)                                                      | empty                                                                                                                  | fetch `:141-150`                                                                                  |
 | 304  | fetch not modified (exact etag match)                                                 | empty                                                                                                                  | fetch `:488-493`                                                                                  |
-| 400  | bad fetch/publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:80-83,122-125,156-158`, ingest `:121-123`, stats `:140`, purge `:635`, envresolve `resolve.go`, fetch `BuildContext` (`?uid=` presence) |
+| 400  | bad fetch/publish/rollback/ingest/stats/purge input; ambiguous env slug without `?project=` | PocketBase errors: `{"data": {}, "message": "...", "status": 400}`; ingest custom: `{"message": "...", "status": 400}` | releases `:80-83,122-125,156-158`, ingest `:121-123`, stats `:140`, purge `:635`, envresolve `resolve.go`, fetch `BuildContext` (malformed `attrs`) |
 | 401  | missing/unknown/revoked/env-mismatched SDK key; non-superuser on admin paths          | PocketBase shape: `{"data": {}, "message": "Missing or invalid SDK key.", "status": 401}` (SDK paths)                  | ingest `:491-518`, fetch `:451-457`, stream `stream.go:getStream`                                                     |
 | 404  | unknown env slug / unknown release version                                            | PocketBase shape: `{"data": {}, "message": "Unknown env.", "status": 404}`                                             | fetch `:451-457`, releases `:220-221`                                                             |
 | 409  | stale publish baseVersion (no write)                                                  | `{"message": "Stale baseVersion: a newer release exists.", "status": 409, "currentVersion": N}`                        | releases `:141-147`                                                                               |

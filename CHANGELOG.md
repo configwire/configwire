@@ -21,6 +21,7 @@ All notable changes to the ConfigWire server (`configwire/`, image
 - Admin UI no longer silently swallows background-refresh failures: 41 empty `catch` sites across scope/boot/backups/account/keys/router/limits/retention now emit a tagged `console.warn('<module>: <context>', error)` (warn-only — no rethrows, toasts, or behavior change), plus a `js_tests` assertion pinning the pattern.
 - Docs no longer ship copy-pasteable example credentials: the docker-compose superuser example uses `<change-me-32-chars>`, `BACKUPS.md` uses `<access-key>`/`<secret-key>` placeholders, and `e2e.sh` marks its hardcoded password as throwaway scoped to the ephemeral test DB.
 - Admin UI Settings saves the edited country/IP headers instead of silently keeping stale values (`pb_public/js/limits.js` reads the live DOM on save) and shows the active header defaults as input value text, with `js_tests/test-limits.js` pinning both.
+- Admin API fetch/ingest no longer reject `?uid=`: trimmed non-empty `?uid=` is accepted-but-ignored with `X-CW-Deprecated-uid: true` (never 400), restoring backward compat for legacy senders; bucketing still from daily anonID unless valid `?b=`.
 
 ## v0.1.12 — 2026-10-20
 

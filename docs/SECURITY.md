@@ -99,11 +99,10 @@ binary plus operator procedure.
   derives them. Ref: `configwire/fetch/fetch.go:201`
   (`stampUserHashCompat`), `:214` (`effectiveUserHash`), `:562`
   (handler order).
-- Removal notice: the `?uid=` compat alias is removed. Any trimmed
-  non-empty `?uid=` returns `400`
-  (`raw "uid" is forbidden: send "userHash" instead.`). Never send raw
-  identity on the wire or in URLs. Ref:
-  `configwire/fetch/fetch.go:187-190`.
+- Compat: any-shape `?uid=` is accepted-but-ignored, never `400`;
+  a trimmed non-empty `?uid=` stamps `X-CW-Deprecated-uid: true`.
+  Never send raw identity on the wire or in URLs. Ref:
+  `configwire/fetch/fetch.go` (`BuildContext`).
 - Stable bucket `?b=` (mint/echo/precedence): wire shape lives in
   `CONTRACT.md` section 1e; no new storage claim here.
 - The fetch `attrs` map denies PII/device-identifier keys
