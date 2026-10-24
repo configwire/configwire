@@ -9,13 +9,23 @@
 # tag: github.com/pocketbase/pocketbase/ui/embed_no_ui.go leaves
 # ui.DistDirFS nil so /_/ routes never register. Our Admin UI at /
 # (./pb_public) and all /api/* routes are unaffected — still copied below.)
-FROM golang:1.27.2-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS builder
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 ARG GO_TAGS=""
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . ./
-RUN CGO_ENABLED=0 go build -trimpath ${GO_TAGS:+-tags=${GO_TAGS}} -o /out/configwire .
+# Cross-compile natively on $BUILDPLATFORM: no QEMU emulation even when
+# TARGETARCH != BUILDARCH. Go build cache persists across GHA rebuilds via
+# the cache mounts, so only changed packages recompile.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath ${GO_TAGS:+-tags=${GO_TAGS}} -o /out/configwire .
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
