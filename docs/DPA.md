@@ -20,7 +20,8 @@ per section 8.
 ## 2. Purpose and nature
 
 Purpose: serve remote config and measure flag fetch and exposure
-counts. Nature: server-derived ephemeral anonID
+counts. Primary identity is the stable `?b=` bucket (`0`-`9999`, only identity kept in `configwire server v0.2.0`).
+Nature (backward-compat only, removed in `configwire server v0.2.0`): server-derived ephemeral anonID
 `hex(HMAC_SHA256(per-env daily salt, ip + 0x00 + ua))[:16]`
 with UTC-midnight salt rotation, IP and UA in memory only, country-only
 geo, and aggregation into count-only rollups. Client `?userHash=`
@@ -42,6 +43,7 @@ API, never called from the ticker.
 
 Subjects: end users of the operator's app; operator staff holding
 email-only admin accounts. Data: flag, variant, version, timestamp,
+primary stable bucket `?b=` plus (backward-compat only, removed in `configwire server v0.2.0`)
 ephemeral anonID (daily-rotating, unlinkable across days), country.
 Client `userHash` is accepted-but-ignored and stored empty; server
 anonID plus country win. The legacy `userHash` column
@@ -51,8 +53,7 @@ Request logs off by default.
 
 ## 4. Processor obligations
 
-Process only on documented instructions. Keep anonID-only storage
-(client `userHash` accepted-but-ignored, stored empty;
+Process only on documented instructions. Keep bucket-primary storage (`?b=`; client `userHash` accepted-but-ignored, stored empty;
 raw `userId`/`ip` rejected), keep IP/UA out of persistent storage,
 honor the daily salt rotation and 48h salt-prune bound, apply the
  configured retention via the daily ticker (scrub, purge, salt-prune)

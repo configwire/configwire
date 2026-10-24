@@ -2,6 +2,10 @@
 
 ConfigWire-native wire. No external parity claims.
 
+> Bucket (`?b=0-9999`) is the primary identity and the only identity kept in `configwire server v0.2.0`.
+> Server-derived anonID plus legacy `?userHash=`/`?uid=`/`?country=` are backward-compat
+> shims only (accepted-but-ignored, never `400`; malformed `?b=` → `400`).
+
 Conventions used below:
 
 - `{env}` is the environment slug (for example `dev`).
@@ -402,8 +406,11 @@ Ref: `configwire/ingest/handler.go:92-102`.
 Request:
 
 ```json
-{"events": [{"kind": "exposure", "flag": "launch_flag", "variant": "treatment", "userHash": "4017c6d850aedf6b", "ts": "2026-09-22T00:00:00Z"}]}
+{"events": [{"kind": "exposure", "flag": "launch_flag", "variant": "treatment", "ts": "2026-09-22T00:00:00Z"}]}
 ```
+
+> Identity note: send `?b=` on the events POST to join exposures to the fetch arm.
+> Any `userHash` in the body is a backward-compat shim (accepted-but-ignored at storage, removed in `configwire server v0.2.0`).
 
 - `kind` must be `fetch` or `exposure`.
 - `flag`, `variant`, `userHash`, `ts` are all optional. Unknown flag

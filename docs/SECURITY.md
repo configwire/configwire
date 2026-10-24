@@ -57,7 +57,11 @@ binary plus operator procedure.
      for a global invalidate across all auth records.
   3. Re-issue SDK keys (section above) if key material may have leaked.
 
-## 3. PII — anonID-only, ephemeral identity, tunable retention
+## 3. PII — bucket-primary, anonID-only compat, tunable retention
+
+> Bucket (`?b=0-9999`) is the primary identity and the only identity kept in `configwire server v0.2.0`.
+> Server-derived anonID plus legacy `userHash`/`uid`/`country` inputs are backward-compat
+> shims only (accepted-but-ignored).
 
 - The ingest path **strictly rejects** raw `userId`/`ip` keys — even
   `null`-valued ones (presence, not value) — plus PII/device-identifier

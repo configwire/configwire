@@ -671,7 +671,7 @@ next server major (same window as the `?uid=` alias).
 
 - SDK-key legacy v1 storage (unsalted `hex(sha256(fullKey))` in
   `sdk_keys.hash`, i.e. rows without a `verifier`) is retained only for
-  backward compatibility and is scheduled for removal in v0.2.0. New
+  backward compatibility and is scheduled for removal in configwire server v0.2.0. New
   keys always use `POST /api/v1/admin/keys` and store a bcrypt verifier.
 
 ### Removed

@@ -30,9 +30,8 @@ Numbers below are verified against shipped code
 
 ## 2. End users (people using your app)
 
-What your SDK sends: flag fetch and exposure events carrying an opaque
-`userHash` (16 lowercase hex), flag key, variant, version, and
-timestamp. No device IDs are collected. SDKs never send raw user IDs or
+What your SDK sends: flag fetch and exposure events carrying the primary stable `?b=`
+bucket (`0`-`9999`), flag key, variant, version, and timestamp. No device IDs are collected. SDKs never send raw user IDs or
 IP addresses in event bodies; the server rejects `userId`/`ip` keys
 with `400`. A client-sent `?userHash=` on fetch is accepted but
 ignored for bucketing (the server stamps
@@ -40,7 +39,7 @@ ignored for bucketing (the server stamps
 likewise ignored in favor of server geo
 (`fetch/fetch.go:201-214`, `ingest/handler.go:47-63`).
 
-What the server derives: for bucketing and coarse geo only, the
+What the server derives (backward-compat only, removed in `configwire server v0.2.0` which keeps bucket-only): for bucketing and coarse geo only, the
 server keeps IP and User-Agent in memory, never writes them to disk,
 and derives an ephemeral anonID as
 `hex(HMAC_SHA256(per-env daily salt, ip + 0x00 + ua))[:16]`
