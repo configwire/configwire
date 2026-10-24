@@ -214,31 +214,23 @@ sys.exit(0 if a.get('variants', {}).get('exp_bool') == exp['exp_bool_variant'] e
 EOF
 cp /tmp/cw-t17-fetch1.json /tmp/cw-t17-fetch-stage2.json
 
-# ---- STAGE 2N (sunset): non-empty ?uid= -> 400; empty -> anonymous 200 ------------
-echo "--- STAGE 2N: ?uid= sunset 400 + anonymous ---"
-CODE_UID=$(curl -s -o /tmp/cw-t17-uid.json -w "%{http_code}" --max-time 10 \
+# ---- STAGE 2N (compat): non-empty ?uid= accepted-but-ignored; empty -> anonymous 200 ------------
+echo "--- STAGE 2N: ?uid= compat ignored + anonymous ---"
+CODE_UID=$(curl -s -D /tmp/cw-t17-uid-hdr.txt -o /tmp/cw-t17-uid.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?uid=$E2E_RAW_UID&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
-[ "$CODE_UID" = "400" ] && pass "non-empty ?uid= sunset 400" || fail "non-empty ?uid= sunset (code $CODE_UID)"
-python3 - <<'EOF' && pass "uid sunset body contains forbidden message" || fail "uid sunset body"
-import json, sys
-d = json.load(open('/tmp/cw-t17-uid.json'))
-# PocketBase Sentenize() capitalises the first letter over the wire.
-sys.exit(0 if 'raw "uid" is forbidden' in d.get('message', '').lower() else 1)
-EOF
+[ "$CODE_UID" = "200" ] && pass "non-empty ?uid= compat ignored 200" || fail "non-empty ?uid= compat ignored (code $CODE_UID)"
+grep -qi "^X-CW-Deprecated-uid: *true" /tmp/cw-t17-uid-hdr.txt 2>/dev/null \
+  && pass "?uid= stamps deprecated-uid header" || fail "?uid= deprecated-uid header"
 CODE_UID_EMPTY=$(curl -s -D /tmp/cw-t17-uid-empty-hdr.txt -o /tmp/cw-t17-uid-empty.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?uid=&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_UID_EMPTY" = "200" ] && pass "empty ?uid= anonymous 200" || fail "empty ?uid= anonymous (code $CODE_UID_EMPTY)"
 ! grep -qi "^X-CW-Deprecated:" /tmp/cw-t17-uid-empty-hdr.txt 2>/dev/null \
   && pass "empty ?uid= no deprecated header" || fail "empty ?uid= no deprecated header"
-CODE_UID_BOTH=$(curl -s -o /tmp/cw-t17-uid-both.json -w "%{http_code}" --max-time 10 \
+CODE_UID_BOTH=$(curl -s -D /tmp/cw-t17-uid-both-hdr.txt -o /tmp/cw-t17-uid-both.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?uid=$E2E_RAW_UID&userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
-[ "$CODE_UID_BOTH" = "400" ] && pass "uid+userHash 400 (uid wins)" || fail "uid+userHash (code $CODE_UID_BOTH)"
-python3 - <<'EOF' && pass "uid+userHash body contains forbidden message" || fail "uid+userHash body"
-import json, sys
-d = json.load(open('/tmp/cw-t17-uid-both.json'))
-# PocketBase Sentenize() capitalises the first letter over the wire.
-sys.exit(0 if 'raw "uid" is forbidden' in d.get('message', '').lower() else 1)
-EOF
+[ "$CODE_UID_BOTH" = "200" ] && pass "uid+userHash 200 (?uid= ignored)" || fail "uid+userHash (code $CODE_UID_BOTH)"
+grep -qi "^X-CW-Deprecated-uid: *true" /tmp/cw-t17-uid-both-hdr.txt 2>/dev/null \
+  && pass "uid+userHash stamps deprecated-uid header" || fail "uid+userHash deprecated-uid header"
 CODE_BADHASH=$(curl -s -o /tmp/cw-t17-badhash.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?userHash=user-7&platform=ios" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_BADHASH" = "200" ] && pass "malformed userHash accepted-but-ignored 200" || fail "malformed userHash accepted-but-ignored (code $CODE_BADHASH)"
@@ -324,9 +316,19 @@ d = json.load(open('/tmp/cw-t17-bbad.json'))
 # PocketBase Sentenize() capitalises the first letter over the wire.
 sys.exit(0 if 'invalid "b"' in d.get('message', '').lower() else 1)
 EOF
-CODE_BUID=$(curl -s -o /tmp/cw-t17-buid.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?b=$B_MINT&uid=$E2E_RAW_UID&platform=ios" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
-[ "$CODE_BUID" = "400" ] && pass "?b=+?uid= 400 (uid wins)" || fail "?b=+?uid= (code $CODE_BUID)"
+CODE_BUID=$(curl -s -D /tmp/cw-t17-buid-hdr.txt -o /tmp/cw-t17-buid.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?b=$B_MINT&uid=$E2E_RAW_UID&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_BUID" = "200" ] && pass "?b=+?uid= 200 (?uid= ignored, ?b= wins)" || fail "?b=+?uid= (code $CODE_BUID)"
+grep -qi "^X-CW-Deprecated-uid: *true" /tmp/cw-t17-buid-hdr.txt 2>/dev/null \
+  && pass "?b=+?uid= stamps deprecated-uid header" || fail "?b=+?uid= deprecated-uid header"
+python3 - <<'EOF' && pass "?b=+?uid= holds ?b= arm" || fail "?b=+?uid= arm"
+import json, sys
+a = json.load(open('/tmp/cw-t17-bx1.json'))
+c = json.load(open('/tmp/cw-t17-buid.json'))
+ok = (c.get('bucket') == a.get('bucket')
+      and c.get('variants', {}).get('exp_bool') == a.get('variants', {}).get('exp_bool'))
+sys.exit(0 if ok else 1)
+EOF
 curl -s -o /tmp/cw-t17-bhash.json --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?b=$B_MINT&userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
 python3 - <<'EOF' && pass "?b=+userHash -> ?b= arm wins" || fail "?b=+userHash arm"
