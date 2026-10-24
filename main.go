@@ -525,6 +525,12 @@ func main() {
 
 		account.Register(se)
 
+		// First-superuser bootstrap from env; empty keeps setup UI at /.
+		// Fail-soft: skips and save errors log and boot continues.
+		if err := account.BootstrapAdminFromEnv(se.App); err != nil {
+			log.Printf("configwire: admin bootstrap from env ignored: %v", err)
+		}
+
 		// Cloud SSO bridge (plan cloud-sso-bridge P1): CONFIGWIRE_AUTH_MODE
 		// selects standard (default, today's behavior untouched) or sso
 		// (cloud-managed: redeem enabled, login UI gated). sso fails fast

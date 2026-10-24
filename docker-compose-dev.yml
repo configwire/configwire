@@ -13,6 +13,10 @@ services:
     container_name: configwire
     ports:
       - "8090:8090"
+    environment:
+      # Empty keeps first-run setup at /.
+      - CONFIGWIRE_ADMIN_EMAIL=${CONFIGWIRE_ADMIN_EMAIL:-}
+      - CONFIGWIRE_ADMIN_PASSWORD=${CONFIGWIRE_ADMIN_PASSWORD:-}
     volumes:
       - cw-data:/app/pb_data
     restart: unless-stopped

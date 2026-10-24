@@ -6,9 +6,13 @@
 #   curl -s http://localhost:8090/healthz | grep -q '"status":"ok"'
 # Local dev (build from this checkout, run from this dir):
 #   docker compose -f docker-compose-dev.yml up -d --build
-# First superuser (same flags as README quickstart):
-#   Use a real password here — never ship the default.
-#   docker compose exec configwire ./configwire superuser upsert admin@example.com <change-me-32-chars> --dir /app/pb_data
+# First superuser, two paths (pick one):
+#   a) Env auto-bootstrap (fresh instance only): set CONFIGWIRE_ADMIN_EMAIL
+#      and CONFIGWIRE_ADMIN_PASSWORD in the shell or a .env file before
+#      `up -d`; the server creates the first superuser on first boot.
+#      Empty (default) keeps the first-run setup screen at /.
+#   b) Manual upsert on a running container:
+#      docker compose exec configwire ./configwire superuser upsert admin@example.com <change-me-32-chars> --dir /app/pb_data
 # Monorepo usage (run from repo root):
 #   docker compose -f configwire/docker-compose.yml up -d
 name: configwire
@@ -18,6 +22,9 @@ services:
     container_name: configwire
     ports:
       - "8090:8090"
+    environment:
+      - CONFIGWIRE_ADMIN_EMAIL=${CONFIGWIRE_ADMIN_EMAIL:-}
+      - CONFIGWIRE_ADMIN_PASSWORD=${CONFIGWIRE_ADMIN_PASSWORD:-}
     volumes:
       - cw-data:/app/pb_data
     restart: unless-stopped
