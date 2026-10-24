@@ -80,7 +80,16 @@ internet, password strength as the only gate.
 `POST /api/v1/admin/setup` is public by design: the first caller
 claims a fresh instance (`configwire/account/account.go` (`postSetup` first-claim)).
 Complete the native superuser setup screen in the Admin UI while the
-port is still loopback-only, then expose it.
+port is still loopback-only, then expose it. Or preseed it with no
+click: set both vars before first boot and the server creates the
+first superuser itself (`configwire/account/bootstrap.go`
+(`BootstrapAdminFromEnv`); empty keeps the setup screen):
+
+```bash
+export CONFIGWIRE_ADMIN_EMAIL=ops@example.com
+export CONFIGWIRE_ADMIN_PASSWORD=<8-72-chars>
+# compose passes both through (default empty)
+```
 
 The opt-in claim guard (`configwire/account/account.go:97-115` (`loadSetupToken`,
 `setupTokenDenied`), 403-first in `postSetup` at `configwire/account/account.go:353-360`):

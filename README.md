@@ -39,6 +39,8 @@ docker compose pull && docker compose up -d
 
 Then open **http://localhost:8090** — a fresh instance shows a native
 superuser setup screen (no need to visit PocketBase's `/_/` installer).
+Preseed it instead with `CONFIGWIRE_ADMIN_EMAIL` + `CONFIGWIRE_ADMIN_PASSWORD`
+(empty by default; set both before first boot to skip the screen).
 
 > **Exposing this publicly?** Read the pre-exposure checklist first:
 > [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (CORS, TLS, admin
