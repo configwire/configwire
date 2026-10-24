@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/configwire/configwire/identity"
@@ -29,14 +30,29 @@ func SetIdentityManager(m *identity.Manager) {
 	}
 }
 
+// uidCompatHeader signals that a client-sent ?uid= was
+// accepted-but-ignored: attribution always uses deriveIdentity (valid ?b=
+// else the daily anonID). Spelling mirrors v0.1.9.
+const uidCompatHeader = "X-CW-Deprecated-uid"
+
+// stampUidCompat sets the compat header when the client sent a trimmed
+// non-empty ?uid= (accepted-but-ignored). Absent/empty/blank sends no
+// header.
+func stampUidCompat(re *core.RequestEvent) {
+	if strings.TrimSpace(re.Request.URL.Query().Get("uid")) != "" {
+		re.Response.Header().Set(uidCompatHeader, "true")
+	}
+}
+
 // deriveIdentity resolves (anonID, country) for one ingest request.
 // Identity follows the identical rule as fetch: valid ?b= wins, else the
 // daily manager anonID ("" on derivation error — the event still stores,
-// unattributed); client ?userHash= (any shape) is accepted-but-ignored and
-// never becomes the anonID; country = first valid ISO-2 in the
-// country-header order ("" when absent).
+// unattributed); client ?userHash= and ?uid= (any shape) are
+// accepted-but-ignored and never become the anonID; postEvents stamps
+// X-CW-Deprecated-uid when a trimmed non-empty ?uid= is sent; country =
+// first valid ISO-2 in the country-header order ("" when absent).
 // A malformed ?b= is a 400 (returned as *apiError, mirroring the fetch
-// ?b=/?uid= 400s) — never a silent fallback, so fetch arms and exposure
+// ?b= 400) — never a silent fallback, so fetch arms and exposure
 // attribution stay joined per install.
 //
 // Canonical ?b= rule lives in identity.ParseBucketParam — fetch
@@ -132,6 +148,7 @@ func postEvents(re *core.RequestEvent) error {
 	if derr != nil {
 		return writeAPIError(re, derr)
 	}
+	stampUidCompat(re)
 	stored := make([]StoredEvent, 0, len(events))
 	for _, ev := range events {
 		ts := ev.Ts

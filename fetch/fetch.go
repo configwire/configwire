@@ -39,8 +39,10 @@
 //     ?b= is 400. platform/appVersion/
 //     locale pass through (appVersion=not-semver -> condition false ->
 //     defaults fallthrough, still 200, never 400), attrs=<json> parsed as a
-//     flat map for custom.* conditions. ?uid= is sunset: any trimmed
-//     non-empty value is 400 (send userHash instead). Forbidden PII attrs
+//     flat map for custom.* conditions. Legacy ?uid= (any shape) is
+//     accepted-but-ignored like ?userHash= (never reaches eval; a valid
+//     ?b= still wins), and a sent ?uid= stamps X-CW-Deprecated-uid:
+//     true. Forbidden PII attrs
 //     keys (email and device identifiers, case-insensitive) are 400;
 //     values are never logged.
 //   - attrs error policy: malformed attrs (invalid JSON, or valid JSON that
@@ -170,6 +172,11 @@ func optionsConfig(re *core.RequestEvent) error {
 // accepted-but-ignored: bucketing always uses the server-derived anonID.
 const userHashCompatHeader = "X-CW-Deprecated-userHash"
 
+// uidCompatHeader signals that a client-sent ?uid= was
+// accepted-but-ignored: bucketing always uses the server-derived anonID
+// unless a valid ?b= wins. Spelling mirrors v0.1.9.
+const uidCompatHeader = "X-CW-Deprecated-uid"
+
 // anonManager derives per-request anonIDs via per-env daily salts.
 // MemoryStore is the in-process default until the identity_salts
 // collection is wired as the durable Store; salts never leave the
@@ -190,7 +197,7 @@ func SetAnonManager(m *identity.Manager) {
 // Thin delegate over identity.ParseBucketParam, the single canonical rule
 // (plain int string "0"-"9999", no coercion). Returns ("", nil) when
 // absent, (canonical, nil) when valid, ("", error) when malformed
-// (caller maps to 400, mirroring the ?uid= sunset).
+// (caller maps to 400).
 func ParseBucket(q url.Values) (string, error) {
 	return identity.ParseBucketParam(q.Get("b"))
 }
@@ -204,11 +211,19 @@ func stampUserHashCompat(h http.Header, q url.Values) {
 	}
 }
 
+// stampUidCompat sets the compat header when the client sent a
+// trimmed non-empty ?uid= (accepted-but-ignored; server anonID wins
+// unless a valid ?b= overrides). Absent/empty/blank sends no header.
+func stampUidCompat(h http.Header, q url.Values) {
+	if strings.TrimSpace(q.Get("uid")) != "" {
+		h.Set(uidCompatHeader, "true")
+	}
+}
 // effectiveUserHash resolves one fetch's bucketing identity with the
 // stable-bucket precedence: valid ?b= wins, else the daily anonID
-// fallback. Client ?userHash= (any shape) is accepted-but-ignored and
-// never reaches eval; getConfig stamps userHashCompatHeader when one is
-// sent. A malformed ?b= falls through here so BuildContext owns the
+// fallback. Client ?userHash= and ?uid= (any shape) are accepted-but-ignored
+// and never reach eval; getConfig stamps userHashCompatHeader /
+// uidCompatHeader when one is sent. A malformed ?b= falls through here so BuildContext owns the
 // single 400 (this helper never errors, preserving the silent-ignore
 // contract for ?userHash=).
 func effectiveUserHash(q url.Values, anonID string) string {
@@ -277,25 +292,22 @@ func evaluatedBody(version int, etag string, values map[string]any, variants map
 // getConfig passes effectiveUserHash(q, anonID) as anonID and it is stored
 // in Context.UserHash (field name kept for eval.Bucket compat); country is
 // the server geo from the limits country-header order (passed in by
-// getConfig). Client ?userHash= (any shape, even malformed) and client
-// ?country= are accepted-but-ignored and never reach eval; getConfig
-// stamps userHashCompatHeader when the client sent ?userHash=. Legacy ?uid= is sunset: any trimmed non-empty ?uid= is a
-// 400 ("raw \"uid\" is forbidden: send \"userHash\" instead."), even
-// alongside anonID; empty ?uid= == absent. platform/appVersion/locale
+// getConfig). Client ?userHash= and ?uid= (any shape, even malformed) and
+// client ?country= are accepted-but-ignored and never reach eval;
+// getConfig stamps userHashCompatHeader / uidCompatHeader when the client
+// sent ?userHash= / ?uid=. Legacy ?uid= never overrides: a valid ?b=
+// still wins, else the server anonID. platform/appVersion/locale
 // pass through untouched (invalid values evaluate to false downstream,
 // never 400 here). Malformed attrs, forbidden PII attrs keys, or attrs
 // over MaxAttrsBytes -> error (caller maps to 400/414). Missing
 // attrs -> anonymous customs.
 func BuildContext(q url.Values, anonID, country string) (eval.Context, error) {
-	if strings.TrimSpace(q.Get("uid")) != "" {
-		return eval.Context{}, fmt.Errorf(`raw "uid" is forbidden: send "userHash" instead.`)
-	}
 	// Stable bucket wins over the caller-resolved identity (which is the
-	// server-derived anonID — ?userHash= is ignored): ctx.UserHash carries the
-	// canonical number string so eval.Bucket(number+seed) evaluates the
-	// minted arm. Malformed ?b= is 400 here (single error owner;
-	// effectiveUserHash falls through on malformed so this branch owns
-	// it). ?uid= above wins over ?b= (uid checked first).
+	// server-derived anonID — ?userHash= and ?uid= are ignored): ctx.UserHash
+	// carries the canonical number string so eval.Bucket(number+seed)
+	// evaluates the minted arm. Malformed ?b= is 400 here (single error
+	// owner; effectiveUserHash falls through on malformed so this branch
+	// owns it).
 	userHash := anonID
 	if b, berr := ParseBucket(q); berr != nil {
 		return eval.Context{}, berr
@@ -583,6 +595,7 @@ func getConfig(re *core.RequestEvent) error {
 		return re.BadRequestError(cerr.Error(), nil)
 	}
 	stampUserHashCompat(re.Response.Header(), q)
+	stampUidCompat(re.Response.Header(), q)
 
 	rel, err := latestRelease(re.App, env.Id)
 	if err != nil {

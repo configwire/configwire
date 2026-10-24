@@ -5,7 +5,7 @@ package fetch
 // no existing test assertion is touched here.
 //
 // Already pinned elsewhere (referenced, not duplicated):
-//   - ?uid=x -> 400 even with valid ?b= : TestBucketWithUidStill400UidWins
+//   - ?uid=x ignored even with valid ?b= : TestBucketWithUidIgnoredBucketWins
 //   - empty release omits bucket/version-0/etag-none shape: TestEmptyReleaseBodyOmitsBucket, TestAuthOrder_EmptyReleaseShape
 //   - ignored-?userHash=/anonID selection without ?b=: TestBucketAbsentIgnoresUserHashFallsBackToAnon
 //   - ?country= ignored without ?b=: TestBuildContextCountryServerOnly

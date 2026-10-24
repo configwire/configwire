@@ -366,21 +366,35 @@ func TestEvaluateSnapshotCorruptRulesFailClosed(t *testing.T) {
 	}
 }
 
-func TestBuildContextUidSunset(t *testing.T) {
-	const want = `raw "uid" is forbidden: send "userHash" instead.`
+func TestBuildContextUidIgnored(t *testing.T) {
+	const anon = "0123456789abcdef"
 	for _, raw := range []string{
 		`uid=user-7`,
 		`uid=user-7&userHash=0123456789abcdef`,
 		`userHash=0123456789abcdef&uid=user-7`,
 	} {
-		if _, err := BuildContext(query(raw), "0123456789abcdef", ""); err == nil {
-			t.Errorf("%s: expected uid-sunset 400, got nil", raw)
-		} else if err.Error() != want {
-			t.Errorf("%s: error = %q, want %q", raw, err.Error(), want)
+		q := query(raw)
+		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+		if err != nil {
+			t.Errorf("%s: ?uid= must be accepted-but-ignored, got %v", raw, err)
+			continue
+		}
+		if ctx.UserHash != anon {
+			t.Errorf("%s: UserHash = %q, want server anonID %q (uid ignored)", raw, ctx.UserHash, anon)
+		}
+		h := http.Header{}
+		stampUidCompat(h, q)
+		if got := h.Get(uidCompatHeader); got != "true" {
+			t.Errorf("%s: header = %q, want %q", raw, got, "true")
 		}
 	}
 	if _, err := BuildContext(query(`uid=&userHash=0123456789abcdef`), "0123456789abcdef", ""); err != nil {
 		t.Errorf("empty uid + valid hash must pass, got %v", err)
+	}
+	h := http.Header{}
+	stampUidCompat(h, query(`uid=`))
+	if got := h.Get(uidCompatHeader); got != "" {
+		t.Errorf("empty uid header = %q, want absent", got)
 	}
 }
 

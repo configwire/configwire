@@ -13,7 +13,8 @@
 //	User-Agent + per-env daily salt) plus country from headers, with a
 //	valid stable ?b= winning verbatim over the anonID (fetch/ingest bucket
 //	join); client ?userHash= (any shape) is accepted-but-ignored and never
-//	becomes the anonID. Events
+//	becomes the anonID; a trimmed non-empty ?uid= is likewise
+//	accepted-but-ignored and stamps X-CW-Deprecated-uid: true. Events
 //	store anonId + country with the body userHash column left empty
 //	(compat). Raw "userId"/"ip" keys and
 //	PII/device-identifier keys (email, phone, device IDs; case-insensitive)

@@ -97,11 +97,12 @@ func TestAuthOrder_OversizeAttrsIs414(t *testing.T) {
 	}
 }
 
-// TestAuthOrder_RawUidSunsetIs400 pins the ?uid= sunset: any trimmed
-// non-empty ?uid= is 400 with the sunset message, even alongside a valid
-// userHash; empty ?uid= == absent (anonymous passes).
-func TestAuthOrder_RawUidSunsetIs400(t *testing.T) {
-	const want = `raw "uid" is forbidden: send "userHash" instead.`
+// TestAuthOrder_RawUidIgnored pins the ?uid= deprecated-ignored rule: any
+// trimmed non-empty ?uid= is accepted-but-ignored (server anonID wins,
+// never 400, never reaching eval) and stamps X-CW-Deprecated-uid: true;
+// empty ?uid= == absent (no header).
+func TestAuthOrder_RawUidIgnored(t *testing.T) {
+	const anon = "0123456789abcdef"
 	for name, raw := range map[string]string{
 		"uid-only":       `uid=user-7`,
 		"uid-with-hash":  `uid=user-7&userHash=0123456789abcdef`,
@@ -115,10 +116,18 @@ func TestAuthOrder_RawUidSunsetIs400(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: bad test query: %v", name, err)
 		}
-		if _, err := BuildContext(q, "0123456789abcdef", ""); err == nil {
-			t.Errorf("%s: expected 400-mapped uid-sunset error, got nil", name)
-		} else if err.Error() != want {
-			t.Errorf("%s: error = %q, want %q", name, err.Error(), want)
+		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+		if err != nil {
+			t.Errorf("%s: ?uid= must be accepted-but-ignored, got %v", name, err)
+			continue
+		}
+		if ctx.UserHash != anon {
+			t.Errorf("%s: UserHash = %q, want server anonID %q (uid ignored)", name, ctx.UserHash, anon)
+		}
+		h := http.Header{}
+		stampUidCompat(h, q)
+		if got := h.Get(uidCompatHeader); got != "true" {
+			t.Errorf("%s: header = %q, want %q", name, got, "true")
 		}
 	}
 	// Empty uid == absent: server anonID still stamps (bucketing is
@@ -156,9 +165,9 @@ func TestAuthOrder_RawUidSunsetIs400(t *testing.T) {
 
 // TestAuthOrder_BadUserHashIgnored pins the server-wins cutover: a
 // malformed ?userHash= alone is accepted-but-ignored (server anonID
-// wins, never 400); with ?uid= present the uid-sunset error wins (uid
-// is rejected first, never silently hashed).
-func TestAuthOrder_BadUserHashWithUidStill400(t *testing.T) {
+// wins, never 400); with ?uid= present the uid is likewise ignored
+// (never an error, never reaching eval).
+func TestAuthOrder_BadUserHashIgnoredEvenWithUid(t *testing.T) {
 	const anon = "0123456789abcdef"
 	for name, raw := range map[string]string{
 		"too-short":  `userHash=abc123`,
@@ -179,15 +188,22 @@ func TestAuthOrder_BadUserHashWithUidStill400(t *testing.T) {
 			t.Errorf("%s: UserHash = %q, want server anonID %q", name, ctx.UserHash, anon)
 		}
 	}
-	// uid present alongside a bad hash: uid-sunset error (rejected first).
+	// Bad hash + uid: both ignored, server anonID wins with uid header stamped.
 	q, err := url.ParseQuery(`userHash=abc123&uid=user-7`)
 	if err != nil {
 		t.Fatalf("bad test query: %v", err)
 	}
-	if _, err := BuildContext(q, anon, ""); err == nil {
-		t.Error("bad-hash + uid: expected 400-mapped error, got nil")
-	} else if err.Error() != `raw "uid" is forbidden: send "userHash" instead.` {
-		t.Errorf("bad-hash + uid error = %q, want uid-sunset message", err.Error())
+	ctx, err := BuildContext(q, anon, "")
+	if err != nil {
+		t.Fatalf("bad-hash + uid must be accepted-but-ignored, got %v", err)
+	}
+	if ctx.UserHash != anon {
+		t.Errorf("bad-hash + uid UserHash = %q, want server anonID %q", ctx.UserHash, anon)
+	}
+	h := http.Header{}
+	stampUidCompat(h, q)
+	if got := h.Get(uidCompatHeader); got != "true" {
+		t.Errorf("bad-hash + uid header = %q, want %q", got, "true")
 	}
 }
 
@@ -374,13 +390,13 @@ func TestAuthOrder_CORSDefault(t *testing.T) {
 // Reference (matrices owned elsewhere, cited not duplicated): T1 bucket_test.go
 // owns the exhaustive ?b= matrices (TestParseBucketCanonicalHonored,
 // TestParseBucketMalformedIs400 15-value, TestBucketPrecedenceWinsOverUserHash,
-// TestBucketMalformedIs400ViaBuildContext, TestBucketWithUidStill400UidWins,
+// TestBucketMalformedIs400ViaBuildContext, TestBucketWithUidIgnoredBucketWins,
 // TestBucketNumberSeedEvaluation); T2 bucket_mint_test.go owns the mint/echo
 // seams (TestResponseBucketMintedWhenAbsent, TestResponseBucketEchoesClientBucket);
 // T8 compat_bucket_guard_test.go owns the old-client byte-identical arms. This
 // block pins only the owner-confirmed contract surface: canonical honored, the
 // 4-value malformed 400 matrix (abc/-1/10000/007), ?b= > ignored-?userHash= arm,
-// ?uid=-wins 400. 304-keeps-bucket and empty-release no-mint live in
+// ?uid= ignored (?b= wins, uid never reaches eval). 304-keeps-bucket and empty-release no-mint live in
 // fetch_test.go (response-shape home) — see
 // TestFetch_StableBucket304KeepsBucket and TestFetch_StableBucketEmptyReleaseNoMint.
 
@@ -409,7 +425,7 @@ func TestContract_StableBucketCanonicalHonored(t *testing.T) {
 
 // TestContract_StableBucketMalformed400Matrix pins the owner-confirmed 400
 // matrix: abc/-1/10000/007 -> BuildContext 400 with the single bucket message
-// (mirrors the ?uid= sunset; no second validation rule anywhere).
+// (the single ?b= validation rule).
 func TestContract_StableBucketMalformed400Matrix(t *testing.T) {
 	const anon = "0123456789abcdef"
 	for _, b := range []string{"abc", "-1", "10000", "007"} {
@@ -454,21 +470,34 @@ func TestContract_StableBucketWinsOverUserHashArm(t *testing.T) {
 	}
 }
 
-// TestContract_StableBucketUidWins400 pins: ?b= (valid AND malformed) + any
-// non-empty ?uid= -> 400 with the uid-sunset message (?uid= checked first,
-// never the bucket rule).
-func TestContract_StableBucketUidWins400(t *testing.T) {
+// TestContract_StableBucketWinsOverUidIgnored pins: ?b= (valid) + any
+// non-empty ?uid= -> 200-eligible with the ?b= arm (?uid= ignored, uid
+// compat header stamped); malformed ?b= + ?uid= -> the ?b= 400.
+func TestContract_StableBucketWinsOverUidIgnored(t *testing.T) {
 	const anon = "0123456789abcdef"
 	for _, raw := range []string{
 		`b=42&uid=user-7`,
 		`uid=user-7&b=42`,
-		`b=abc&uid=user-7`,
 	} {
 		q := query(raw)
-		if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err == nil {
-			t.Errorf("%s: expected 400, got nil", raw)
-		} else if err.Error() != wantUidErr {
-			t.Errorf("%s: error = %q, want uid-wins %q", raw, err.Error(), wantUidErr)
+		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+		if err != nil {
+			t.Errorf("%s: ?uid= must be accepted-but-ignored, got %v", raw, err)
+			continue
 		}
+		if ctx.UserHash != "42" {
+			t.Errorf("%s: UserHash = %q, want bucket %q (?b= wins)", raw, ctx.UserHash, "42")
+		}
+		h := http.Header{}
+		stampUidCompat(h, q)
+		if got := h.Get(uidCompatHeader); got != "true" {
+			t.Errorf("%s: header = %q, want %q", raw, got, "true")
+		}
+	}
+	q := query(`b=abc&uid=user-7`)
+	if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err == nil {
+		t.Error("b=abc&uid=user-7: expected 400-mapped bucket error, got nil")
+	} else if err.Error() != wantBucketErr {
+		t.Errorf("b=abc&uid=user-7: error = %q, want %q", err.Error(), wantBucketErr)
 	}
 }

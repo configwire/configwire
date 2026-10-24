@@ -1,6 +1,7 @@
 package fetch
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
@@ -8,8 +9,6 @@ import (
 )
 
 const wantBucketErr = `invalid "b": send "0"-"9999".`
-
-const wantUidErr = `raw "uid" is forbidden: send "userHash" instead.`
 
 func TestParseBucketCanonicalHonored(t *testing.T) {
 	for _, raw := range []string{`b=0`, `b=9999`, `b=42`, `b=1`} {
@@ -148,20 +147,50 @@ func TestBucketMalformedIs400ViaBuildContext(t *testing.T) {
 	}
 }
 
-func TestBucketWithUidStill400UidWins(t *testing.T) {
+func TestBucketWithUidIgnoredBucketWins(t *testing.T) {
 	const anon = "0123456789abcdef"
+	// ?uid= is accepted-but-ignored: a valid ?b= wins, else the server
+	// anonID. A sent ?uid= stamps the uid compat header.
 	for _, raw := range []string{
 		`b=42&uid=user-7`,
 		`uid=user-7&b=42`,
 		`b=42&uid=user-7&userHash=092081140b677b45`,
-		`b=abc&uid=user-7`,
 	} {
 		q := query(raw)
-		if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err == nil {
-			t.Errorf("%s: expected 400, got nil", raw)
-		} else if err.Error() != wantUidErr {
-			t.Errorf("%s: error = %q, want uid-wins %q", raw, err.Error(), wantUidErr)
+		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+		if err != nil {
+			t.Errorf("%s: ?uid= must be accepted-but-ignored, got %v", raw, err)
+			continue
 		}
+		if ctx.UserHash != "42" {
+			t.Errorf("%s: UserHash = %q, want bucket %q (?b= wins, uid ignored)", raw, ctx.UserHash, "42")
+		}
+		h := http.Header{}
+		stampUidCompat(h, q)
+		if got := h.Get(uidCompatHeader); got != "true" {
+			t.Errorf("%s: header = %q, want %q", raw, got, "true")
+		}
+	}
+	// Malformed ?b= + ?uid= -> the ?b= 400 (uid never masks it).
+	q := query(`b=abc&uid=user-7`)
+	if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err == nil {
+		t.Error("b=abc&uid=user-7: expected 400-mapped bucket error, got nil")
+	} else if err.Error() != wantBucketErr {
+		t.Errorf("b=abc&uid=user-7: error = %q, want %q", err.Error(), wantBucketErr)
+	}
+	// ?uid= alone -> server anonID fallback, header stamped.
+	q = query(`uid=user-7`)
+	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+	if err != nil {
+		t.Fatalf("uid-only must be accepted-but-ignored, got %v", err)
+	}
+	if ctx.UserHash != anon {
+		t.Errorf("uid-only UserHash = %q, want server anonID %q", ctx.UserHash, anon)
+	}
+	h := http.Header{}
+	stampUidCompat(h, q)
+	if got := h.Get(uidCompatHeader); got != "true" {
+		t.Errorf("uid-only header = %q, want %q", got, "true")
 	}
 }
 
