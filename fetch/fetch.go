@@ -77,6 +77,8 @@ import (
 	"github.com/configwire/configwire/identity"
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/limits"
+	"github.com/configwire/configwire/logstore"
+	"github.com/configwire/configwire/logx"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
 	"github.com/pocketbase/dbx"
@@ -132,6 +134,31 @@ func markDeprecatedSnapshot(h http.Header) {
 
 // setFetchCacheHeaders stamps private cache headers on fetch 200/304
 // responses. Private because responses vary per SDK key + encoding.
+// reqLog is the stderr logger for the fetch package (mirrors ingest's
+// reqLog). logx prefixes every line with "fetch: ". Serve lines carry
+// method/path/reason/status only — never key material, tokens, IPs,
+// buckets, or attributes.
+var reqLog = logx.New("fetch")
+
+// serveWrite dual-writes one success line: stderr via reqLog and a
+// persisted server_logs row (mirrors ingest.denyWrite's shape, Info
+// level for success). reason is a decomposed code (served, cached —
+// never free text); status is the client-facing status. keyPrefix
+// carries ingest.KeyPrefix(full) and is appended as key_prefix=<prefix>
+// only when non-empty (a key was presented — never the full key).
+// The message stays a single space-separated k=v line. Never pass full
+// keys, tokens, emails, IPs, buckets, or attrs. reqLog.Request keeps
+// the same reason string. Write errors are best-effort (swallowed,
+// never retry-block the request).
+func serveWrite(re *core.RequestEvent, reason string, status int, keyPrefix string) {
+	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
+	msg := fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, reason, status)
+	if keyPrefix != "" {
+		msg += " key_prefix=" + keyPrefix
+	}
+	_ = logstore.Write(re.App, int(logx.LevelInfo), "fetch", msg)
+}
+
 func setFetchCacheHeaders(re *core.RequestEvent) {
 	h := re.Response.Header()
 	h.Set("Vary", "X-ConfigWire-Key, Accept-Encoding")
@@ -588,6 +615,7 @@ func getConfig(re *core.RequestEvent) error {
 	re.Response.Header().Set("ETag", etag)
 	if EtagMatches(re.Request.Header.Get("If-None-Match"), etag) {
 		setFetchCacheHeaders(re)
+		serveWrite(re, "cached", http.StatusNotModified, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)))
 		return re.NoContent(http.StatusNotModified)
 	}
 
@@ -619,6 +647,7 @@ func getConfig(re *core.RequestEvent) error {
 	if releases.IsLegacyTopLevel(snapBytes) {
 		markDeprecatedSnapshot(re.Response.Header())
 	}
+	serveWrite(re, "served", http.StatusOK, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)))
 	return re.JSON(http.StatusOK, evaluatedBody(
 		rel.GetInt("version"),
 		etag,
