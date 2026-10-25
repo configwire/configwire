@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"sort"
@@ -28,6 +27,8 @@ import (
 	"github.com/configwire/configwire/fetch"
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/limits"
+	"github.com/configwire/configwire/logstore"
+	"github.com/configwire/configwire/logx"
 	_ "github.com/configwire/configwire/migrations"
 	"github.com/configwire/configwire/purge"
 	"github.com/configwire/configwire/releases"
@@ -42,6 +43,12 @@ import (
 // Flag key shape + per-project cap and releases immutability live in
 // code (not collection options) so they apply to every write path
 // (API, dashboard, server-side e.App saves).
+
+// bootLog is the serve-startup stderr logger. logx prefixes every line
+// with "configwire: " (matching the legacy log.Printf style), and Boot
+// lines always emit regardless of CONFIGWIRE_LOG_LEVEL so a process that
+// fails to start still says so.
+var bootLog = logx.New("configwire")
 
 //go:embed VERSION
 var embeddedVersion string
@@ -119,7 +126,7 @@ func applyHSTSConfig(raw string) {
 		security.SetHSTSMaxAge(n)
 		return
 	}
-	log.Print("configwire: CONFIGWIRE_HSTS is invalid, HSTS header disabled")
+	bootLog.Boot("CONFIGWIRE_HSTS is invalid, HSTS header disabled")
 }
 
 // setStaticCacheHeaders assigns cache policy to Admin UI static responses
@@ -463,7 +470,7 @@ func main() {
 		se.InstallerFunc = nil
 
 		if os.Getenv("CONFIGWIRE_CORS_ORIGIN") == "" {
-			log.Printf("configwire: CONFIGWIRE_CORS_ORIGIN is unset, fetch CORS defaults to \"*\"; set CONFIGWIRE_CORS_ORIGIN=https://app.example.com in production")
+			bootLog.Boot("CONFIGWIRE_CORS_ORIGIN is unset, fetch CORS defaults to \"*\"; set CONFIGWIRE_CORS_ORIGIN=https://app.example.com in production")
 		}
 		applyHSTSConfig(os.Getenv("CONFIGWIRE_HSTS"))
 		// Global security headers for every response.
@@ -498,6 +505,8 @@ func main() {
 
 		retention.Register(se)
 
+		logstore.Register(se)
+
 		ingest.Register(se)
 
 		ingest.RegisterKeys(se)
@@ -517,7 +526,7 @@ func main() {
 		// First-superuser bootstrap from env; empty keeps setup UI at /.
 		// Fail-soft: skips and save errors log and boot continues.
 		if err := account.BootstrapAdminFromEnv(se.App); err != nil {
-			log.Printf("configwire: admin bootstrap from env ignored: %v", err)
+			bootLog.Boot("admin bootstrap from env ignored: %v", err)
 		}
 
 		// Cloud SSO bridge (plan cloud-sso-bridge P1): CONFIGWIRE_AUTH_MODE
@@ -531,11 +540,12 @@ func main() {
 			secretHex := strings.TrimSpace(os.Getenv(sso.EnvSecret))
 			b, err := sso.ParseSecretHex(secretHex)
 			if err != nil {
-				log.Fatalf("configwire: CONFIGWIRE_AUTH_MODE=sso requires CONFIGWIRE_CLOUD_SSO_SECRET=<64-hex> (32 bytes): %v", err)
+				bootLog.Error("CONFIGWIRE_AUTH_MODE=sso requires CONFIGWIRE_CLOUD_SSO_SECRET=<64-hex> (32 bytes): %v", err)
+				os.Exit(1)
 			}
 			ssoSecret = b
 		} else if strings.TrimSpace(os.Getenv(sso.EnvSecret)) != "" {
-			log.Print("configwire: CONFIGWIRE_CLOUD_SSO_SECRET is set but CONFIGWIRE_AUTH_MODE is not sso; ignoring the secret (standard mode)")
+			bootLog.Boot("CONFIGWIRE_CLOUD_SSO_SECRET is set but CONFIGWIRE_AUTH_MODE is not sso; ignoring the secret (standard mode)")
 		}
 		sso.Register(se, sso.Config{
 			Mode:     authMode,
@@ -566,16 +576,16 @@ func main() {
 			settings.Meta.AppName = "configwire"
 			if err := se.App.Save(settings); err != nil {
 				settings.Meta.AppName = oldName
-				log.Printf("configwire: app name override ignored: %v", err)
+				bootLog.Boot("app name override ignored: %v", err)
 			} else {
-				log.Print("configwire: application name set to configwire")
+				bootLog.Boot("application name set to configwire")
 			}
 		}
 
 		newCron, newKeep, backupChanged, backupMsg := backups.Resolve(
 			settings.Backups.Cron, settings.Backups.CronMaxKeep)
 		if !backupChanged {
-			log.Print(backupMsg)
+			bootLog.Boot("%s", strings.TrimPrefix(backupMsg, "configwire: "))
 		} else {
 			oldCron, oldKeep := settings.Backups.Cron, settings.Backups.CronMaxKeep
 			settings.Backups.Cron = newCron
@@ -583,9 +593,9 @@ func main() {
 			if err := se.App.Save(settings); err != nil {
 				settings.Backups.Cron = oldCron
 				settings.Backups.CronMaxKeep = oldKeep
-				log.Printf("configwire: backups env overrides ignored: %v", err)
+				bootLog.Boot("backups env overrides ignored: %v", err)
 			} else {
-				log.Print(backupMsg)
+				bootLog.Boot("%s", strings.TrimPrefix(backupMsg, "configwire: "))
 			}
 		}
 
@@ -614,7 +624,7 @@ func main() {
 		}
 		newS3, s3Changed, s3Msg := backups.ResolveS3(storedS3)
 		if !s3Changed {
-			log.Print(s3Msg)
+			bootLog.Boot("%s", strings.TrimPrefix(s3Msg, "configwire: "))
 		} else {
 			settings.Backups.S3.Enabled = newS3.Enabled
 			settings.Backups.S3.Bucket = newS3.Bucket
@@ -631,9 +641,9 @@ func main() {
 				settings.Backups.S3.AccessKey = storedS3.AccessKey
 				settings.Backups.S3.Secret = storedS3.Secret
 				settings.Backups.S3.ForcePathStyle = storedS3.ForcePathStyle
-				log.Printf("configwire: backups s3 env overrides ignored: %v", err)
+				bootLog.Boot("backups s3 env overrides ignored: %v", err)
 			} else {
-				log.Print(s3Msg)
+				bootLog.Boot("%s", strings.TrimPrefix(s3Msg, "configwire: "))
 			}
 		}
 
@@ -653,6 +663,7 @@ func main() {
 	})
 
 	if err := app.Start(); err != nil {
-		log.Fatal(err)
+		bootLog.Error("%v", err)
+		os.Exit(1)
 	}
 }
