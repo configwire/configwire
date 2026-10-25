@@ -137,18 +137,37 @@ func TestVerifierRoundTrip(t *testing.T) {
 	}
 }
 
-func TestVerifierLessRowDenied(t *testing.T) {
+func TestV1RowAuthCompat(t *testing.T) {
 	app := keyVerTestApp(t)
 	ResetKeyCache()
 	env := seedEnv(t, app)
 	const full = "cw-legacy-key-0001-abcd"
-	seedVerifierLessKey(t, app, full, env)
-	rec, err := findSDKKey(app, full)
-	if err != nil || rec != nil {
-		t.Fatalf("verifier-less row must never match, got %+v err=%v", rec, err)
+	rec := seedVerifierLessKey(t, app, full, env)
+	// Given: a legacy v1 hash-only row (pre-v0.2.0, no verifier).
+	// When: the exact key is presented.
+	// Then: it authenticates (constant-time sha256 match), same as v2.
+	got, err := findSDKKey(app, full)
+	if err != nil || got == nil {
+		t.Fatalf("v1 row must match, got %+v err=%v", got, err)
+	}
+	if got.Id != rec.Id {
+		t.Fatalf("v1 match = %q, want row %q", got.Id, rec.Id)
+	}
+	if _, err := RequireSDKKey(requestWithKey(app, full)); err != nil {
+		t.Fatalf("v1 key must authenticate: %v", err)
+	}
+	// And: a wrong key with the same prefix shape is still denied.
+	ResetKeyCache()
+	if _, err := RequireSDKKey(requestWithKey(app, full+"zz")); err == nil {
+		t.Fatal("wrong v1 key must be denied")
+	}
+	// And: revoking the v1 row denies immediately.
+	rec.Set("revoked", true)
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("revoke: %v", err)
 	}
 	if _, err := RequireSDKKey(requestWithKey(app, full)); err == nil {
-		t.Fatal("verifier-less row must be denied (401 at handler)")
+		t.Fatal("revoked v1 key must be denied")
 	}
 }
 
