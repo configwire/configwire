@@ -3,6 +3,19 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.2 — 2026-10-26
+
+### Added
+
+- Operator log store (`configwire/logstore`, migration `1790000024_server_logs` creating `server_logs` + `log_settings`): opt-out capture of guard decisions and successes (enabled by default, `maxDays` 1..1825 default 30d, singleton row seeded over env). Superuser-only `GET/PUT /api/v1/admin/log-settings` and `GET /api/v1/admin/logs` (level/src/page filters, perPage ≤ 200); purge honors retention. PocketBase internal `_logs` stay off (`Logs.MaxDays=0` pinned on fresh installs) — ours is a separate table so the two never fight.
+- Logs admin page (own sidebar entry above Settings, `#/p/logs`): read-only viewer (level names, level/source filters, pager) with capture settings behind a ⋮ dialog (switch + keep-days, validated 1..1825).
+- Success logging (dual-written to stderr + store only when capture is enabled): fetch `200` (`reason=served`) / `304` (`reason=cached`), ingest `202` (`reason=accepted`), same `METHOD path reason status key_prefix` shape as rejections.
+- Guard log detail: flat `missing-key` is now `missing-header` / `unknown-key` / `revoked-key` / `wrong-env` / `unknown-env` (plus `rate-limited` with `limiter=`, `storage-error`), and entries carry `key_prefix` (already-public first-8-chars, same as the mint log line) whenever a key was presented — never full keys, tokens, or PII. The viewer renders level names (DEBUG/INFO/WARN/ERROR).
+
+### Fixed
+
+- Legacy v1 hash-only SDK keys authenticate again: `findSDKKey` (`configwire/ingest/ingest.go`) matches pre-v0.2.0 rows via constant-time sha256 comparison (bcrypt verifier path unchanged for v2). Revoked/deleted/wrong keys still answer `401`; the keys list shows an amber `legacy` badge on v1 rows.
+
 ## v0.2.0-rc.1 — 2026-10-25
 
 ### Removed
