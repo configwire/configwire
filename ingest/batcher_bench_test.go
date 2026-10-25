@@ -27,8 +27,7 @@ func flushBenchApp(t testing.TB) *tests.TestApp {
 		`{"type":"text","name":"flag"}`,
 		`{"type":"text","name":"kind"}`,
 		`{"type":"text","name":"variant"}`,
-		`{"type":"text","name":"userHash"}`,
-		`{"type":"text","name":"anonId"}`,
+		`{"type":"text","name":"bucket"}`,
 		`{"type":"text","name":"country"}`,
 		`{"type":"number","name":"version"}`,
 		`{"type":"date","name":"ts"}`,
@@ -60,7 +59,7 @@ func BenchmarkFlush(b *testing.B) {
 	for i := 0; i < FlushSize; i++ {
 		items = append(items, StoredEvent{
 			Kind: "fetch", Variant: "control",
-			UserHash: "aaaabbbbccccdddd", Ts: now, Version: 1,
+			Ts: now, Version: 1,
 		})
 	}
 	bt := NewBatcher(app)

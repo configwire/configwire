@@ -21,66 +21,52 @@ S3, or CDN in front, those are your subprocessors, not ours.
 Edge we state up front: any-shape `?uid=` is accepted-but-ignored
 (never `400`; trimmed non-empty stamps `X-CW-Deprecated-uid: true`)
 and never reaches storage or logs, so it cannot linger past the
-request line. Use server-derived identity only. See
+request line. Use `?b=` bucket identity only. See
 [CONTRACT.md](CONTRACT.md) section 1 and [SECURITY.md](SECURITY.md)
 section 3.
 
 Numbers below are verified against shipped code
-(`configwire/identity`, `configwire/retention`, `configwire/purge`).
+(`configwire/identity` bucket + geo, `configwire/retention`,
+`configwire/purge`).
 
 ## 2. End users (people using your app)
 
-What your SDK sends: flag fetch and exposure events carrying the primary stable `?b=`
-bucket (`0`-`9999`), flag key, variant, version, and timestamp. No device IDs are collected. SDKs never send raw user IDs or
-IP addresses in event bodies; the server rejects `userId`/`ip` keys
-with `400`. A client-sent `?userHash=` on fetch is accepted but
-ignored for bucketing (the server stamps
-`X-CW-Deprecated-userHash: true`); a client-sent `?country=` is
+What your SDK sends: flag fetch and exposure events carrying the sole `?b=`
+bucket (`0`-`9999`), flag key, variant, version, and timestamp. A valid `?b=` wins verbatim; absent or empty `?b=` is never rejected (fetch mints a fresh bucket and evaluates on the mint, ingest stores `""` unattributed); malformed non-empty `?b=` stays `400` (`invalid "b": send "0"-"9999".`). No device IDs are collected. Client `?userHash=`/`?uid=`/`?country=` plus event-body `userHash` and event-body `userId` (any case, even null) are accepted-but-ignored, never `400`, never stored, never logged. SDKs never send raw IP addresses in event bodies; the server keeps strict `400` on raw `ip` plus PII/device-identifier keys. A client-sent `?userHash=` on fetch is accepted but
+ignored (the server stamps `X-CW-Deprecated-userHash: true`); a client-sent `?country=` is
 likewise ignored in favor of server geo
-(`fetch/fetch.go:201-214`, `ingest/handler.go:47-63`).
+(`fetch/fetch.go` `BuildContext`, `ingest/handler.go`
+`deriveIdentity` + `parseBucketCanonical`).
 
-What the server derives (backward-compat only, removed in `configwire server v0.2.0` which keeps bucket-only): for bucketing and coarse geo only, the
-server keeps IP and User-Agent in memory, never writes them to disk,
-and derives an ephemeral anonID as
-`hex(HMAC_SHA256(per-env daily salt, ip + 0x00 + ua))[:16]`
-(`configwire/identity`). The salt is per environment and rotates at
-UTC midnight, so the same device hashes to an unlinkable ID on
-different days. The previous-day salt is kept up to 48h for
-late-arriving events, then pruned by the daily ticker
-(`purge/purge.go:787`: boot run plus 23-25h jitter at `:783`,
-scrub then purge then salt-prune). Salts live in the durable
-`identity_salts` collection (migration `1790000018`); serve-time
-`Register` wires `NewManager(NewPBStore(se.App))` in
-`fetch/fetch.go:146-147` and `ingest/handler.go:52-53`, so same-day
-IDs survive restarts, while `MemoryStore` stays the package default
-for unit tests. Salt-prune ownership is ticker-only, DB-direct via
-`PruneIdentitySalts` (`purge/purge.go:318`, global, all envs);
-`Manager.Prune` is the per-env API, never called from the ticker,
-so there is no double-delete. Geo is country-only (ISO-2 from the
-configurable country-header order, default `CF-IPCountry` /
-`X-Country`, no GeoIP database). Stored event rows carry
- `anonId` + `country` with the legacy `userHash` column left empty
-  (`ingest/handler.go:102-121`).
-So per-device rows are pseudonymous, never anonymous: unlinkable
-across days by design, joined within a day by the anonID. We do not
-claim full anonymity, only daily-rotating pseudonymity plus deletion.
-Stable-bucket traffic — requests carrying a client-persisted `?b=` —
-reuses the same arm until the client rotates it; `?b=` is
-client-enumerable (`0`-`9999`), so bucketing is not an entitlement
-boundary. Mitigations, all
+What the server stores is bucket-only: a valid `?b=` is stored
+verbatim, else fetch mints a fresh bucket and evaluates on the mint
+while ingest stores `""` (unattributed). Country is country-only
+geo (ISO-2 from the configurable country-header order, default
+`CF-IPCountry` / `X-Country`, no GeoIP database). IPs and
+User-Agents are never written to disk. Stored event rows carry
+ `bucket` + `country` with no `events.userHash` column (dropped in v0.2.0-rc.1, released 2026-10-25) and no `identity_salts` collection (dropped in v0.2.0-rc.1)
+ (`ingest/handler.go` `deriveIdentity`).
+So rows join on the client-persisted bucket, which lasts until the
+client rotates it; `?b=` is client-enumerable (`0`-`9999`), so
+bucketing is not an entitlement boundary. We do not claim anonymity,
+only pseudonymity by bucket plus deletion. Mitigations, all
 shipped:
-- hash-only on the wire and in the store: only 16-hex hashes travel
-  and persist; raw IPs and user-agents are never written to disk —
-  only `(envID, day, salt)` reaches the salt store;
-- 48h identity scrub, unchanged: `anonId`/`country` are nulled on
+- bucket-only on the wire and in the store: only the canonical
+  bucket number (or `""`) travels and persists; raw IPs and
+  user-agents are never written to disk;
+- 48h identity scrub, unchanged: `bucket`/`country` are nulled on
   rows older than 48h (`purge/purge.go: ScrubCutoff`), rows kept for
   counts so rollups still converge;
 - bounded retention: raw event rows default 30 days, daily rollups
   (counts only, no identifiers) default 90 days, tunable down to 1 day;
-- no raw-ID path: `?uid=` and body `userId`/`ip`/device-identifier
-  keys are rejected with `400` and never reach storage or logs;
+- no raw-ID path: `?userHash=`/`?uid=`/`?country=` plus event-body `userHash` and event-body `userId` (any case, even null) are accepted-but-ignored, never `400`, never stored, never logged; raw `ip`/device-identifier
+  keys stay rejected with `400` and never reach storage or logs;
 - aggregate-only reads: stats endpoints return counts and never read
   identifiers; request logging (`_logs`) is off by default.
+
+Historical note: the pre-bucket per-env rotating derived-identity
+store (migration `1790000018`) was removed in v0.2.0-rc.1 (released 2026-10-25); the server keeps no
+per-day secrets and computes no IP/UA-based identifier. There is no `events.userHash` column and no `identity_salts` collection; `events.bucket` holds the bucket.
 
 How long rows live: raw event rows default 30 days, daily rollups
 (counts only, no identifiers) default 90 days, both tunable from 1
@@ -88,11 +74,11 @@ day to 1825 days (5 year max) with the invariant that rollups outlive
 raw rows (`configwire/retention`: `CONFIGWIRE_RAW_RETENTION_DAYS` /
 `CONFIGWIRE_ROLLUP_RETENTION_DAYS` over code defaults, persisted in
  the `retention_settings` singleton). The daily ticker rolls raw
- rows into counts then deletes them, deletes stale rollups, and
- prunes stale salts; a superuser-only
- `POST /api/v1/admin/maintenance/purge` offers scrub plus purge only
- (no salt-prune, ticker-only) with a `?dry=` dry-run mode
- (`purge/purge.go:830-877`). See [CONTRACT.md](CONTRACT.md) sections 7 and 11 and
+ rows into counts then deletes them and deletes stale rollups;
+ a superuser-only
+ `POST /api/v1/admin/maintenance/purge` offers scrub plus purge
+ with a `?dry=` dry-run mode
+ (`purge/purge.go`, manual route). See [CONTRACT.md](CONTRACT.md) sections 7 and 11 and
 [SECURITY.md](SECURITY.md) section 3. Stats endpoints return
 aggregate counts only and never read identifiers. Request logging
 (`_logs`) is off by default.

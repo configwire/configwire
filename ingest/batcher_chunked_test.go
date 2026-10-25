@@ -32,7 +32,7 @@ func mkFlushItems(n int) []StoredEvent {
 	for i := 0; i < n; i++ {
 		out = append(out, StoredEvent{
 			Kind: "fetch", Variant: "control",
-			UserHash: "aaaabbbbccccdddd", Ts: now, Version: 1,
+			Ts: now, Version: 1,
 		})
 	}
 	return out
@@ -44,7 +44,7 @@ func mkFlushItems(n int) []StoredEvent {
 func poisonItem() StoredEvent {
 	return StoredEvent{
 		Kind: "fetch", Variant: "poison-" + strings.Repeat("v", 70<<10),
-		UserHash: "aaaabbbbccccdddd", Ts: time.Now().UTC(), Version: 1,
+		Ts: time.Now().UTC(), Version: 1,
 	}
 }
 

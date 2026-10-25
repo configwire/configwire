@@ -98,7 +98,7 @@ func TestValidateBodyIgnoresUnknownKeys(t *testing.T) {
 	if len(events) != 1 || events[0].Kind != "exposure" || events[0].Variant != "control" {
 		t.Fatalf("unexpected decode: %+v", events)
 	}
-	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Variant: events[0].Variant, UserHash: events[0].UserHash, Ts: time.Now().UTC(), Version: events[0].Version}
+	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Variant: events[0].Variant, Ts: time.Now().UTC(), Version: events[0].Version}
 	if se.Kind != "exposure" || se.Variant != "control" {
 		t.Fatalf("stored event must carry env-wide fields only: %+v", se)
 	}
@@ -114,7 +114,7 @@ func TestValidateBodyIgnoresLegacyFlag(t *testing.T) {
 	if len(events) != 1 || events[0].Kind != "exposure" || events[0].Flag != "launch_flag" || events[0].Variant != "control" || events[0].UserHash != "abcdef0123456789" {
 		t.Fatalf("unexpected decode: %+v", events)
 	}
-	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Flag: events[0].Flag, Variant: events[0].Variant, UserHash: events[0].UserHash, Ts: time.Now().UTC(), Version: events[0].Version}
+	se := StoredEvent{EnvID: "env1", Kind: events[0].Kind, Flag: events[0].Flag, Variant: events[0].Variant, Ts: time.Now().UTC(), Version: events[0].Version}
 	if se.Kind != "exposure" || se.Flag != "launch_flag" || se.Variant != "control" {
 		t.Fatalf("stored event must carry per-flag attribution: %+v", se)
 	}
@@ -177,7 +177,7 @@ func TestValidateBodyTooLarge(t *testing.T) {
 }
 
 func TestValidateBodyRejectsPII(t *testing.T) {
-	for _, key := range []string{"userId", "ip"} {
+	for _, key := range []string{"ip"} {
 		e := ev("exposure")
 		e[key] = "raw-value"
 		_, aerr := ValidateBody(body(t, []any{e}))
@@ -185,11 +185,31 @@ func TestValidateBodyRejectsPII(t *testing.T) {
 			t.Fatalf("raw %q must be 400, got %v", key, aerr)
 		}
 	}
-	// Null-valued keys are presence too.
+	// Raw userId (any case, any value including null) is
+	// accepted-but-ignored: legacy senders keep working, the key never
+	// reaches storage (EventIn carries no identity from it).
+	for _, key := range []string{"userId", "UserId", "USERID"} {
+		e := ev("exposure")
+		e[key] = "raw-value"
+		events, aerr := ValidateBody(body(t, []any{e}))
+		if aerr != nil {
+			t.Fatalf("raw %q must be accepted-but-ignored, got %v", key, aerr)
+		}
+		if len(events) != 1 || events[0].UserHash != "abcdef0123456789" {
+			t.Fatalf("raw %q must not leak into EventIn, got %+v", key, events)
+		}
+		if strings.Contains(events[0].Kind+events[0].Variant, "raw-value") {
+			t.Fatalf("raw %q value must never reach EventIn, got %+v", key, events)
+		}
+	}
 	e := ev("exposure")
 	e["userId"] = nil
-	if _, aerr := ValidateBody(body(t, []any{e})); aerr == nil || aerr.Status != 400 {
-		t.Fatalf("null userId must be 400, got %v", aerr)
+	events, aerr := ValidateBody(body(t, []any{e}))
+	if aerr != nil {
+		t.Fatalf("null userId must be accepted-but-ignored, got %v", aerr)
+	}
+	if len(events) != 1 || events[0].UserHash != "abcdef0123456789" {
+		t.Fatalf("null userId must not leak into EventIn, got %+v", events)
 	}
 }
 
@@ -199,7 +219,6 @@ func TestValidateBodyRejectsPIIExtended(t *testing.T) {
 		"IP", "Ip", "deviceid", "DeviceId", "device_id", "DEVICE_ID",
 		"advertisingid", "adid", "ADID", "idfa", "IDFA", "idfv", "IDFV",
 		"androidid", "serial", "mac", "MAC", "imei", "IMEI",
-		"UserId", "USERID",
 	} {
 		e := ev("exposure")
 		e[key] = "raw-value"

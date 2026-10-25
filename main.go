@@ -488,17 +488,6 @@ func main() {
 			return re.JSON(200, map[string]string{"status": "ok"})
 		})
 
-		// Deprecated: GET /hello is deprecated, use GET /healthz instead.
-		// It will be removed in the next major release (v0.2.0).
-		se.Router.GET("/hello", func(re *core.RequestEvent) error {
-			h := re.Response.Header()
-			h.Set("Deprecation", "true")
-			h.Set("Sunset", "v0.2.0")
-			h.Set("Link", `</healthz>; rel="successor-version"`)
-			h.Set("Warning", `299 configwire "/hello is deprecated, use /healthz; will be removed in v0.2.0"`)
-			return re.String(200, "Hello world!")
-		})
-
 		// Public app metadata for the pre-auth login topbar.
 		// No auth by design (same as /healthz).
 		se.Router.GET("/api/v1/meta", func(re *core.RequestEvent) error {

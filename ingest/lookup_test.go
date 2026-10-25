@@ -49,13 +49,19 @@ func lookupTestApp(t *testing.T) *tests.TestApp {
 
 func seedKey(t *testing.T, app *tests.TestApp, full, envID string, revoked bool) {
 	t.Helper()
+	verifier, err := GenerateVerifier(full)
+	if err != nil {
+		t.Fatalf("GenerateVerifier: %v", err)
+	}
 	col, err := app.FindCollectionByNameOrId("sdk_keys")
 	if err != nil {
 		t.Fatalf("find sdk_keys: %v", err)
 	}
 	rec := core.NewRecord(col)
 	rec.Set("prefix", KeyPrefix(full))
-	rec.Set("hash", KeyHash(full))
+	rec.Set("hash", "")
+	rec.Set("keyVer", 2)
+	rec.Set("verifier", verifier)
 	rec.Set("revoked", revoked)
 	rec.Set("env", envID)
 	if err := app.Save(rec); err != nil {
@@ -73,9 +79,9 @@ func requestWithKey(app core.App, full string) *core.RequestEvent {
 	return re
 }
 
-// TestFindSDKKeyIndexed proves the (prefix, hash) lookup: exact row hit,
-// unknown key miss, revoked row miss, and hash-only comparison (a row with
-// a matching prefix but wrong hash must not match).
+// TestFindSDKKeyIndexed proves the (prefix, verifier) lookup: exact row hit,
+// unknown key miss, revoked row miss, and the hash-only comparison (a row with
+// a matching prefix but wrong key must not match).
 func TestFindSDKKeyIndexed(t *testing.T) {
 	app := lookupTestApp(t)
 	ResetKeyCache()

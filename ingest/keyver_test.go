@@ -55,7 +55,7 @@ func seedEnv(t *testing.T, app *tests.TestApp) string {
 	return rec.Id
 }
 
-func seedLegacyKey(t *testing.T, app *tests.TestApp, full, envID string) *core.Record {
+func seedVerifierLessKey(t *testing.T, app *tests.TestApp, full, envID string) *core.Record {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId("sdk_keys")
 	if err != nil {
@@ -66,7 +66,7 @@ func seedLegacyKey(t *testing.T, app *tests.TestApp, full, envID string) *core.R
 	rec.Set("hash", KeyHash(full))
 	rec.Set("env", envID)
 	if err := app.Save(rec); err != nil {
-		t.Fatalf("save legacy key: %v", err)
+		t.Fatalf("save verifier-less key: %v", err)
 	}
 	return rec
 }
@@ -137,18 +137,18 @@ func TestVerifierRoundTrip(t *testing.T) {
 	}
 }
 
-func TestLegacyRowStillAuthenticates(t *testing.T) {
+func TestVerifierLessRowDenied(t *testing.T) {
 	app := keyVerTestApp(t)
 	ResetKeyCache()
 	env := seedEnv(t, app)
 	const full = "cw-legacy-key-0001-abcd"
-	seedLegacyKey(t, app, full, env)
+	seedVerifierLessKey(t, app, full, env)
 	rec, err := findSDKKey(app, full)
-	if err != nil || rec == nil {
-		t.Fatalf("legacy row must authenticate, got %+v err=%v", rec, err)
+	if err != nil || rec != nil {
+		t.Fatalf("verifier-less row must never match, got %+v err=%v", rec, err)
 	}
-	if _, err := RequireSDKKey(requestWithKey(app, full)); err != nil {
-		t.Fatalf("RequireSDKKey(legacy): %v", err)
+	if _, err := RequireSDKKey(requestWithKey(app, full)); err == nil {
+		t.Fatal("verifier-less row must be denied (401 at handler)")
 	}
 }
 

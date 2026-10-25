@@ -57,52 +57,57 @@ binary plus operator procedure.
      for a global invalidate across all auth records.
   3. Re-issue SDK keys (section above) if key material may have leaked.
 
-## 3. PII — bucket-primary, anonID-only compat, tunable retention
+## 3. PII — bucket-only identity, tunable retention
 
-> Bucket (`?b=0-9999`) is the primary identity and the only identity kept in `configwire server v0.2.0`.
-> Server-derived anonID plus legacy `userHash`/`uid`/`country` inputs are backward-compat
-> shims only (accepted-but-ignored).
+> v0.2.0-rc.1 (released 2026-10-25) is bucket-only.
+> Bucket (`?b=0-9999`) is the sole identity: a valid `?b=` wins verbatim.
+> Legacy `userHash`/`uid`/`country` inputs plus event-body `userHash` and
+> event-body `userId` (any case, even null) are backward-compat
+> shims only (accepted-but-ignored, never `400`, never stored, never logged).
+> Absent or empty `?b=` is never rejected. Raw `ip` plus PII/device-identifier
+> keys stay strict `400`. There is no `events.userHash` column and no
+> `identity_salts` collection (both dropped in v0.2.0-rc.1); `events.bucket`
+> holds the bucket.
 
-- The ingest path **strictly rejects** raw `userId`/`ip` keys — even
+- Event-body `userId` (any case, even null) is accepted-but-ignored, never a `400`, never stored, never logged. The ingest path **strictly rejects** raw `ip` keys — even
   `null`-valued ones (presence, not value) — plus PII/device-identifier
   keys (`email`, `phone`, `ip`, `deviceId`, `advertisingId`, `adid`,
   `idfa`, `idfv`, `androidId`, `serial`, `mac`, `imei`,
-  case-insensitive; `userId` in any case) then `400`. Errors name only
-  the key, values are never logged. Clients send `userHash` only, and
-  even that is ignored at storage. Ref:
+  case-insensitive) then `400`. Errors name only
+  the key, values are never logged. Clients send `?b=` plus `userHash`
+  only, and even that is ignored at storage. Ref:
   `configwire/ingest/ingest.go:122-130` (denylist), `:175-205`
   (strict reject).
-- Identity is server-derived and ephemeral. Per request the server
-  computes `anonID = hex(HMAC_SHA256(per-env daily salt,
-  ip + 0x00 + ua))[:16]` via `identity.Manager` (trusted client IP
-  from `limits.ClientIP` + User-Agent, salt for the env's UTC day),
-   and `country` from headers only (default order `CF-IPCountry`, then
-   `X-Country`, tunable via the limits `countryHeaders` setting;
-   trimmed, uppercased, strict ISO-2, else `""`). Raw IPs and
-  User-Agents live in memory only, never persisted; only
-  `(envID, day, salt)` reaches the salt store. Ref:
-  `configwire/identity/identity.go:40-68` (`DeriveAnonID`, `AnonID`),
-  `configwire/identity/geo.go:21-41` (`CountryFromHeaders`,
-  `NormalizeCountry`), `configwire/ingest/handler.go:38-49`
-  (`deriveIdentity`).
-- Lifecycle: salts rotate at UTC midnight (per-env daily salt,
-  32 bytes from `crypto/rand`); old salts are pruned past 48h
-  (`Prune` deletes days strictly older than `DayString(now-48h)`),
-  so the previous-day salt always survives for late events but nothing
-  older lingers. A rotated salt re-randomizes bucketing
-  (`fnv64a(newHash+seed)%10000`), an intentional daily rebucket, so plan experiment reads as one rebucket, not steady
-  churn. Fetch and ingest both store the anonID only; stats return
-  aggregate counts and never read identity. Ref:
-  `configwire/identity/salt.go:10-24` (salt size, `pruneAfter`),
-  `:89-158` (`SaltForDay`, `Prune`), `configwire/eval/eval.go:166-179`
-  (`Bucket` + rebucket note).
-- The fetch path takes identity as server-derived only: client
+- Identity is bucket-only, no derived fallback. Fetch takes a valid
+  `?b=` when present (wins verbatim), else mints a fresh uniform bucket (`MintBucket`
+  via `EffectiveBucket`) and evaluates on the mint; ingest takes a
+  valid `?b=` when present, else stores `""` (unattributed) via
+  `deriveIdentity`. Absent or empty `?b=` is never rejected; malformed non-empty `?b=` stays `400` (`invalid "b": send "0"-"9999".`). `country` comes from headers only (default order
+  `CF-IPCountry`, then `X-Country`, tunable via the limits
+  `countryHeaders` setting; trimmed, uppercased, strict ISO-2, else
+  `""`). Raw IPs and User-Agents are never persisted; only the bucket
+  number (or `""`) reaches the store. Ref:
+  `configwire/identity/bucket.go` (`ParseBucketParam`, `MintBucket`),
+  `configwire/identity/geo.go` (`CountryFromHeaders`,
+  `NormalizeCountry`), `configwire/fetch/fetch.go` (`BuildContext`,
+  `EffectiveBucket`), `configwire/ingest/handler.go`
+  (`deriveIdentity`, `parseBucketCanonical`).
+- Lifecycle: no rotation. A bucket persists until the client rotates
+  it; `?b=` is client-enumerable (`0`-`9999`), so bucketing is not an
+  entitlement boundary — enforce paid access, quotas, or one-per-user
+   rewards server-side on authenticated identity. Fetch and ingest both
+   store the bucket only (`events.bucket`); stats return aggregate counts and never read identity.
+  Event identity scrubs on a 48h bound (`ScrubIdentitiesOlderThan`
+  past `now - 48h`, rows kept, counts untouched). Ref:
+  `configwire/eval/eval.go` (`Bucket`),
+  `configwire/purge/purge.go` (`ScrubCutoff`,
+  `ScrubIdentitiesOlderThan`).
+- The fetch path takes identity as bucket-only: client
   `?userHash=` (any shape) and `?country=` are accepted-but-ignored,
   and a sent `?userHash=` stamps `X-CW-Deprecated-userHash: true` so
-  callers can find and remove it. Stop sending both; the server
-  derives them. Ref: `configwire/fetch/fetch.go:201`
-  (`stampUserHashCompat`), `:214` (`effectiveUserHash`), `:562`
-  (handler order).
+  callers can find and remove it. Stop sending both; send `?b=` only.
+  Ref: `configwire/fetch/fetch.go` (`BuildContext` ignore + header
+  stamp).
 - Compat: any-shape `?uid=` is accepted-but-ignored, never `400`;
   a trimmed non-empty `?uid=` stamps `X-CW-Deprecated-uid: true`.
   Never send raw identity on the wire or in URLs. Ref:
@@ -114,8 +119,9 @@ binary plus operator procedure.
   `idfa`, `idfv`, `androidId`, `serial`, `mac`, `imei`,
   case-insensitive) then `400`; values are never logged. Ref:
   `configwire/fetch/fetch.go:90-105`.
-- Server-side derivation, when needed, is `hex(HMAC(...))[:16]`
-  (64 bits: enough to join fetch/exposure rows, non-reversible).
+- Server-side identity, when stored, is the bucket verbatim
+  (or `""` on unattributed ingest rows): enough to join
+  fetch/exposure rows, no raw identity involved.
 - Stats endpoints return aggregate counts only; identity never
   leaves the server through them (never read, never exported).
 - Retention (enforced by the `configwire/purge` daily job + manual
@@ -126,15 +132,12 @@ binary plus operator procedure.
   - both windows tunable `1..1825` days with the invariant
     `rollupDays >= rawDays`; rollups carry counts only, no PII
     survives past the raw window.
-   - identity salts scrub on their own 48h bound (see lifecycle above),
-     independent of event retention. Event identity is nulled on the
-     same horizon (`ScrubIdentitiesOlderThan` past `now - 48h`, rows
-     kept), and the daily ticker plus the manual purge route both run
-     scrub → rollup+purge → salt prune in that order. Ref:
-     `configwire/purge/purge.go:62-67,195-199` (48h bound,
-     `ScrubCutoff`), `:223-269` (`ScrubIdentitiesOlderThan`),
-     `:312-318` (`PruneIdentitySalts`), `:787-832`
-     (ticker wiring, manual route).
+    - Event identity (`bucket` plus `country`) nulls on the 48h horizon
+    (`ScrubIdentitiesOlderThan` past `now - 48h`, rows kept), and
+     the daily ticker plus the manual purge route both run
+     scrub → rollup+purge in that order. Ref:
+     `configwire/purge/purge.go` (48h bound, `ScrubCutoff`),
+     (`ScrubIdentitiesOlderThan`), (ticker wiring, manual route).
 - Release author and note are free text and land in releases rows, server logs, and backups (see `BACKUPS.md` section 7). Never put email, phone, or other PII in note or author. Prefer an opaque operator id (for example `op-114`) plus a short change reason. Note the publish path defaults author to the superuser email when present, so use a role account where policy requires it.
 - Backup residency is operator controlled: the SQLite file, the local `backups/` dir, and the S3 bucket and region you configure (`BACKUPS.md` sections 4 and 7). Keep backup and record-upload buckets separate.
 
@@ -274,19 +277,20 @@ binary plus operator procedure.
   `GET/PUT /api/v1/admin/retention` (absent/null fields keep stored;
   boot env `CONFIGWIRE_RAW_RETENTION_DAYS` /
   `CONFIGWIRE_ROLLUP_RETENTION_DAYS`; out-of-range or
-  invariant-breaking values clamp on load, never fatal). Purge
+   invariant-breaking values clamp on load, never fatal). Purge
    cutoffs read the live config on every run (raw `now - rawDays`,
-   rollups `now - rollupDays`). Event identity (`anonId`/`country`)
+    rollups `now - rollupDays`). Event identity (`bucket` plus
+    `country`)
    scrubs on a separate 48h bound past `ts` (rows kept, counts
-   untouched) and salts prune past 48h (section 3); the daily ticker
-   and the manual purge route both run scrub → rollup+purge → salt
-   prune in that order. Align backup rotation with the configured
+   untouched, section 3); the daily ticker
+   and the manual purge route both run scrub → rollup+purge
+   in that order. Align backup rotation with the configured
   windows: backup zips are full dumps and a restore reintroduces
   rows the purge already deleted. Ref:
   `configwire/retention/api.go:13-26`,
   `configwire/retention/retention.go:30-39,79-116`,
-   `configwire/purge/purge.go:67-90,195-199,787-832`,
-   `configwire/identity/salt.go:134-158`.
+   `configwire/purge/purge.go` (cutoffs, scrub, ticker wiring,
+   manual route).
 - Rollback/promote clone snapshots into NEW rows; releases are never
   updated in place. Superseded releases stay readable; only events and
   expired rollups are ever deleted, never release rows.

@@ -21,14 +21,14 @@ func query(raw string) url.Values {
 }
 
 func TestBuildContextFull(t *testing.T) {
-	// Server-derived anonID wins: client ?userHash= is accepted-but-ignored,
+	// Bucket param wins: client ?userHash= is accepted-but-ignored,
 	// client ?country= is ignored in favor of server geo.
 	q := query(`userHash=ffffffffffffffff&platform=android&appVersion=1.2.3&locale=en-US&country=FR&attrs=%7B%22tier%22%3A%22pro%22%2C%22n%22%3A7%7D`)
-	ctx, err := BuildContext(q, "0123456789abcdef", "US")
+	ctx, err := BuildContext(q, "42", "US")
 	if err != nil {
 		t.Fatalf("BuildContext err = %v", err)
 	}
-	if ctx.UserHash != "0123456789abcdef" || ctx.Platform != "android" || ctx.AppVersion != "1.2.3" ||
+	if ctx.UserHash != "42" || ctx.Platform != "android" || ctx.AppVersion != "1.2.3" ||
 		ctx.Locale != "en-US" || ctx.Country != "US" {
 		t.Fatalf("scalar fields wrong: %+v", ctx)
 	}
@@ -47,12 +47,12 @@ func TestBuildContextEmpty(t *testing.T) {
 	}
 }
 
-// TestBuildContextUserHashIgnored pins the server-wins contract: any
+// TestBuildContextUserHashIgnored pins the bucket-param contract: any
 // client ?userHash= (valid, invalid, uppercase, raw uid-shaped) is
 // accepted-but-ignored — never a 400 — and Context.UserHash carries the
-// server-derived anonID (field name kept for eval.Bucket compat).
+// bucket param (field name kept for eval.Bucket compat).
 func TestBuildContextUserHashIgnored(t *testing.T) {
-	const anon = "0123456789abcdef"
+	const bucket = "42"
 	for name, raw := range map[string]string{
 		"valid-hex":   `userHash=ffffffffffffffff`,
 		"too-short":   `userHash=abc123`,
@@ -64,13 +64,13 @@ func TestBuildContextUserHashIgnored(t *testing.T) {
 		"empty-value": `userHash=`,
 		"absent":      `platform=ios`,
 	} {
-		ctx, err := BuildContext(query(raw), anon, "")
+		ctx, err := BuildContext(query(raw), bucket, "")
 		if err != nil {
 			t.Errorf("%s: client userHash must be accepted-but-ignored, got %v", name, err)
 			continue
 		}
-		if ctx.UserHash != anon {
-			t.Errorf("%s: UserHash = %q, want server anonID %q", name, ctx.UserHash, anon)
+		if ctx.UserHash != bucket {
+			t.Errorf("%s: UserHash = %q, want bucket param %q", name, ctx.UserHash, bucket)
 		}
 	}
 }
@@ -86,7 +86,7 @@ func TestBuildContextCountryServerOnly(t *testing.T) {
 		"lower":    `country=us`,
 		"absent":   `platform=ios`,
 	} {
-		ctx, err := BuildContext(query(raw), "0123456789abcdef", "US")
+		ctx, err := BuildContext(query(raw), "42", "US")
 		if err != nil {
 			t.Fatalf("%s: err = %v", name, err)
 		}
@@ -94,7 +94,7 @@ func TestBuildContextCountryServerOnly(t *testing.T) {
 			t.Errorf("%s: Country = %q, want server geo %q", name, ctx.Country, "US")
 		}
 	}
-	ctx, err := BuildContext(query(`country=FR`), "0123456789abcdef", "")
+	ctx, err := BuildContext(query(`country=FR`), "42", "")
 	if err != nil {
 		t.Fatalf("empty server geo err = %v", err)
 	}
@@ -104,8 +104,8 @@ func TestBuildContextCountryServerOnly(t *testing.T) {
 }
 
 // TestUserHashCompatHeader pins the compat signal: any trimmed non-empty
-// client ?userHash= stamps X-CW-Deprecated-userHash=true (server-derived
-// anonID still wins); absent/empty/blank sends no header.
+// client ?userHash= stamps X-CW-Deprecated-userHash=true (bucket param
+// still wins); absent/empty/blank sends no header.
 func TestUserHashCompatHeader(t *testing.T) {
 	if userHashCompatHeader != "X-CW-Deprecated-userHash" {
 		t.Fatalf("compat header = %q, want %q", userHashCompatHeader, "X-CW-Deprecated-userHash")
@@ -141,7 +141,7 @@ func TestBuildContextAttrsEdges(t *testing.T) {
 		"empty-obj":  `attrs=%7B%7D`,
 		"nested-obj": `attrs=%7B%22a%22%3A%7B%22b%22%3A1%7D%7D`,
 	} {
-		ctx, err := BuildContext(query(raw), "0123456789abcdef", "")
+		ctx, err := BuildContext(query(raw), "42", "")
 		switch name {
 		case "empty-obj", "nested-obj":
 			if err != nil {
@@ -158,7 +158,7 @@ func TestBuildContextAttrsEdges(t *testing.T) {
 func TestBuildContextAttrsOversized(t *testing.T) {
 	big := strings.Repeat("a", MaxAttrsBytes+1)
 	q := url.Values{"attrs": []string{`{"k":"` + big + `"}`}}
-	if _, err := BuildContext(q, "0123456789abcdef", ""); err == nil {
+	if _, err := BuildContext(q, "42", ""); err == nil {
 		t.Fatalf("expected oversized error for %d-byte attrs", len(big))
 	} else if !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("oversized error should mention size, got %q", err)
@@ -168,7 +168,7 @@ func TestBuildContextAttrsOversized(t *testing.T) {
 	if len(at) != MaxAttrsBytes {
 		t.Fatalf("test setup wrong: len=%d", len(at))
 	}
-	if _, err := BuildContext(url.Values{"attrs": []string{at}}, "0123456789abcdef", ""); err != nil {
+	if _, err := BuildContext(url.Values{"attrs": []string{at}}, "42", ""); err != nil {
 		t.Fatalf("at-bound attrs should parse, got %v", err)
 	}
 }
@@ -217,7 +217,7 @@ func fakeSnapshot() releases.Snapshot {
 
 func TestEvaluateSnapshotShaping(t *testing.T) {
 	snap := fakeSnapshot()
-	ctx := eval.Context{UserHash: "0123456789abcdef", Platform: "android"}
+	ctx := eval.Context{UserHash: "42", Platform: "android"}
 	values, variants := EvaluateSnapshot(snap, ctx, "")
 
 	if values["welcome"] != "hello-android" {
@@ -229,7 +229,7 @@ func TestEvaluateSnapshotShaping(t *testing.T) {
 			{Name: "control", WeightBps: 5000},
 			{Name: "treatment", WeightBps: 5000},
 		},
-	}, "0123456789abcdef")
+	}, "42")
 	if variants["new_ui"] != wantVariant {
 		t.Errorf("variant = %q, want Assign %q", variants["new_ui"], wantVariant)
 	}
@@ -257,7 +257,7 @@ func TestEvaluateSnapshotControlPaths(t *testing.T) {
 		t.Errorf("anonymous overlay value = %v, want base false", values["new_ui"])
 	}
 	// exp override forces the control path even for an assigned user.
-	values, variants = EvaluateSnapshot(snap, eval.Context{UserHash: "0123456789abcdef"}, "draft")
+	values, variants = EvaluateSnapshot(snap, eval.Context{UserHash: "42"}, "draft")
 	if values["new_ui"] != false {
 		t.Errorf("draft override value = %v, want base false", values["new_ui"])
 	}
@@ -332,7 +332,7 @@ func TestOldTopLevelCompatDecodesSame(t *testing.T) {
 	if len(nestedSnap.Flags) != 1 || nestedSnap.Flags[0].Key != "greet" {
 		t.Fatalf("nested flags not preserved: %+v", nestedSnap.Flags)
 	}
-	ctx := eval.Context{Platform: "android", UserHash: "0123456789abcdef"}
+	ctx := eval.Context{Platform: "android", UserHash: "42"}
 	oldValues, _ := EvaluateSnapshot(oldSnap, ctx, "")
 	nestedValues, _ := EvaluateSnapshot(nestedSnap, ctx, "")
 	if !reflect.DeepEqual(oldValues, nestedValues) {
@@ -360,27 +360,27 @@ func TestEvaluateSnapshotCorruptRulesFailClosed(t *testing.T) {
 			},
 		},
 	}
-	values, _ := EvaluateSnapshot(snap, eval.Context{Platform: "android", UserHash: "0123456789abcdef"}, "")
+	values, _ := EvaluateSnapshot(snap, eval.Context{Platform: "android", UserHash: "42"}, "")
 	if values["risky"] != false {
 		t.Errorf("corrupt rules must match nobody (fail closed), got %v", values["risky"])
 	}
 }
 
 func TestBuildContextUidIgnored(t *testing.T) {
-	const anon = "0123456789abcdef"
+	const bucket = "42"
 	for _, raw := range []string{
 		`uid=user-7`,
 		`uid=user-7&userHash=0123456789abcdef`,
 		`userHash=0123456789abcdef&uid=user-7`,
 	} {
 		q := query(raw)
-		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+		ctx, err := BuildContext(q, bucket, "")
 		if err != nil {
 			t.Errorf("%s: ?uid= must be accepted-but-ignored, got %v", raw, err)
 			continue
 		}
-		if ctx.UserHash != anon {
-			t.Errorf("%s: UserHash = %q, want server anonID %q (uid ignored)", raw, ctx.UserHash, anon)
+		if ctx.UserHash != bucket {
+			t.Errorf("%s: UserHash = %q, want bucket param %q (uid ignored)", raw, ctx.UserHash, bucket)
 		}
 		h := http.Header{}
 		stampUidCompat(h, q)
@@ -388,7 +388,7 @@ func TestBuildContextUidIgnored(t *testing.T) {
 			t.Errorf("%s: header = %q, want %q", raw, got, "true")
 		}
 	}
-	if _, err := BuildContext(query(`uid=&userHash=0123456789abcdef`), "0123456789abcdef", ""); err != nil {
+	if _, err := BuildContext(query(`uid=&userHash=0123456789abcdef`), "42", ""); err != nil {
 		t.Errorf("empty uid + valid hash must pass, got %v", err)
 	}
 	h := http.Header{}
@@ -401,63 +401,68 @@ func TestBuildContextUidIgnored(t *testing.T) {
 func TestBuildContextAttrsDenylist(t *testing.T) {
 	for _, key := range []string{"email", "Email", "e-mail", "phone", "ip", "IP", "deviceid", "device_id", "adid", "idfa", "idfv", "androidid", "serial", "mac", "imei"} {
 		q := url.Values{"attrs": []string{`{"` + key + `":"v"}`}}
-		if _, err := BuildContext(q, "0123456789abcdef", ""); err == nil {
+		if _, err := BuildContext(q, "42", ""); err == nil {
 			t.Errorf("attrs key %q: expected 400, got nil", key)
 		}
 	}
-	if _, err := BuildContext(url.Values{"attrs": []string{`{"tier":"pro"}`}}, "0123456789abcdef", ""); err != nil {
+	if _, err := BuildContext(url.Values{"attrs": []string{`{"tier":"pro"}`}}, "42", ""); err != nil {
 		t.Errorf("benign attrs must pass, got %v", err)
 	}
 }
 
 // Client ?userHash= (any shape) is accepted-but-ignored: effective
-// identity is always the server anonID unless a valid ?b= wins.
+// identity is always the bucket param unless a valid ?b= wins.
 // Never 400 on ?userHash=.
 func TestEffectiveUserHash(t *testing.T) {
-	const anon = "0123456789abcdef"
+	const bucket = "7"
 	for name, tc := range map[string]struct {
 		raw  string
 		want string
 	}{
-		"ignore-valid-hash": {`userHash=092081140b677b45`, anon},
-		"ignore-trimmed":    {`userHash=++092081140b677b45++`, anon},
-		"absent-fallback":   {`platform=ios`, anon},
-		"empty-fallback":    {`userHash=`, anon},
-		"blank-fallback":    {`userHash=+++`, anon},
-		"too-short":         {`userHash=abc123`, anon},
-		"too-long":          {`userHash=0123456789abcdef00`, anon},
-		"uppercase":         {`userHash=0123456789ABCDEF`, anon},
-		"non-hex":           {`userHash=0123456789abcdeg`, anon},
-		"raw-uid":           {`userHash=user-7`, anon},
+		"ignore-valid-hash": {`userHash=092081140b677b45`, bucket},
+		"ignore-trimmed":    {`userHash=++092081140b677b45++`, bucket},
+		"absent-fallback":   {`platform=ios`, bucket},
+		"empty-fallback":    {`userHash=`, bucket},
+		"blank-fallback":    {`userHash=+++`, bucket},
+		"too-short":         {`userHash=abc123`, bucket},
+		"too-long":          {`userHash=0123456789abcdef00`, bucket},
+		"uppercase":         {`userHash=0123456789ABCDEF`, bucket},
+		"non-hex":           {`userHash=0123456789abcdeg`, bucket},
+		"raw-uid":           {`userHash=user-7`, bucket},
 		"bucket-wins":       {`b=42&userHash=092081140b677b45`, "42"},
 	} {
-		if got := effectiveUserHash(query(tc.raw), anon); got != tc.want {
-			t.Errorf("%s: effective = %q, want %q", name, got, tc.want)
+		ctx, err := BuildContext(query(tc.raw), bucket, "")
+		if err != nil {
+			t.Errorf("%s: ignored userHash must be 200-eligible (no 400), got %v", name, err)
+			continue
+		}
+		if ctx.UserHash != tc.want {
+			t.Errorf("%s: UserHash = %q, want %q", name, ctx.UserHash, tc.want)
 		}
 	}
 }
 
-// effectiveUserHash output reaches ctx.UserHash verbatim: different
-// ?userHash= values yield the SAME bucketing (server anonID), while a
-// valid ?b= still overrides the anonID.
+// Absent ?b= falls back to the bucket param verbatim: different
+// ?userHash= values yield the SAME bucketing (bucket param), while a
+// valid ?b= still overrides the fallback.
 func TestEffectiveUserHashFeedsBuildContext(t *testing.T) {
-	const anon = "aaaa0000bbbb1111"
+	const bucket = "7"
 	for _, raw := range []string{
 		`userHash=092081140b677b45&platform=ios`,
 		`userHash=ffffffffffffffff&platform=ios`,
 		`userHash=nothex&platform=ios`,
 	} {
 		q := query(raw)
-		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+		ctx, err := BuildContext(q, bucket, "US")
 		if err != nil {
 			t.Fatalf("%s: BuildContext err = %v", raw, err)
 		}
-		if ctx.UserHash != anon {
-			t.Fatalf("%s: ctx.UserHash = %q, want server anonID %q (userHash ignored)", raw, ctx.UserHash, anon)
+		if ctx.UserHash != bucket {
+			t.Fatalf("%s: ctx.UserHash = %q, want bucket param %q (userHash ignored)", raw, ctx.UserHash, bucket)
 		}
 	}
 	q := query(`b=42&userHash=092081140b677b45&platform=ios`)
-	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+	ctx, err := BuildContext(q, bucket, "US")
 	if err != nil {
 		t.Fatalf("BuildContext err = %v", err)
 	}
@@ -485,7 +490,7 @@ func TestEffectiveUserHashFeedsBuildContext(t *testing.T) {
 func TestFetch_StableBucket304KeepsBucket(t *testing.T) {
 	const storedEtag = "b41b62605c0df712"
 	q := query(`b=42&platform=ios`)
-	ctx, err := BuildContext(q, effectiveUserHash(q, "0123456789abcdef"), "US")
+	ctx, err := BuildContext(q, "7", "US")
 	if err != nil {
 		t.Fatalf("?b=42 must not 400, got %v", err)
 	}

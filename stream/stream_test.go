@@ -93,17 +93,23 @@ func seedEnv(t *testing.T, app *tests.TestApp, slug string) string {
 	return rec.Id
 }
 
-// seedLegacyKey stores a v1-style row (prefix + fast hash, no verifier)
-// so tests exercise the constant-time hash path without bcrypt cost.
-func seedLegacyKey(t *testing.T, app *tests.TestApp, full, envID string) string {
+// seedV2Key stores a verifier-backed (v2) row so tests exercise the
+// bcrypt-verified auth path.
+func seedV2Key(t *testing.T, app *tests.TestApp, full, envID string) string {
 	t.Helper()
+	verifier, err := ingest.GenerateVerifier(full)
+	if err != nil {
+		t.Fatalf("GenerateVerifier: %v", err)
+	}
 	col, err := app.FindCollectionByNameOrId("sdk_keys")
 	if err != nil {
 		t.Fatalf("find sdk_keys: %v", err)
 	}
 	rec := core.NewRecord(col)
 	rec.Set("prefix", ingest.KeyPrefix(full))
-	rec.Set("hash", ingest.KeyHash(full))
+	rec.Set("hash", "")
+	rec.Set("keyVer", 2)
+	rec.Set("verifier", verifier)
 	rec.Set("revoked", false)
 	rec.Set("env", envID)
 	if err := app.Save(rec); err != nil {
@@ -141,7 +147,7 @@ func TestStreamAuthOrder(t *testing.T) {
 	envA := seedEnv(t, app, "dev")
 	seedEnv(t, app, "other")
 	const goodKey = "cw-stream-good-0001"
-	seedLegacyKey(t, app, goodKey, envA)
+	seedV2Key(t, app, goodKey, envA)
 
 	if code, _ := callStream(app, nil, "dev", ""); code != http.StatusUnauthorized {
 		t.Errorf("no key: status = %d, want 401", code)
@@ -151,7 +157,7 @@ func TestStreamAuthOrder(t *testing.T) {
 	}
 	// The key is bound to a missing env row: ResolveForKey cannot find
 	// the env, so the slug is unknown -> 404.
-	seedLegacyKey(t, app, "cw-stream-dangling-02", "missing-env-id")
+	seedV2Key(t, app, "cw-stream-dangling-02", "missing-env-id")
 	if code, _ := callStream(app, nil, "nope", "cw-stream-dangling-02"); code != http.StatusNotFound {
 		t.Errorf("unknown env: status = %d, want 404", code)
 	}
@@ -168,7 +174,7 @@ func TestStreamCORSAcrossResponses(t *testing.T) {
 	app := streamTestApp(t)
 	envA := seedEnv(t, app, "dev")
 	const goodKey = "cw-stream-cors-0001"
-	seedLegacyKey(t, app, goodKey, envA)
+	seedV2Key(t, app, goodKey, envA)
 
 	if code, rec := callStream(app, nil, "dev", ""); code != http.StatusUnauthorized {
 		t.Fatalf("no key: status = %d, want 401", code)
@@ -205,7 +211,7 @@ func TestStreamDeadlineEndsHandler(t *testing.T) {
 	app := streamTestApp(t)
 	envA := seedEnv(t, app, "dev")
 	const goodKey = "cw-stream-deadline-0001"
-	seedLegacyKey(t, app, goodKey, envA)
+	seedV2Key(t, app, goodKey, envA)
 
 	old := maxStreamDuration.Load()
 	defer maxStreamDuration.Store(old)
@@ -224,7 +230,7 @@ func TestStreamValidHeadersAndCleanup(t *testing.T) {
 	app := streamTestApp(t)
 	envA := seedEnv(t, app, "dev")
 	const goodKey = "cw-stream-valid-0001"
-	keyID := seedLegacyKey(t, app, goodKey, envA)
+	keyID := seedV2Key(t, app, goodKey, envA)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan int, 1)
@@ -268,7 +274,7 @@ func TestStreamOverCapIs429(t *testing.T) {
 	app := streamTestApp(t)
 	envA := seedEnv(t, app, "dev")
 	const goodKey = "cw-stream-cap-0001"
-	keyID := seedLegacyKey(t, app, goodKey, envA)
+	keyID := seedV2Key(t, app, goodKey, envA)
 
 	streamMu.Lock()
 	streamActive[keyID] = maxStreamsPerKey

@@ -14,20 +14,19 @@ import (
 // "" means the flag relation stays unset (env-wide event, or an unknown
 // key whose kind/variant are preserved without attribution).
 //
-// Identity is server-derived only: AnonID comes from identity.Manager
-// (ClientIP + User-Agent + daily salt) and Country from the request's
-// country headers. UserHash is the legacy column — always stored empty,
-// kept only for compat until a later migration drops it.
+// Identity is the stable ?b= bucket only: Bucket carries the canonical
+// bucket ("0"-"9999") or "" when absent, Country from the request's
+// country headers. There is no userHash column (dropped); a client
+// userHash is accepted by validation but never reaches storage.
 type StoredEvent struct {
-	EnvID    string
-	Kind     string
-	Flag     string
-	Variant  string
-	UserHash string
-	AnonID   string
-	Country  string
-	Version  int
-	Ts       time.Time
+	EnvID   string
+	Kind    string
+	Flag    string
+	Variant string
+	Bucket  string
+	Country string
+	Version int
+	Ts      time.Time
 }
 
 // BatcherChannelCap bounds queued events before Enqueue returns false (→ 503), so bursts apply backpressure instead of growing memory.
@@ -222,8 +221,8 @@ func (b *Batcher) flushChunk(col *core.Collection, chunk []StoredEvent) (int, er
 
 // saveStoredEvent writes one validated event via the given app (process
 // app for retries, tx app inside a chunk transaction). Identity is
-// anonID-only: anonId + country are stored, userHash is stored empty
-// (column kept nullable for compat, never written).
+// bucket-only: bucket holds the stable ?b= bucket (or ""), plus country.
+// There is no userHash column.
 func saveStoredEvent(app core.App, col *core.Collection, it StoredEvent) error {
 	rec := core.NewRecord(col)
 	if it.EnvID != "" {
@@ -234,8 +233,7 @@ func saveStoredEvent(app core.App, col *core.Collection, it StoredEvent) error {
 		rec.Set("flag", it.Flag)
 	}
 	rec.Set("variant", it.Variant)
-	rec.Set("userHash", "")
-	rec.Set("anonId", it.AnonID)
+	rec.Set("bucket", it.Bucket)
 	rec.Set("country", it.Country)
 	rec.Set("version", it.Version)
 	rec.Set("ts", it.Ts)

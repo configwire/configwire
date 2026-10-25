@@ -17,22 +17,9 @@ var module struct {
 	batcher *Batcher
 }
 
-// idManager derives server-side anonIDs (identity.Manager over ClientIP +
-// User-Agent + daily salt). MemoryStore is the local default until the
-// identity_salts collection is wired as the durable Store; SetIdentityManager
-// swaps it in tests.
-var idManager = identity.NewManager(identity.NewMemoryStore())
-
-// SetIdentityManager swaps the anonID manager (tests only).
-func SetIdentityManager(m *identity.Manager) {
-	if m != nil {
-		idManager = m
-	}
-}
-
 // uidCompatHeader signals that a client-sent ?uid= was
 // accepted-but-ignored: attribution always uses deriveIdentity (valid ?b=
-// else the daily anonID). Spelling mirrors v0.1.9.
+// else empty). Spelling mirrors v0.1.9.
 const uidCompatHeader = "X-CW-Deprecated-uid"
 
 // stampUidCompat sets the compat header when the client sent a trimmed
@@ -44,13 +31,12 @@ func stampUidCompat(re *core.RequestEvent) {
 	}
 }
 
-// deriveIdentity resolves (anonID, country) for one ingest request.
-// Identity follows the identical rule as fetch: valid ?b= wins, else the
-// daily manager anonID ("" on derivation error — the event still stores,
-// unattributed); client ?userHash= and ?uid= (any shape) are
-// accepted-but-ignored and never become the anonID; postEvents stamps
-// X-CW-Deprecated-uid when a trimmed non-empty ?uid= is sent; country =
-// first valid ISO-2 in the country-header order ("" when absent).
+// deriveIdentity resolves (bucket, country) for one ingest request.
+// Identity is the stable ?b= bucket only: valid ?b= wins verbatim, else ""
+// (unattributed, no anonID fallback); client ?userHash= and ?uid= (any
+// shape) are accepted-but-ignored and never become the bucket; postEvents
+// stamps X-CW-Deprecated-uid when a trimmed non-empty ?uid= is sent;
+// country = first valid ISO-2 in the country-header order ("" when absent).
 // A malformed ?b= is a 400 (returned as *apiError, mirroring the fetch
 // ?b= 400) — never a silent fallback, so fetch arms and exposure
 // attribution stay joined per install.
@@ -60,7 +46,7 @@ func stampUidCompat(re *core.RequestEvent) {
 // (import cycle); both delegate to identity (stdlib-only leaf).
 // parseBucketCanonical below wraps the identity error in badRequest so
 // the 400 text stays byte-identical.
-func deriveIdentity(re *core.RequestEvent, envID string, now time.Time) (string, string, *apiError) {
+func deriveIdentity(re *core.RequestEvent) (string, string, *apiError) {
 	country := identity.CountryFromHeadersWith(re.Request.Header, limits.GetConfig().CountryHeaders)
 	q := re.Request.URL.Query()
 	if raw := q.Get("b"); raw != "" {
@@ -70,12 +56,7 @@ func deriveIdentity(re *core.RequestEvent, envID string, now time.Time) (string,
 		}
 		return b, country, nil
 	}
-	anonID, err := idManager.AnonID(envID, limits.ClientIP(re), re.Request.UserAgent(), now)
-	if err != nil {
-		log.Printf("ingest: anonID derivation failed, storing unattributed: %v", err)
-		return "", country, nil
-	}
-	return anonID, country, nil
+	return "", country, nil
 }
 
 // parseBucketCanonical validates the stable-bucket ?b= query param.
@@ -94,11 +75,7 @@ func parseBucketCanonical(raw string) (string, *apiError) {
 // Register mounts the events ingest route and starts the flush pipeline.
 // It also registers the flag-ID cache eviction hooks so flag writes in
 // this process invalidate cached (project,key)->flagID mappings.
-// It swaps idManager onto the durable PB-backed salt Store so same-day
-// anonIDs survive restarts; unit tests that never call Register keep
-// the MemoryStore default (see SetIdentityManager).
 func Register(se *core.ServeEvent) {
-	idManager = identity.NewManager(identity.NewPBStore(se.App))
 	module.batcher = NewBatcher(se.App)
 	module.batcher.Start()
 	RegisterFlagCacheHooks(se.App)
@@ -144,7 +121,7 @@ func postEvents(re *core.RequestEvent) error {
 	}
 	now := time.Now().UTC()
 	flagIDs := resolveFlagIDs(re.App, env.GetString("project"), events)
-	anonID, country, derr := deriveIdentity(re, env.Id, now)
+	bucket, country, derr := deriveIdentity(re)
 	if derr != nil {
 		return writeAPIError(re, derr)
 	}
@@ -155,16 +132,15 @@ func postEvents(re *core.RequestEvent) error {
 		if ts.IsZero() {
 			ts = now
 		}
-		// anonID-only storage: a client ?userHash= query value of any shape
-		// is accepted-but-ignored; the server-derived daily anonID always
-		// wins, so fetch bucketing and exposures join on the same value
-		// (stable ?b= excepted — it wins verbatim on both paths).
-		// Per-event body userHash stays accepted-but-ignored;
-		// userHash column stores empty.
+		// Bucket-only storage: a client ?userHash= query value of any shape
+		// is accepted-but-ignored; the stable ?b= bucket wins verbatim when
+		// present, else "" (unattributed), so fetch bucketing and exposures
+		// join on the same value. Per-event body userHash stays
+		// accepted-but-ignored and never reaches storage.
 		stored = append(stored, StoredEvent{
 			EnvID: env.Id,
 			Kind:  ev.Kind, Flag: flagIDs[ev.Flag], Variant: ev.Variant,
-			AnonID: anonID, Country: country, Ts: ts,
+			Bucket: bucket, Country: country, Ts: ts,
 			Version: ev.Version,
 		})
 	}

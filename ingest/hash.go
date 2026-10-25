@@ -20,7 +20,7 @@ func KeyPrefix(fullKey string) string {
 	return fullKey
 }
 
-// KeyHash returns hex(sha256(fullKey)) for constant-time comparison. The full key itself is never persisted.
+// KeyHash returns hex(sha256(fullKey)) used as the fast-cache key. The full key itself is never persisted.
 func KeyHash(fullKey string) string {
 	sum := sha256.Sum256([]byte(fullKey))
 	return hex.EncodeToString(sum[:])
@@ -30,11 +30,10 @@ func KeyHash(fullKey string) string {
 // Empty input -> "" (matches eval.HashUserID's frozen contract exactly;
 // either function satisfies the contract).
 //
-// Deprecated: anonID-only storage is server-derived (identity.Manager
-// over ClientIP + User-Agent + daily salt). Client userHash values are
-// accepted by the schema but ignored — the server value always wins.
-// Kept for the compat window and existing tests; do not call from new
-// code.
+// Deprecated: bucket-only storage uses the stable ?b= bucket. Client
+// userHash values are accepted by the schema but ignored — the server
+// bucket always wins. Kept for the compat window and existing tests;
+// do not call from new code.
 func HashUser(userID string) string {
 	if userID == "" {
 		return ""

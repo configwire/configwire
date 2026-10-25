@@ -33,17 +33,13 @@ SU_PASS="e2e-t17-super-secret-01"
 SDK_KEY="cw-e2e17-key-0123456789abcdef"
 E2E_RAW_UID="e2e-user-7"
 E2E_UHASH="$(python3 -c "import hashlib; print(hashlib.sha256('$E2E_RAW_UID'.encode()).hexdigest()[:16])")"
-# Pinned fetch identity: bucketing uses the SERVER-derived anonID, not the
-# client ?userHash= (accepted-but-ignored by contract, fetch/fetch.go). The
-# anonID is HMAC(salt_env_day, clientIP + 0x00 + User-Agent)[:16]
-# (identity/identity.go:44). Pin both inputs so the arm is fixed every run:
-# a fixed salt row (seeded below) + this fixed User-Agent on every config
-# fetch (loopback clientIP 127.0.0.1 is already stable).
+# Pinned fetch identity: bucketing uses the stable ?b= bucket only (no
+# server-derived anonID). Client ?userHash= is accepted-but-ignored by
+# contract (fetch/fetch.go). Pin ?b=42 on every config fetch so the arm is
+# fixed every run: Bucket("42"+"e2e-seed-1")%10000 = 213 -> control (50/50
+# split at 5000).
 CURL_UA="configwire-e2e/1.0"
-# Fixed salt (sha256("configwire-e2e-fixed-salt-v1-0")): anonID =
-# HMAC(salt,"127.0.0.1\x00configwire-e2e/1.0")[:16] = 9dcbf6d3f79018b5;
-# Bucket(anonID+"e2e-seed-1")%10000 = 2492 -> control (50/50 split at 5000).
-E2E_SALT="d69792ba46c441448923c8ccd459deff73ac6431b2c0c669c4686cf8b3e6d141"
+E2E_BUCKET="42"
 DEAD_PORT="8199"
 
 SERVER_PID=""
@@ -121,14 +117,8 @@ ENV_BODY="{\"project\":\"$PROJ\",\"slug\":\"e2e\"}"
 [ "$(su_post "$C/environments/records" "$ENV_BODY" /tmp/cw-t17-env.json)" = "200" ] \
   && pass "create env e2e" || { fail "create env"; exit 1; }
 ENVID="$(pyid /tmp/cw-t17-env.json id)"
-# Pin the per-(env, day) identity salt BEFORE the first fetch mints a random
-# one: with a fresh data dir every run, SaltForDay would crypto/rand a new
-# salt per run and re-randomize the arm (~50/50 flake). Seeding the fixed
-# E2E_SALT makes the server-derived anonID identical on every run.
-E2E_DAY="$(date -u +%F)"
-SALT_BODY="{\"envID\":\"$ENVID\",\"day\":\"$E2E_DAY\",\"salt\":\"$E2E_SALT\"}"
-[ "$(su_post "$C/identity_salts/records" "$SALT_BODY" /tmp/cw-t17-salt.json)" = "200" ] \
-  && pass "identity salt pinned (fixed anonID)" || { fail "identity salt seed"; exit 1; }
+# No salt pinning: bucketing is ?b=-only (no server-derived anonID), so the
+# arm is pinned by sending ?b=$E2E_BUCKET on every config fetch below.
 GROUP_CORE_BODY="{\"name\":\"core\",\"project\":\"$PROJ\"}"
 GROUP_GROWTH_BODY="{\"name\":\"growth\",\"project\":\"$PROJ\"}"
 [ "$(su_post "$C/groups/records" "$GROUP_CORE_BODY" /tmp/cw-t17-g1.json)" = "200" ] \
@@ -162,11 +152,10 @@ EXP_BODY="{\"name\":\"e2e-exp\",\"flag\":\"$F3\",\"seed\":\"e2e-seed-1\",\"statu
 [ "$(su_post "$C/experiments/records" "$EXP_BODY" /tmp/cw-t17-exp.json)" = "200" ] \
   && pass "experiment running 50/50" || { fail "experiment"; exit 1; }
 
-PREFIX="${SDK_KEY:0:8}"
-HASH="$(python3 -c "import hashlib; print(hashlib.sha256('$SDK_KEY'.encode()).hexdigest())")"
-SDK_KEY_BODY="{\"prefix\":\"$PREFIX\",\"hash\":\"$HASH\",\"env\":\"$ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}"
-[ "$(su_post "$C/sdk_keys/records" "$SDK_KEY_BODY" /tmp/cw-t17-key.json)" = "200" ] \
-  && pass "sdk key (prefix=first8+sha256)" || { fail "sdk key"; exit 1; }
+MINT_BODY="{\"env\":\"$ENVID\",\"fetchRps\":1667,\"ingestRps\":1667}"
+[ "$(su_post "$BASE_URL/api/v1/admin/keys" "$MINT_BODY" /tmp/cw-t17-key.json)" = "201" ] \
+  && pass "sdk key minted (admin/keys 201)" || { fail "sdk key"; exit 1; }
+SDK_KEY="$(pyid /tmp/cw-t17-key.json key)"
 
 CODE="$(su_post "$BASE_URL/api/v1/admin/env/e2e/publish" '{"note":"t17 v1","baseVersion":0}' /tmp/cw-t17-pub1.json)"
 [ "$CODE" = "200" ] && pass "publish v1 200" || { fail "publish v1 (code $CODE)"; exit 1; }
@@ -177,7 +166,11 @@ echo "v1 etag=$ETAG_V1"
 
 # ---- STAGE 2: fetch typed values + variant ----------------------------------
 echo "--- STAGE 2: fetch platform=ios appVersion=2.1.0 (userHash=$E2E_UHASH) ---"
-FQ="userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0"
+FQ="b=$E2E_BUCKET&userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0"
+# FQ_NOB is the same query without ?b=: cold fetches that must mint a fresh
+# bucket (q.Get("b") reads the first value, so ?b= can never be appended
+# to $FQ — the pinned b=42 would win and the mint path would go untested).
+FQ_NOB="userHash=$E2E_UHASH&platform=ios&appVersion=2.1.0"
 CODE1=$(curl -s -o /tmp/cw-t17-fetch1.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?$FQ" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 CODE2=$(curl -s -o /tmp/cw-t17-fetch2.json -w "%{http_code}" --max-time 10 \
@@ -206,7 +199,7 @@ ok = (arm in ('control', 'treatment')
       and b['values'].get('exp_bool') is exp[arm])
 sys.exit(0 if ok else 1)
 EOF
-python3 - <<'EOF' && pass "variant arm pinned for server anonID (control)" || fail "variant arm pinned"
+python3 - <<'EOF' && pass "variant arm pinned for ?b=42 (control)" || fail "variant arm pinned"
 import json, sys
 a = json.load(open('/tmp/cw-t17-fetch1.json'))
 exp = json.load(open('e2e/fixtures/expected.json'))['stage2_fetch']
@@ -238,25 +231,25 @@ CODE_ANON=$(curl -s -o /tmp/cw-t17-anon.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_ANON" = "200" ] && pass "anonymous fetch 200" || fail "anonymous fetch (code $CODE_ANON)"
 # Ignore rule: ?userHash= (any shape) is accepted-but-ignored — bucketing
-# uses the server-derived anonID, so a different valid hash and a malformed
-# hash must land on the SAME arm as the anonymous fetch. A sent ?userHash=
+# uses the stable ?b= bucket, so a different valid hash and a malformed
+# hash must land on the SAME arm as the ?b=-pinned fetch. A sent ?userHash=
 # stamps X-CW-Deprecated-userHash: true; absent sends no header.
 OTHER_UHASH="ffffffffffffffff"
 CODE_H1=$(curl -s -D /tmp/cw-t17-hash1-hdr.txt -o /tmp/cw-t17-hash1.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?userHash=$OTHER_UHASH&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?b=$E2E_BUCKET&userHash=$OTHER_UHASH&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_H1" = "200" ] && pass "different valid userHash 200 (ignored)" || fail "different valid userHash (code $CODE_H1)"
 grep -qi "^X-CW-Deprecated-userHash: *true" /tmp/cw-t17-hash1-hdr.txt 2>/dev/null \
   && pass "different userHash stamps deprecated header" || fail "different userHash deprecated header"
 CODE_HBAD=$(curl -s -D /tmp/cw-t17-hashbad-hdr.txt -o /tmp/cw-t17-hashbad.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?userHash=user-7&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?b=$E2E_BUCKET&userHash=user-7&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_HBAD" = "200" ] && pass "malformed userHash 200 (ignored, header path)" || fail "malformed userHash header path (code $CODE_HBAD)"
 grep -qi "^X-CW-Deprecated-userHash: *true" /tmp/cw-t17-hashbad-hdr.txt 2>/dev/null \
   && pass "malformed userHash stamps deprecated header" || fail "malformed userHash deprecated header"
 CODE_ANON2=$(curl -s -D /tmp/cw-t17-anon-hdr.txt -o /tmp/cw-t17-anon2.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
-[ "$CODE_ANON2" = "200" ] && pass "anonymous fetch 200 (ignore baseline)" || fail "anonymous fetch baseline (code $CODE_ANON2)"
+  "$BASE_URL/api/v1/env/e2e/config?b=$E2E_BUCKET&platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_ANON2" = "200" ] && pass "?b=-pinned fetch 200 (ignore baseline)" || fail "?b=-pinned fetch baseline (code $CODE_ANON2)"
 ! grep -qi "^X-CW-Deprecated-userHash:" /tmp/cw-t17-anon-hdr.txt 2>/dev/null \
-  && pass "anonymous fetch sends no deprecated header" || fail "anonymous deprecated header"
+  && pass "?b=-pinned fetch sends no deprecated header" || fail "?b=-pinned deprecated header"
 python3 - <<'EOF' && pass "ignore: different/malformed userHash same arm as anonymous" || fail "ignore same-arm"
 import json, sys
 anon = json.load(open('/tmp/cw-t17-anon2.json'))
@@ -340,12 +333,23 @@ ok = (c.get('bucket') == a.get('bucket')
 sys.exit(0 if ok else 1)
 EOF
 curl -s -o /tmp/cw-t17-bcold2.json --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
-python3 - <<'EOF' && pass "old-client (no ?b=) arm byte-identical post-bucket traffic" || fail "old-client arm drift"
-import json, sys
+  "$BASE_URL/api/v1/env/e2e/config?$FQ_NOB" -A "$CURL_UA" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || true
+python3 - <<'EOF' && pass "old-client (no ?b=) mint-and-evaluate coherent" || fail "old-client mint coherence"
+import json, re, sys
 a = json.load(open('/tmp/cw-t17-bcold2.json'))
 exp = json.load(open('e2e/fixtures/expected.json'))['stage2_fetch']
-sys.exit(0 if a.get('variants', {}).get('exp_bool') == exp['exp_bool_variant'] else 1)
+b = a.get('bucket')
+# No ?b= mints a fresh bucket: canonical shape, and the arm is the oracle
+# arm for that minted bucket (evaluated on the mint, not pinned).
+ok = isinstance(b, str) and re.fullmatch(r'(0|[1-9][0-9]{0,3})', b) is not None
+h = 14695981039346656037
+for byte in (b + 'e2e-seed-1').encode():
+    h ^= byte
+    h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+want = 'control' if h % 10000 < 5000 else 'treatment'
+ok = (ok and a.get('variants', {}).get('exp_bool') == want
+      and a['values'].get('exp_bool') is exp['exp_bool_values_by_variant'][want])
+sys.exit(0 if ok else 1)
 EOF
 
 # ---- STAGE 3: exposures via T9 route + stats --------------------------------
@@ -396,6 +400,14 @@ ok = (d.get('flagFound') is True
 sys.exit(0 if ok else 1)
 EOF
 
+# ---- STAGE 3U (v0.2.0-rc.1 bucket-only): body userId any-case accepted-but-ignored ----
+echo "--- STAGE 3U: ingest body userId/UserId accepted-but-ignored 202 ---"
+EV_UID='{"events":[{"kind":"exposure","flag":"e2e-uid-probe","variant":"control","userId":"e2e-user-7"},{"kind":"exposure","flag":"e2e-uid-probe","variant":"control","UserId":"E2E-USER-7"}]}'
+CODE=$(curl -s -o /tmp/cw-t17-ev-uid.json -w "%{http_code}" --max-time 10 -X POST \
+  "$BASE_URL/api/v1/env/e2e/events" -H "X-ConfigWire-Key: $SDK_KEY" \
+  -H "Content-Type: application/json" -d "$EV_UID" 2>/dev/null || echo "000")
+[ "$CODE" = "202" ] && pass "ingest userId/UserId body keys 202 (accepted-but-ignored)" || fail "ingest userId body keys (code $CODE)"
+
 # ---- STAGE 3F: failure asserts (unknown flag zeros + malformed since 400) ---
 echo "--- STAGE 3F: unknown flag 200-zeros + malformed since 400 ---"
 CODE=$(curl -s -o /tmp/cw-t17-stats-unknown.json -w "%{http_code}" --max-time 10 \
@@ -421,14 +433,14 @@ CODE=$(curl -s -o /tmp/cw-t17-stats-badsince.json -w "%{http_code}" --max-time 1
 # ---- STAGE 3B: purge -> stats (backdated seed + dry parity + live purge) -----
 echo "--- STAGE 3B: seed ~35d-old events -> purge -> 90d vs 7d ---"
 OLD_TS="$(python3 -c "from datetime import datetime,timedelta,timezone; print((datetime.now(timezone.utc)-timedelta(days=35)).strftime('%Y-%m-%d %H:%M:%S.000Z'))")"
-mkold() { # kind variant userHash outfile
-  su_post "$C/events/records" "{\"env\":\"$ENVID\",\"flag\":\"$F3\",\"kind\":\"$1\",\"variant\":\"$2\",\"userHash\":\"$3\",\"ts\":\"$OLD_TS\"}" "$4"
+mkold() { # kind variant outfile (no userHash: column dropped, never stored)
+  su_post "$C/events/records" "{\"env\":\"$ENVID\",\"flag\":\"$F3\",\"kind\":\"$1\",\"variant\":\"$2\",\"ts\":\"$OLD_TS\"}" "$3"
 }
-[ "$(mkold fetch "" oldfetch01aaaabbbb /tmp/cw-t17-old1.json)" = "200" ] \
+[ "$(mkold fetch "" /tmp/cw-t17-old1.json)" = "200" ] \
   && pass "seed old fetch 1/2 (~35d)" || fail "seed old fetch 1/2"
-[ "$(mkold fetch "" oldfetch02aaaabbbb /tmp/cw-t17-old2.json)" = "200" ] \
+[ "$(mkold fetch "" /tmp/cw-t17-old2.json)" = "200" ] \
   && pass "seed old fetch 2/2 (~35d)" || fail "seed old fetch 2/2"
-[ "$(mkold exposure control oldexp01aaaabbbb /tmp/cw-t17-old3.json)" = "200" ] \
+[ "$(mkold exposure control /tmp/cw-t17-old3.json)" = "200" ] \
   && pass "seed old exposure control (~35d)" || fail "seed old exposure"
 CODE="$(su_post "$BASE_URL/api/v1/admin/maintenance/purge?dry=1" '{}' /tmp/cw-t17-purge-dry.json)"
 [ "$CODE" = "200" ] && pass "purge dry 200" || fail "purge dry (code $CODE)"
@@ -555,7 +567,7 @@ fi
 echo "--- STAGE 7: stable bucket ?b= mint/echo/304/fresh/join/400 ---"
 # 7a cold fetch without ?b= -> 200 mints canonical 0-9999
 CODE=$(curl -s -o /tmp/cw-t17-bucket-cold.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?$FQ_NOB" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE" = "200" ] && pass "bucket cold fetch 200" || fail "bucket cold fetch (code $CODE)"
 python3 - <<'EOF' && pass "bucket cold mints canonical 0-9999" || fail "bucket cold mint canonical"
 import json, re, sys
@@ -572,10 +584,10 @@ MINTED="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-bucket-cold
 echo "minted bucket=$MINTED"
 # 7b refetch ?b=<minted> twice -> 200 echoes verbatim + sticky arm
 CODE=$(curl -s -o /tmp/cw-t17-bucket-echo.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?$FQ_NOB&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE" = "200" ] && pass "bucket refetch 200" || fail "bucket refetch (code $CODE)"
 CODE2=$(curl -s -o /tmp/cw-t17-bucket-echo2.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?$FQ_NOB&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE2" = "200" ] && pass "bucket refetch2 200" || fail "bucket refetch2 (code $CODE2)"
 python3 - <<'EOF' && pass "bucket echo verbatim + sticky arm" || fail "bucket echo/arm"
 import json, sys
@@ -591,7 +603,7 @@ ECHOED="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-bucket-echo
 # 7c If-None-Match -> 304 empty, client keeps bucket
 ETAG_B="$(python3 -c "import json; print(json.load(open('/tmp/cw-t17-bucket-echo.json'))['etag'])")"
 CODE=$(curl -s -D /tmp/cw-t17-bucket-304-hdr.txt -o /tmp/cw-t17-bucket-304.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" -H "If-None-Match: $ETAG_B" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?$FQ_NOB&b=$MINTED" -H "X-ConfigWire-Key: $SDK_KEY" -H "If-None-Match: $ETAG_B" 2>/dev/null || echo "000")
 [ "$CODE" = "304" ] && pass "bucket 304 on etag match" || fail "bucket 304 (code $CODE)"
 if [ ! -s /tmp/cw-t17-bucket-304.json ]; then pass "bucket 304 empty, client keeps bucket"; else fail "bucket 304 body"; fi
 # 7d fresh env -> 200 version-0/etag-none/no bucket
@@ -599,12 +611,10 @@ FRESH_ENV_BODY="{\"project\":\"$PROJ\",\"slug\":\"e2e-fresh\"}"
 [ "$(su_post "$C/environments/records" "$FRESH_ENV_BODY" /tmp/cw-t17-fresh-env.json)" = "200" ] \
   && pass "bucket fresh env create" || fail "bucket fresh env create"
 FRESH_ENVID="$(pyid /tmp/cw-t17-fresh-env.json id)"
-FRESH_KEY="cw-e2e17-fresh-key-abcdef123456"
-FRESH_PREFIX="${FRESH_KEY:0:8}"
-FRESH_HASH="$(python3 -c "import hashlib; print(hashlib.sha256('$FRESH_KEY'.encode()).hexdigest())")"
-FRESH_KEY_BODY="{\"prefix\":\"$FRESH_PREFIX\",\"hash\":\"$FRESH_HASH\",\"env\":\"$FRESH_ENVID\",\"revoked\":false,\"fetchRps\":1667,\"ingestRps\":1667}"
-[ "$(su_post "$C/sdk_keys/records" "$FRESH_KEY_BODY" /tmp/cw-t17-fresh-key.json)" = "200" ] \
+FRESH_MINT_BODY="{\"env\":\"$FRESH_ENVID\",\"fetchRps\":1667,\"ingestRps\":1667}"
+[ "$(su_post "$BASE_URL/api/v1/admin/keys" "$FRESH_MINT_BODY" /tmp/cw-t17-fresh-key.json)" = "201" ] \
   && pass "bucket fresh sdk key" || fail "bucket fresh sdk key"
+FRESH_KEY="$(pyid /tmp/cw-t17-fresh-key.json key)"
 CODE=$(curl -s -o /tmp/cw-t17-bucket-fresh.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e-fresh/config?platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $FRESH_KEY" 2>/dev/null || echo "000")
 [ "$CODE" = "200" ] && pass "bucket fresh env fetch 200" || fail "bucket fresh env fetch (code $CODE)"
@@ -622,7 +632,7 @@ CODE=$(curl -s -o /tmp/cw-t17-bucket-ingest.json -w "%{http_code}" --max-time 10
 [ "$CODE" = "202" ] && pass "bucket ingest join 202" || fail "bucket ingest join (code $CODE)"
 # 7f malformed ?b=007 -> 400 both fetch+ingest, single message
 CODE=$(curl -s -o /tmp/cw-t17-bucket-bad-fetch.json -w "%{http_code}" --max-time 10 \
-  "$BASE_URL/api/v1/env/e2e/config?$FQ&b=007" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+  "$BASE_URL/api/v1/env/e2e/config?$FQ_NOB&b=007" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE" = "400" ] && pass "bucket malformed fetch 400" || fail "bucket malformed fetch (code $CODE)"
 python3 - <<'EOF' && pass "bucket malformed fetch message" || fail "bucket malformed fetch message"
 import json, sys

@@ -39,7 +39,7 @@ func ValidateExperiment(exp Experiment) error {
 // the base is returned untouched with variant = exp.DefaultVariant
 // (covers draft, stopped, empty, and any unknown status string).
 // When running, variant = Assign(exp, ctx.UserHash); ctx.UserHash carries
-// the anonID (daily-rotating); the assigned Variant's
+// the stable ?b= bucket; the assigned Variant's
 // Values map is consulted by flag key: Values[flag.Key] present -> coerced
 // to flag.Type via coerce and returned on success; absent or wrong-type ->
 // base rule value unchanged (fallthrough, never an error).
@@ -71,7 +71,7 @@ func EvaluateWithExperiment(flag Flag, rules []Rule, ctx Context, exp Experiment
 // Exposure is the input contract for T9 ingest persistence.
 // JSON field names are frozen: env, flagKey, variant, userHash, timestamp.
 // There is deliberately NO userId / ip / raw-identity field.
-// The userHash field carries the anonID (daily-rotating anonymous ID).
+// The userHash field carries the stable ?b= bucket.
 type Exposure struct {
 	Env       string    `json:"env"`
 	FlagKey   string    `json:"flagKey"`
@@ -84,9 +84,8 @@ type Exposure struct {
 // lowercase hex of sha256(userID) truncated to 16 chars.
 // Empty input -> "" (caller decides whether to emit or drop).
 //
-// Deprecated: bucketing uses the daily-rotating anonID (identity package
-// owns the salt rotation), not a stable sha256(userID). Kept for compat;
-// do not use in new code.
+// Deprecated: bucketing uses the stable ?b= bucket, not a stable
+// sha256(userID). Kept for compat; do not use in new code.
 func HashUserID(userID string) string {
 	if userID == "" {
 		return ""
@@ -98,9 +97,9 @@ func HashUserID(userID string) string {
 // ExposureEvent builds the PII-minimal exposure record T9 persists.
 // Raw userID is hashed via HashUserID and never stored on the record.
 //
-// Deprecated: exposure identity is the daily-rotating anonID supplied by
-// the identity package; callers should construct Exposure directly with
-// the anonID in UserHash instead of deriving it from a raw userID here.
+// Deprecated: exposure identity is the stable ?b= bucket; callers should
+// construct Exposure directly with the bucket in UserHash instead of
+// deriving it from a raw userID here.
 func ExposureEvent(env, flagKey, variant, userID string, ts time.Time) Exposure {
 	return Exposure{
 		Env:       env,

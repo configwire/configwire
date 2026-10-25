@@ -71,12 +71,9 @@ func TestParseBucketAbsent(t *testing.T) {
 }
 
 func TestBucketPrecedenceWinsOverUserHash(t *testing.T) {
-	const anon = "0123456789abcdef"
+	const bucket = "7"
 	q := query(`b=42&userHash=092081140b677b45`)
-	if got := effectiveUserHash(q, anon); got != "42" {
-		t.Fatalf("effectiveUserHash with ?b=42 = %q, want bucket %q", got, "42")
-	}
-	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+	ctx, err := BuildContext(q, bucket, "US")
 	if err != nil {
 		t.Fatalf("BuildContext err = %v", err)
 	}
@@ -86,7 +83,7 @@ func TestBucketPrecedenceWinsOverUserHash(t *testing.T) {
 	// Canonical edges win too.
 	for _, b := range []string{"0", "9999"} {
 		q := query(`b=` + b + `&userHash=092081140b677b45`)
-		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+		ctx, err := BuildContext(q, bucket, "")
 		if err != nil {
 			t.Fatalf("b=%s: err = %v", b, err)
 		}
@@ -96,27 +93,27 @@ func TestBucketPrecedenceWinsOverUserHash(t *testing.T) {
 	}
 }
 
-func TestBucketAbsentIgnoresUserHashFallsBackToAnon(t *testing.T) {
-	const anon = "0123456789abcdef"
-	// Absent ?b= + valid ?userHash= -> ignored, server anonID wins.
+func TestBucketAbsentIgnoresUserHashFallsBackToBucket(t *testing.T) {
+	const bucket = "42"
+	// Absent ?b= + valid ?userHash= -> ignored, bucket param wins.
 	q := query(`userHash=092081140b677b45&platform=ios`)
-	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+	ctx, err := BuildContext(q, bucket, "US")
 	if err != nil {
 		t.Fatalf("ignored err = %v", err)
 	}
-	if ctx.UserHash != anon {
-		t.Fatalf("absent ?b= + valid hash: UserHash = %q, want server anonID %q (userHash ignored)", ctx.UserHash, anon)
+	if ctx.UserHash != bucket {
+		t.Fatalf("absent ?b= + valid hash: UserHash = %q, want bucket param %q (userHash ignored)", ctx.UserHash, bucket)
 	}
-	// Absent ?b= + malformed ?userHash= -> anonID fallback, never 400.
+	// Absent ?b= + malformed ?userHash= -> bucket fallback, never 400.
 	q = query(`userHash=nothex&platform=ios`)
-	ctx, err = BuildContext(q, effectiveUserHash(q, anon), "US")
+	ctx, err = BuildContext(q, bucket, "US")
 	if err != nil {
 		t.Fatalf("malformed hash must not error, got %v", err)
 	}
-	if ctx.UserHash != anon {
-		t.Fatalf("malformed fallback UserHash = %q, want anonID %q", ctx.UserHash, anon)
+	if ctx.UserHash != bucket {
+		t.Fatalf("malformed fallback UserHash = %q, want bucket %q", ctx.UserHash, bucket)
 	}
-	// Different ?userHash= values yield the SAME bucketing (server anonID).
+	// Different ?userHash= values yield the SAME bucketing (bucket param).
 	for _, raw := range []string{
 		`userHash=092081140b677b45`,
 		`userHash=ffffffffffffffff`,
@@ -124,22 +121,22 @@ func TestBucketAbsentIgnoresUserHashFallsBackToAnon(t *testing.T) {
 		`platform=ios`,
 	} {
 		q := query(raw)
-		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+		ctx, err := BuildContext(q, bucket, "US")
 		if err != nil {
 			t.Fatalf("%s: err = %v", raw, err)
 		}
-		if ctx.UserHash != anon {
-			t.Fatalf("%s: UserHash = %q, want server anonID %q", raw, ctx.UserHash, anon)
+		if ctx.UserHash != bucket {
+			t.Fatalf("%s: UserHash = %q, want bucket param %q", raw, ctx.UserHash, bucket)
 		}
 	}
 }
 
 func TestBucketMalformedIs400ViaBuildContext(t *testing.T) {
-	const anon = "0123456789abcdef"
+	const bucket = "42"
 	for _, b := range []string{"abc", "-1", "10000", "007", "12.0", " 12 "} {
 		q := query(`platform=ios&userHash=092081140b677b45`)
 		q.Set("b", b)
-		if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err == nil {
+		if _, err := BuildContext(q, bucket, ""); err == nil {
 			t.Errorf("b=%q: expected 400-mapped error, got nil", b)
 		} else if err.Error() != wantBucketErr {
 			t.Errorf("b=%q: error = %q, want %q", b, err.Error(), wantBucketErr)
@@ -148,16 +145,16 @@ func TestBucketMalformedIs400ViaBuildContext(t *testing.T) {
 }
 
 func TestBucketWithUidIgnoredBucketWins(t *testing.T) {
-	const anon = "0123456789abcdef"
-	// ?uid= is accepted-but-ignored: a valid ?b= wins, else the server
-	// anonID. A sent ?uid= stamps the uid compat header.
+	const bucket = "42"
+	// ?uid= is accepted-but-ignored: a valid ?b= wins, else the bucket
+	// param. A sent ?uid= stamps the uid compat header.
 	for _, raw := range []string{
 		`b=42&uid=user-7`,
 		`uid=user-7&b=42`,
 		`b=42&uid=user-7&userHash=092081140b677b45`,
 	} {
 		q := query(raw)
-		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+		ctx, err := BuildContext(q, bucket, "")
 		if err != nil {
 			t.Errorf("%s: ?uid= must be accepted-but-ignored, got %v", raw, err)
 			continue
@@ -173,19 +170,19 @@ func TestBucketWithUidIgnoredBucketWins(t *testing.T) {
 	}
 	// Malformed ?b= + ?uid= -> the ?b= 400 (uid never masks it).
 	q := query(`b=abc&uid=user-7`)
-	if _, err := BuildContext(q, effectiveUserHash(q, anon), ""); err == nil {
+	if _, err := BuildContext(q, bucket, ""); err == nil {
 		t.Error("b=abc&uid=user-7: expected 400-mapped bucket error, got nil")
 	} else if err.Error() != wantBucketErr {
 		t.Errorf("b=abc&uid=user-7: error = %q, want %q", err.Error(), wantBucketErr)
 	}
-	// ?uid= alone -> server anonID fallback, header stamped.
+	// ?uid= alone -> bucket param fallback, header stamped.
 	q = query(`uid=user-7`)
-	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "")
+	ctx, err := BuildContext(q, bucket, "")
 	if err != nil {
 		t.Fatalf("uid-only must be accepted-but-ignored, got %v", err)
 	}
-	if ctx.UserHash != anon {
-		t.Errorf("uid-only UserHash = %q, want server anonID %q", ctx.UserHash, anon)
+	if ctx.UserHash != bucket {
+		t.Errorf("uid-only UserHash = %q, want bucket param %q", ctx.UserHash, bucket)
 	}
 	h := http.Header{}
 	stampUidCompat(h, q)
@@ -196,7 +193,7 @@ func TestBucketWithUidIgnoredBucketWins(t *testing.T) {
 
 func TestBucketNumberSeedEvaluation(t *testing.T) {
 	snap := fakeSnapshot()
-	ctx, err := BuildContext(query(`b=42`), "ignored-anon", "")
+	ctx, err := BuildContext(query(`b=42`), "7", "")
 	if err != nil {
 		t.Fatalf("BuildContext err = %v", err)
 	}

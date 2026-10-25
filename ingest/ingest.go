@@ -9,17 +9,16 @@
 //	    "userHash":"<opaque>", "ts":"2026-09-22T00:00:00Z | 1726870000"}]}
 //	flag/variant/userHash/ts are all optional; ts accepts RFC3339 string or
 //	unix-seconds number, absent means server time. Identity is the
-//	server-derived daily anonID via identity.Manager (limits.ClientIP +
-//	User-Agent + per-env daily salt) plus country from headers, with a
-//	valid stable ?b= winning verbatim over the anonID (fetch/ingest bucket
-//	join); client ?userHash= (any shape) is accepted-but-ignored and never
-//	becomes the anonID; a trimmed non-empty ?uid= is likewise
+//	stable ?b= bucket plus country from headers, with a valid ?b= stored
+//	verbatim (fetch/ingest bucket join) and absent ?b= stored as "";
+//	client ?userHash= (any shape) is accepted-but-ignored and never
+//	becomes the bucket; a trimmed non-empty ?uid= is likewise
 //	accepted-but-ignored and stamps X-CW-Deprecated-uid: true. Events
-//	store anonId + country with the body userHash column left empty
-//	(compat). Raw "userId"/"ip" keys and
-//	PII/device-identifier keys (email, phone, device IDs; case-insensitive)
-//	are STRICTLY REJECTED (400) — PII must never reach storage; values are
-//	never logged, errors name only the key.
+//	store bucket + country only (no userHash column). Body "userId" (any
+//	casing) is accepted-but-ignored — never stored or logged, never
+//	rejects; raw "ip" and PII/device-identifier keys (email, phone,
+//	device IDs; case-insensitive) are STRICTLY REJECTED (400) — PII must
+//	never reach storage; values are never logged, errors name only the key.
 //
 // SDK key format (contract for T10/T11/T16):
 //   - The full key is an opaque string presented in X-ConfigWire-Key.
@@ -41,7 +40,6 @@ package ingest
 
 import (
 	"bytes"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -82,8 +80,8 @@ const (
 // EventIn is one validated ingest event with server-normalized timestamp.
 // UserHash carries the client-supplied body value verbatim through
 // validation (length/NUL checked) but is ignored at storage: the handler
-// stores deriveIdentity (valid ?b= else daily anonID) in anonId,
-// leaving the userHash column empty.
+// stores deriveIdentity (valid ?b= else "") in bucket; the client
+// UserHash never reaches storage (no userHash column).
 type EventIn struct {
 	Kind     string
 	Flag     string
@@ -111,8 +109,9 @@ func entityTooLarge(msg string) *apiError {
 }
 
 // rawEvent mirrors the wire shape; Ts stays raw for strict parsing and
-// UserID/IP are deliberately absent — their presence is detected on the
-// raw map first (strict reject, never decoded into a storable field).
+// UserID is deliberately absent (accepted-but-ignored, never decoded
+// into a storable field); IP presence is detected on the raw map
+// first (strict reject, never decoded into a storable field).
 type rawEvent struct {
 	Kind     string          `json:"kind"`
 	Flag     string          `json:"flag"`
@@ -136,10 +135,11 @@ var forbiddenEventKeys = map[string]struct{}{
 // unit-testable. It enforces: non-empty JSON with an "events" array,
 // 1..MaxBatchEvents items, per-event ≤ MaxEventBytes, kind ∈
 // {fetch,exposure}, optional flag ≤ MaxFlagLen runes with no NUL byte,
-// no raw "userId"/"ip" or PII/device-identifier keys (case-insensitive),
-// parseable ts. A client body "userHash" key is accepted (length/NUL
+// no raw "ip" or PII/device-identifier keys (case-insensitive; body
+// userId in any casing is accepted-but-ignored, never stored or logged,
+// never rejects), parseable ts. A client body "userHash" key is accepted (length/NUL
 // checked) but ignored downstream — the handler stores deriveIdentity
-// (valid ?b= else daily anonID).
+// (valid ?b= else "").
 func ValidateBody(body []byte) ([]EventIn, *apiError) {
 	if len(bytes.TrimSpace(body)) == 0 {
 		return nil, badRequest("empty body: expected {\"events\":[...]}.")
@@ -180,30 +180,36 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	if len(raw) > MaxEventBytes {
 		return ev, entityTooLarge("event exceeds 64KB.")
 	}
-	// Strict PII guard: detect raw userId/ip keys on the untyped map so
+	// Strict PII guard: detect raw ip keys on the untyped map so
 	// that even null-valued keys are rejected (presence, not value).
+	// A raw userId key (any case, any value including null) is
+	// accepted-but-ignored for legacy senders: never stored (rawEvent
+	// has no userId field) and values never logged (compat log names only
+	// the key; errors never echo values).
 	// Extended: PII/device-identifier keys are rejected case-insensitively;
 	// errors name only the key, values are never logged or stored.
 	var m map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return ev, badRequest("malformed event JSON: " + err.Error())
 	}
-	if _, ok := m["userId"]; ok {
-		return ev, badRequest("raw \"userId\" is forbidden: send \"userHash\" instead.")
-	}
 	if _, ok := m["ip"]; ok {
 		return ev, badRequest("raw \"ip\" is forbidden and never stored.")
 	}
 	for k := range m {
 		lk := strings.ToLower(k)
-		if lk == "userid" {
-			return ev, badRequest("raw \"userId\" is forbidden: send \"userHash\" instead.")
-		}
 		if _, denied := forbiddenEventKeys[lk]; denied {
 			if lk == "ip" {
 				return ev, badRequest("raw \"ip\" is forbidden and never stored.")
 			}
 			return ev, badRequest("raw \"" + lk + "\" is forbidden and never stored.")
+		}
+	}
+	// Body userId (any casing) is accepted-but-ignored for legacy senders:
+	// PII-free compat signal naming only the key, never the value/body.
+	for k := range m {
+		if strings.ToLower(k) == "userid" {
+			log.Printf("ingest: body userId accepted-but-ignored (compat window; never stored)")
+			break
 		}
 	}
 	var r rawEvent
@@ -279,15 +285,15 @@ func clampTs(ts time.Time) (time.Time, *apiError) {
 
 // ResolveUserHash picks the storable hash: an explicit userHash wins;
 // otherwise a (server-side only) userID is hashed; neither → "".
-// NOTE: the HTTP path rejects raw userId before this is ever reached, so the
-// userID branch exists for completeness/testability and future server-side
-// callers — raw PII from clients is never stored.
+// NOTE: the HTTP path accepts-but-ignores raw body userId (any casing:
+// never stored or logged, never rejects), so the userID branch exists
+// for completeness/testability and future server-side callers — raw PII
+// from clients is never stored.
 //
-// Deprecated: anonID-only storage ignores the client userHash entirely —
-// the handler derives AnonID server-side (identity.Manager over ClientIP
-// + User-Agent + daily salt) and stores anonId + country with userHash
-// left empty. Kept for the compat window and existing tests; do not call
-// from new code.
+// Deprecated: bucket-only storage ignores the client userHash entirely —
+// the handler stores the stable ?b= bucket (or "" when absent) in bucket
+// + country with userHash left empty. Kept for the compat window and
+// existing tests; do not call from new code.
 func ResolveUserHash(userHash, userID string) string {
 	if userHash != "" {
 		return userHash
@@ -435,9 +441,9 @@ func noteSaturation() {
 // fast hash. Revocation is NOT checked here — the caller maps revoked
 // rows to 401, preserving auth order.
 //
-// Deprecated (remove in v0.2.0): rows without a verifier fall back to
-// the legacy constant-time fast-hash compare, kept only so pre-existing
-// v1 keys keep authenticating. New rows always store a verifier.
+// Removed in v0.2.0: rows without a verifier never match (the legacy
+// v1 fast-hash fallback is gone); such rows fall through to (nil, nil)
+// → 401 downstream. Only verifier (v2) rows authenticate.
 func findSDKKey(app core.App, full string) (*core.Record, error) {
 	prefix := KeyPrefix(full)
 	want := KeyHash(full)
@@ -471,20 +477,15 @@ func findSDKKey(app core.App, full string) (*core.Record, error) {
 			}
 			continue
 		}
-		// Deprecated (remove in v0.2.0): legacy v1 row — fast-hash compare
-		// kept only so pre-existing keys keep authenticating.
-		if subtle.ConstantTimeCompare([]byte(r.GetString("hash")), []byte(want)) != 1 {
-			continue
-		}
-		cachePut(want, r.Id)
-		return r, nil
+		// Rows without a verifier never match.
 	}
 	return nil, nil
 }
 
 // RequireSDKKey authenticates X-ConfigWire-Key against sdk_keys (exported for
 // T10 reuse). Lookup prefilters on prefix (first 8 chars, DB-side), then
-// slow-verifies the bcrypt verifier (or the deprecated legacy fast hash).
+// slow-verifies the bcrypt verifier (verifier-only since v0.2.0; rows
+// without a verifier never match).
 // Unknown/missing/revoked → 401 error suitable for returning directly from
 // a handler. Verifier saturation → 429 written inline with Retry-After: 1
 // (never 401, so clients retry instead of rotating keys). Storage lookup

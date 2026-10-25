@@ -2,9 +2,20 @@
 
 ConfigWire-native wire. No external parity claims.
 
-> Bucket (`?b=0-9999`) is the primary identity and the only identity kept in `configwire server v0.2.0`.
-> Server-derived anonID plus legacy `?userHash=`/`?uid=`/`?country=` are backward-compat
-> shims only (accepted-but-ignored, never `400`; malformed `?b=` → `400`).
+> v0.2.0-rc.1 (released 2026-10-25) is bucket-only.
+> Bucket (`?b=0-9999`) is the sole identity: a valid `?b=` wins verbatim.
+> Legacy `?userHash=`/`?uid=`/`?country=` plus event-body `userHash` and
+> event-body `userId` (any case, even null) are backward-compat shims only
+> (accepted-but-ignored, never `400`, never stored, never logged).
+> Absent or empty `?b=` is never rejected. Raw `ip` plus PII/device-identifier
+> keys stay strict `400`. Malformed non-empty `?b=` stays `400`
+> (`invalid "b": send "0"-"9999".`).
+> Fetch without a valid `?b=` mints one and evaluates on the mint;
+> ingest without a valid `?b=` stores `""` (unattributed).
+> There is no `events.userHash` column and no `identity_salts` collection
+> (both dropped in v0.2.0-rc.1); `events.bucket` holds the bucket.
+> Canonical contract:
+> `github.com/configwire/configwire/blob/main/configwire/docs/CONTRACT.md`.
 
 Conventions used below:
 
@@ -15,39 +26,37 @@ Conventions used below:
 
 ## 1. Fetch — `GET /api/v1/env/{env}/config`
 
-Ref: `configwire/fetch/fetch.go:289` (`BuildContext`),
-`configwire/identity/identity.go` (`AnonID`), `:201`
-(`stampUserHashCompat`), `:214` (`effectiveUserHash`), `:562`
-(handler order), route `:151`, preflight `:159`.
+Ref: `configwire/fetch/fetch.go` (`BuildContext`, `ParseBucket`,
+`MintBucket`, `EffectiveBucket`), route `:151`, preflight `:159`.
 
-Identity is server-derived: bucketing uses
-`anonID = Manager.AnonID(envID, ClientIP, User-Agent, day)`
-(`HMAC_SHA256(per-env daily salt, ip + 0x00 + ua)`, 16 lowercase hex),
-stored in `Context.UserHash` (field name kept for `eval.Bucket`
-compat); a valid `?b=` wins over the derived anonID (see §1e).
-Country is server geo from `identity.CountryFromHeaders` only.
+Identity is bucket-only: bucketing uses the stable `?b=` bucket
+(`0`-`9999`, canonical plain int string, see §1e).
+Precedence on fetch: a valid `?b=` wins, else the server mints a
+fresh uniform bucket (`MintBucket` via `EffectiveBucket`) and
+evaluates on the mint. Country is server geo from
+`identity.CountryFromHeaders` only.
 Client `?userHash=` (any shape, even malformed) and `?country=`
 are accepted-but-ignored and never reach eval; a sent `?userHash=`
 (trimmed non-empty) stamps `X-CW-Deprecated-userHash: true` on the
-response. Client identity material should migrate to nothing: stop
-sending `userHash`/`country`, the server derives both. Hash-only on
-the wire: the server persists no raw identity — only the derived
-anonID (or the canonical `?b=` number, see §1e) reaches the store,
-and the 48h identity scrub (`purge/purge.go: ScrubCutoff`, unchanged)
-still nulls `anonId` on rows older than 48h.
+response. Client identity material should migrate to nothing except
+`?b=`: stop sending `userHash`/`country`. No raw identity reaches
+the store — only the canonical `?b=` number (or `""` on unattributed
+ingest rows, see section 4) — and the 48h identity scrub
+(`purge/purge.go: ScrubCutoff`, unchanged) still nulls `bucket`
+on rows older than 48h.
 
 Compat: any-shape `?uid=` is accepted-but-ignored, never `400`.
 A trimmed non-empty `?uid=` stamps `X-CW-Deprecated-uid: true` on the
 response; empty equals absent (no header, anonymous path). Bucketing
-still uses the server-derived daily anonID unless a valid `?b=`
-overrides it (see §1e). Clients must send no `uid` at all.
+still uses a valid `?b=`, else a fresh mint (see §1e).
+Clients must send no `uid` at all.
 
-Precedence: valid `?b=` > derived anonID. Absent/malformed
+Precedence: valid `?b=` else fresh mint. Absent/malformed
 `?userHash=` stays `200` (rules still evaluate, bucketing uses the
-derived anonID, which is always non-empty on success) — there is no
+valid `?b=` or a fresh mint, never empty on fetch) — there is no
 `400` for `userHash`, only the ignore. Ref:
-`configwire/fetch/fetch.go:214` (`effectiveUserHash`), `:289`
-(`BuildContext`), `:201` (header stamp).
+`configwire/fetch/fetch.go` (`BuildContext`, `ParseBucket`,
+`MintBucket`, `EffectiveBucket`, header stamp).
 
 Auth/env order: CORS stamp then 401 (key) then 404 (unknown env slug)
 then 401 (key not scoped to this env) then 429 (rate) then 400/414
@@ -98,15 +107,14 @@ takes effect on the next `200`. Ref: `:349` (`EtagMatches`),
 Compat: any-shape `?uid=` is accepted-but-ignored, never `400`.
 A trimmed non-empty `?uid=` stamps `X-CW-Deprecated-uid: true` on the
 response; empty `uid` equals absent (no header, anonymous path).
-Bucketing still uses the server-derived daily anonID unless a valid
-`?b=` wins (see §1e). Ref: `configwire/fetch/fetch.go`
-(`BuildContext` ignore + header stamp).
+Bucketing uses a valid `?b=`, else a fresh mint (see §1e).
+Ref: `configwire/fetch/fetch.go` (`BuildContext` ignore + header stamp).
 
 Client `?userHash=` is never an error: any shape (including
 malformed) is accepted-but-ignored, stamping
 `X-CW-Deprecated-userHash: true` when trimmed non-empty. There is
-no `400` for `userHash`. Ref: `:201` (`stampUserHashCompat`),
-`:578-585` (call site + stamp).
+no `400` for `userHash`. Ref: `configwire/fetch/fetch.go`
+(`BuildContext`, header stamp).
 
 Malformed `attrs` (bad JSON, or valid JSON that is not an object):
 
@@ -148,30 +156,33 @@ through to defaults with `200`, never `400`.
   (`invalid "b": send "0"-"9999".`); empty equals absent. `?uid=`
   is ignored and never wins: with both present a valid `?b=` still
   wins, and `?uid=` alone never errors. Ref:
-  `configwire/fetch/fetch.go:289` (`BuildContext`),
-  `configwire/ingest/handler.go:47` (`deriveIdentity`).
-- Precedence: valid `?b=` > derived anonID.
-  `ctx.UserHash` carries the canonical number string so
-  `eval.Bucket(number+seed)` evaluates the minted arm. Ref:
-  `configwire/fetch/fetch.go:214` (`effectiveUserHash`),
-  `:289` (`BuildContext`),
-  `configwire/eval/eval.go:172-179` (`Bucket`).
-- One-time reshuffle (disclosed, accepted): a client that previously
-  bucketed on its derived anonID re-rolls onto its minted number the
-  first time it sends `?b=`. Ref:
-  `configwire/fetch/fetch.go:214`.
+  `configwire/fetch/fetch.go` (`BuildContext`, `ParseBucket`),
+  `configwire/ingest/handler.go` (`deriveIdentity`,
+  `parseBucketCanonical`).
+- Precedence: valid `?b=` else fresh mint.
+  `Context` carries the canonical number string so
+  `eval.Bucket(number+seed)` evaluates the pinned or minted arm. Ref:
+  `configwire/fetch/fetch.go` (`BuildContext`, `ParseBucket`,
+  `MintBucket`, `EffectiveBucket`),
+  `configwire/eval/eval.go` (`Bucket`).
+- First-mint assignment: a fetch without a valid `?b=` is evaluated
+  on its freshly minted number, and the `200` response echoes that
+  number in `bucket` so the client can pin it. Ref:
+  `configwire/fetch/fetch.go` (`MintBucket`, `EffectiveBucket`).
 - Response `bucket` is 200-only: an evaluated `200` carries
   `"bucket": "<n>"` (the client's valid `?b=` verbatim, else a fresh
-  `MintBucket` uniform over 10000 via `crypto/rand`); `304` carries
-  no body (never mints); empty-release `200` carries no `bucket`
-  field. Ref: `configwire/fetch/fetch.go:215-235` (`MintBucket`,
-  `EffectiveBucket`), `:253-262` (`evaluatedBody`),
-  `:239-250` (`emptyReleaseBody`), 304 early-return before the 200-only
-  mint in `getConfig`.
+  `MintBucket` uniform over 10000 via `crypto/rand` that the request
+  was evaluated on); `304` carries no body (never mints);
+  empty-release `200` carries no `bucket` field. Ref:
+  `configwire/fetch/fetch.go` (`MintBucket`, `EffectiveBucket`,
+  evaluated body, empty-release body), 304 early-return before the
+  200-only mint in `getConfig`.
 - Events join: ingest honors the same `?b=` rule via the shared
-  `identity.ParseBucketParam` (thin delegate `parseBucketCanonical`), so
-  exposures attribute to the fetch arm. Ref:
-  `configwire/ingest/handler.go:47` (`deriveIdentity`), `:70`.
+  `identity.ParseBucketParam` (thin delegate `parseBucketCanonical`),
+  so exposures attribute to the fetch arm; without a valid `?b=`
+  ingest stores `""` (unattributed). Ref:
+  `configwire/ingest/handler.go` (`deriveIdentity`,
+  `parseBucketCanonical`).
 - Balance (gate-measured, coarse bins only):
   `Bucket("0"-"9999")` over one seed lands deciles 931-1062
   (E=1000), 100-bin chi2 91-153 (df=99, bound 200); cross-seed 50/50
@@ -293,7 +304,7 @@ Success `201` (the full key is shown ONCE, never logged):
 
 ## 3. Rollback — `POST /api/v1/admin/env/{env}/releases/{version}/rollback`
 
-> BREAKING (removed in this release): the global route
+> BREAKING (removed in v0.2.0-rc.1, released 2026-10-25): the global route
 > `POST /api/v1/admin/releases/{version}/rollback` was removed; use the
 > env-scoped route below. Untargeted experiments (`flag ""`) are now
 > excluded.
@@ -409,8 +420,8 @@ Request:
 {"events": [{"kind": "exposure", "flag": "launch_flag", "variant": "treatment", "ts": "2026-09-22T00:00:00Z"}]}
 ```
 
-> Identity note: send `?b=` on the events POST to join exposures to the fetch arm.
-> Any `userHash` in the body is a backward-compat shim (accepted-but-ignored at storage, removed in `configwire server v0.2.0`).
+> Identity note (v0.2.0-rc.1, released 2026-10-25): send `?b=` on the events POST to join exposures to the fetch arm.
+> `userHash` and `userId` (any case, even null) in the body are backward-compat shims (accepted-but-ignored at storage, never `400`, never stored, never logged). There is no `events.userHash` column and no `identity_salts` collection (both dropped in v0.2.0-rc.1); `events.bucket` holds the bucket. Absent or empty `?b=` is never rejected; malformed non-empty `?b=` stays `400` (`invalid "b": send "0"-"9999".`).
 
 - `kind` must be `fetch` or `exposure`.
 - `flag`, `variant`, `userHash`, `ts` are all optional. Unknown flag
@@ -421,34 +432,32 @@ Request:
   SDK fetch events carry it); absent means 0. Negative then `400`.
 - `ts` accepts RFC3339 string, unix-seconds number, or absent/null
   (server time). Anything else then `400`.
-- Identity is server-derived (ignore+replace): a client `userHash`
+- Identity is bucket-only (no fallback): a client `userHash`
   key is accepted by the schema (length/NUL checked) but IGNORED at
-  storage — the handler derives `anonID` via
-  `identity.Manager` (`limits.ClientIP` + User-Agent + per-env daily
-  salt) plus `country` from headers, stores
-  `events.anonId` + `events.country`, and stores `userHash` empty
-  (column kept nullable for compat). A valid `?b=` wins over the
-  derived anonID so exposures join the fetch arm; malformed `?b=` is
-  `400`. Any-shape `?uid=` is likewise accepted-but-ignored (never a
-  `400`): a trimmed non-empty `?uid=` stamps
-  `X-CW-Deprecated-uid: true`, empty equals absent, and a valid `?b=`
-  still wins. Client-sent `anonId`/`country` keys are unknown to the
-  schema and ignored; the server values always win.
+  storage — the handler derives identity via `deriveIdentity`: a
+  valid `?b=` wins verbatim and is stored, else `""` (unattributed) is
+  stored — plus `country` from headers, and stores
+   `events.bucket` + `events.country`; there is no `events.userHash` column and no `identity_salts` collection (both dropped in v0.2.0-rc.1, released 2026-10-25).
+   A valid `?b=` joins exposures
+  to the fetch arm; malformed non-empty `?b=` stays `400` (`invalid "b": send "0"-"9999".`); absent or empty `?b=` is never rejected. Any-shape `?uid=` is
+  likewise accepted-but-ignored (never a `400`): a trimmed
+  non-empty `?uid=` stamps `X-CW-Deprecated-uid: true`, empty
+   equals absent. `?country=` is likewise accepted-but-ignored, never a `400`. Client-sent `bucket`/`country` keys are unknown
+   to the schema and ignored; the server values always win (a legacy
+   `anonId` key is likewise ignored).
   Malformed/absent `?userHash=` is silently ignored, never a `400`.
-  Hash-only on the wire: raw install IDs, IPs, and user-agents never
-  reach the store — only the derived anonID (or the canonical `?b=`
-  number) — and the 48h identity scrub
-  (`purge/purge.go: ScrubCutoff`, unchanged) still nulls `anonId` on
-  rows older than 48h. Bucketing is not an entitlement boundary
-  (same note as fetch section 1e).
-  Ref: `configwire/ingest/handler.go:47-63` (`deriveIdentity`),
-  `:141-146` (anonID-only storage), `configwire/ingest/batcher.go`
+  Event-body `userId` (any case, even null) is likewise accepted-but-ignored, never a `400`, never stored, never logged.
+  No raw identity reaches the store — only the canonical `?b=`
+   number or `""` — and the 48h identity scrub
+   (`purge/purge.go: ScrubCutoff`, unchanged) still nulls `bucket`
+  on rows older than 48h. Bucketing is not an entitlement
+  boundary (same note as fetch section 1e).
+  Ref: `configwire/ingest/handler.go` (`deriveIdentity`,
+  `parseBucketCanonical`), `configwire/ingest/batcher.go`
   (`saveStoredEvent`).
-- Raw `userId`/`ip` keys are strictly rejected (presence, not value,
-  even null-valued) then `400`. PII/device-identifier keys (`email`,
+- Event-body `userId` (any case, even null) is accepted-but-ignored, never a `400`, never stored, never logged. Raw `ip` plus PII/device-identifier keys (`email`,
   `phone`, `ip`, `deviceId`, `advertisingId`, `adid`, `idfa`, `idfv`,
-  `androidId`, `serial`, `mac`, `imei`, case-insensitive; `userId` in
-  any case) are strictly rejected then `400`; errors name only the
+  `androidId`, `serial`, `mac`, `imei`, case-insensitive) stay strictly rejected then `400`; errors name only the
   key, values are never logged. Ref:
   `configwire/ingest/ingest.go:122-130` (denylist), `:175-205`
   (strict reject).
@@ -655,17 +664,17 @@ Dry-run `200`:
 ```
 
 `deleted` counts raw events rolled up and deleted plus stale daily
-rollups deleted; `scrubbed` counts rows whose `anonId`/`country` were
+rollups deleted; `scrubbed` counts rows whose `bucket`/`country` were
 nulled past the 48h scrub cutoff (rows kept, identity only); `cutoff`
 is the raw-events cutoff (`now - rawDays`, UTC RFC3339). Scrub nulls
 identity on events with `ts` strictly before `now - 48h` and keeps
 every row (counts, env, kind, variant, version, `ts` untouched) so
 later rollups still count them. Empty tables then `200` with
 `deleted: 0, scrubbed: 0`. A daily process-local ticker (boot run,
-then every 23-25h) runs scrub → purge → salt prune with the same
+then every 23-25h) runs scrub → purge with the same
 dynamic cutoffs. Ref: `:195-199` (`ScrubCutoff`), `:223-269`
 (`ScrubIdentitiesOlderThan`), `:271-310` (`CountScrubOlderThan`,
-dry-run path), `:312-318` (`PruneIdentitySalts`). Set `CONFIGWIRE_PURGE=off` (or `0`/`false`) to disable the
+dry-run path). Set `CONFIGWIRE_PURGE=off` (or `0`/`false`) to disable the
 ticker on a node; the manual route stays mounted. Ref: `:753-764`.
 
 ## 8. Limits admin — `GET/PUT /api/v1/admin/limits`

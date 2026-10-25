@@ -5,9 +5,9 @@ package ingest
 //
 // Already pinned elsewhere (referenced, not duplicated):
 //   - body userHash accepted-but-ignored by schema: TestValidateBodyUserHashAcceptedButIgnored
-//   - anonID-only storage (userHash column stays empty): TestSaveStoredEventWritesAnonIDOnly
+//   - bucket-only storage (no userHash column): TestSaveStoredEventWritesBucketOnly
 //   - country header normalization without ?b=: TestCountryHeaderFlowsToStorage
-//   - no-?b= ignored-hash and anonID fallback: TestDeriveIdentityIgnoresUserHashUsesAnonID
+//   - no-?b= ignored-hash and bucket fallback: TestDeriveIdentityIgnoresUserHashUsesBucket
 //   - ?b= honored / malformed-400 / absent-fallback: TestDeriveIdentityBucketHonored,
 //     TestDeriveIdentityBucketMalformedIs400, TestDeriveIdentityBucketAbsentFallsBack
 //   - fetch/ingest ?b= join: TestFetchIngestBucketJoin
@@ -15,9 +15,6 @@ package ingest
 import (
 	"net/http"
 	"testing"
-	"time"
-
-	"github.com/configwire/configwire/identity"
 )
 
 // TestCompatBucketCountryFlowsToStorage pins that country derivation is
@@ -25,14 +22,10 @@ import (
 // verbatim alongside the bucket identity, and a missing header still
 // yields "" — the bucket branch never touches country.
 func TestCompatBucketCountryFlowsToStorage(t *testing.T) {
-	SetIdentityManager(identity.NewManager(identity.NewMemoryStore()))
-	now := time.Now().UTC()
-	const envID = "env-compat-bucket-country"
-
 	re := requestForIdentity("/api/v1/env/dev/events?b=42", func(h http.Header) {
 		h.Set("CF-IPCountry", "us")
 	})
-	got, country, aerr := deriveIdentity(re, envID, now)
+	got, country, aerr := deriveIdentity(re)
 	if aerr != nil {
 		t.Fatalf("bucket+country err = %v", aerr)
 	}
@@ -41,7 +34,7 @@ func TestCompatBucketCountryFlowsToStorage(t *testing.T) {
 	}
 
 	re = requestForIdentity("/api/v1/env/dev/events?b=9999", nil)
-	got, country, aerr = deriveIdentity(re, envID, now)
+	got, country, aerr = deriveIdentity(re)
 	if aerr != nil {
 		t.Fatalf("bucket without headers err = %v", aerr)
 	}

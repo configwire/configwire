@@ -5,12 +5,14 @@
 //
 // Matrix rows covered here:
 //   - Unknown/missing/revoked/env-mismatched key -> 401. The lookup seam
-//     is prefix (first 8 chars, DB prefilter) + hex(sha256(fullKey))
-//     compared in constant time; the full key is never stored.
+//     is prefix (first 8 chars, DB prefilter) + bcrypt verifier
+//     slow-check; hex(sha256(fullKey)) remains the fast-cache key.
+//     The full key is never stored.
 //   - Key-never-logged invariant: only prefix/hash (digests) may leave
 //     the process; raw keys and user IDs never do.
 //   - Body matrix: 1..100 events, kind/variant/userHash/ts rules,
-//     raw userId/ip strict 400, per-event 64KB / whole-body 128KB -> 413.
+//     raw userId (any case) accepted-but-ignored, raw ip strict 400,
+//     per-event 64KB / whole-body 128KB -> 413.
 //   - Rate default: per-second gate (`fetchRps`/`ingestRps` budgets).
 package ingest
 
@@ -24,9 +26,10 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// TestAuthOrder_KeySeams pins the (prefix, hash) lookup contract that 401s
-// ride on: prefix is the first 8 chars, hash is lowercase hex(sha256(key)).
-// Unknown keys miss one of the two; revoked/env-mismatch is checked after.
+// TestAuthOrder_KeySeams pins the (prefix, verifier) lookup contract that 401s
+// ride on: prefix is the first 8 chars, the verifier slow-check decides,
+// and KeyHash is lowercase hex(sha256(key)) used as the fast-cache key.
+// Unknown keys miss the verifier; revoked/env-mismatch is checked after.
 func TestAuthOrder_KeySeams(t *testing.T) {
 	full := "cw-test-key-0001"
 	if got := KeyPrefix(full); got != full[:8] {
@@ -71,8 +74,6 @@ func TestAuthOrder_BodyMatrix(t *testing.T) {
 		{"missing-events", []byte(`{}`), 400},
 		{"empty-batch", []byte(`{"events":[]}`), 400},
 		{"bad-kind", body(t, []any{map[string]any{"kind": "click"}}), 400},
-		{"raw-userId", body(t, []any{map[string]any{"kind": "fetch", "userId": "u1"}}), 400},
-		{"raw-UserId-upper", body(t, []any{map[string]any{"kind": "fetch", "UserId": "u1"}}), 400},
 		{"raw-ip", body(t, []any{map[string]any{"kind": "fetch", "ip": "1.2.3.4"}}), 400},
 		{"raw-IP-upper", body(t, []any{map[string]any{"kind": "fetch", "IP": "1.2.3.4"}}), 400},
 		{"raw-email", body(t, []any{map[string]any{"kind": "fetch", "email": "a@b.c"}}), 400},
@@ -106,6 +107,27 @@ func TestAuthOrder_BodyMatrix(t *testing.T) {
 	}
 	if _, aerr := ValidateBody(body(t, many)); aerr == nil || aerr.Status != 400 {
 		t.Fatalf("101-batch must be 400, got %v", aerr)
+	}
+	// Raw userId (any case, any value including null) is
+	// accepted-but-ignored: legacy senders keep working, the key never
+	// reaches storage (EventIn carries no identity from it).
+	for _, tc := range []struct {
+		name string
+		body []byte
+	}{
+		{"raw-userId", body(t, []any{map[string]any{"kind": "fetch", "userId": "u1"}})},
+		{"raw-UserId-upper", body(t, []any{map[string]any{"kind": "fetch", "UserId": "u1"}})},
+		{"raw-USERID-upper", body(t, []any{map[string]any{"kind": "fetch", "USERID": "u1"}})},
+		{"raw-userId-null", body(t, []any{map[string]any{"kind": "fetch", "userId": nil}})},
+	} {
+		events, aerr := ValidateBody(tc.body)
+		if aerr != nil {
+			t.Errorf("%s: must be accepted-but-ignored, got %v", tc.name, aerr)
+			continue
+		}
+		if len(events) != 1 || events[0].Kind != "fetch" || events[0].UserHash != "" {
+			t.Errorf("%s: EventIn must carry no identity from userId, got %+v", tc.name, events)
+		}
 	}
 }
 

@@ -5,7 +5,7 @@
     "max_items": 20,
     "home_config": { "a": 1 },
     "userHash": "bacd0e96cef6e162",
-    "_variantComment": "pinned via server-derived anonID (client ?userHash= is accepted-but-ignored): e2e.sh pre-seeds identity_salts with a fixed salt and pins curl User-Agent to configwire-e2e/1.0, so anonID=HMAC(salt,'127.0.0.1\\x00configwire-e2e/1.0')[:16]=9dcbf6d3f79018b5 and Bucket(anonID+e2e-seed-1)%10000=2492 -> control (50/50); stickiness asserted live across fetch1/fetch2",
+    "_variantComment": "pinned via stable ?b=42 (client ?userHash= is accepted-but-ignored): Bucket(42+e2e-seed-1)%10000=213 -> control (50/50); stickiness asserted live across fetch1/fetch2",
     "exp_bool_variant": "control",
     "exp_bool_values_by_variant": { "control": false, "treatment": true }
   },

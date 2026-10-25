@@ -1,11 +1,11 @@
-// Identity-scrub TDD tests: 48h anonId/country nulling on events plus
-// identity_salts pruning, independent of the configured raw window.
+// Identity-scrub TDD tests: 48h bucket/country nulling on events,
+// independent of the configured raw window.
 //
 // Contract pinned here:
-//   - ts strictly older than ScrubCutoff(now) loses anonId/country;
+//   - ts strictly older than ScrubCutoff(now) loses bucket/country;
 //     exactly-at-cutoff, fresher, and zero-ts rows keep them.
 //   - Rows are NEVER deleted by the scrub (counts survive for rollup);
-//     only anonId/country are nulled, userHash untouched.
+//     only bucket/country are nulled.
 //   - Dry (CountScrubOlderThan) == live (ScrubIdentitiesOlderThan) exactly
 //     on a quiescent table: scrubbing creates no rows, so unlike the purge
 //     path there is no same-run stale-bucket delta.
@@ -16,14 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/configwire/configwire/identity"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
 
 // scrubTestApp mirrors parityTestApp but carries the identity columns the
-// scrub touches (anonId, country, userHash) plus the identity_salts
-// collection the salt prune deletes from.
+// scrub touches (bucket, country).
 func scrubTestApp(t *testing.T) *tests.TestApp {
 	t.Helper()
 	app, err := tests.NewTestApp()
@@ -50,8 +48,7 @@ func scrubTestApp(t *testing.T) *tests.TestApp {
 		`{"type":"text","name":"kind"}`,
 		`{"type":"text","name":"variant"}`,
 		`{"type":"number","name":"version"}`,
-		`{"type":"text","name":"userHash"}`,
-		`{"type":"text","name":"anonId"}`,
+		`{"type":"text","name":"bucket"}`,
 		`{"type":"text","name":"country"}`,
 		`{"type":"date","name":"ts"}`,
 	)
@@ -64,15 +61,10 @@ func scrubTestApp(t *testing.T) *tests.TestApp {
 		`{"type":"number","name":"fetches"}`,
 		`{"type":"number","name":"exposures"}`,
 	)
-	mkCol("identity_salts",
-		`{"type":"text","name":"envID"}`,
-		`{"type":"text","name":"day"}`,
-		`{"type":"text","name":"salt"}`,
-	)
 	return app
 }
 
-func seedIdentityEvent(t *testing.T, app *tests.TestApp, ts time.Time, setTs bool, anonID, country string) string {
+func seedIdentityEvent(t *testing.T, app *tests.TestApp, ts time.Time, setTs bool, bucket, country string) string {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId("events")
 	if err != nil {
@@ -82,30 +74,13 @@ func seedIdentityEvent(t *testing.T, app *tests.TestApp, ts time.Time, setTs boo
 	rec.Set("env", "e1")
 	rec.Set("kind", "fetch")
 	rec.Set("variant", "v")
-	rec.Set("userHash", "legacy-hash")
-	rec.Set("anonId", anonID)
+	rec.Set("bucket", bucket)
 	rec.Set("country", country)
 	if setTs {
 		rec.Set("ts", ts)
 	}
 	if err := app.Save(rec); err != nil {
 		t.Fatalf("save event: %v", err)
-	}
-	return rec.Id
-}
-
-func seedSalt(t *testing.T, app *tests.TestApp, envID, day string) string {
-	t.Helper()
-	col, err := app.FindCollectionByNameOrId("identity_salts")
-	if err != nil {
-		t.Fatalf("find identity_salts: %v", err)
-	}
-	rec := core.NewRecord(col)
-	rec.Set("envID", envID)
-	rec.Set("day", day)
-	rec.Set("salt", "deadbeef")
-	if err := app.Save(rec); err != nil {
-		t.Fatalf("save salt: %v", err)
 	}
 	return rec.Id
 }
@@ -151,17 +126,14 @@ func TestScrubBoundary(t *testing.T) {
 	}
 
 	// Nulled, not deleted: rows survive with identity gone and everything
-	// else (kind, variant, ts, userHash) untouched.
+	// else (kind, variant, ts) untouched.
 	for _, id := range []string{idOld, idCountryOnly} {
 		r := getEvent(t, app, id)
-		if got := r.GetString("anonId"); got != "" {
-			t.Errorf("event %s anonId = %q, want empty", id, got)
+		if got := r.GetString("bucket"); got != "" {
+			t.Errorf("event %s bucket = %q, want empty", id, got)
 		}
 		if got := r.GetString("country"); got != "" {
 			t.Errorf("event %s country = %q, want empty", id, got)
-		}
-		if got := r.GetString("userHash"); got != "legacy-hash" {
-			t.Errorf("event %s userHash = %q, want untouched legacy-hash", id, got)
 		}
 		if got := r.GetString("kind"); got != "fetch" {
 			t.Errorf("event %s kind = %q, want fetch (counts grain kept)", id, got)
@@ -177,8 +149,8 @@ func TestScrubBoundary(t *testing.T) {
 			t.Errorf("event %s country nulled, want kept (boundary/fresh/zero-ts)", id)
 		}
 	}
-	if got := getEvent(t, app, idAt).GetString("anonId"); got == "" {
-		t.Errorf("at-cutoff anonId nulled, want kept (equal kept)")
+	if got := getEvent(t, app, idAt).GetString("bucket"); got == "" {
+		t.Errorf("at-cutoff bucket nulled, want kept (equal kept)")
 	}
 
 	// Rerun converges: everything past the cutoff is clean now.
@@ -239,8 +211,8 @@ func TestScrubIndependentOfRawWindow(t *testing.T) {
 	if m, err := ScrubIdentitiesOlderThan(app, ScrubCutoff(now)); err != nil || m != 1 {
 		t.Fatalf("scrub live = %d, err=%v; want 1", m, err)
 	}
-	if got := getEvent(t, app, id).GetString("anonId"); got != "" {
-		t.Fatalf("anonId = %q, want nulled", got)
+	if got := getEvent(t, app, id).GetString("bucket"); got != "" {
+		t.Fatalf("bucket = %q, want nulled", got)
 	}
 	if n := len(liveIDs(t, app, "events")); n != 1 {
 		t.Fatalf("events rows = %d, want 1 (kept for the 5yr window)", n)
@@ -275,44 +247,5 @@ func TestScrubKeepsRowsForRollup(t *testing.T) {
 	}
 	if got := rows[0].GetInt("fetches"); got != 2 {
 		t.Fatalf("merged fetches = %d, want 2", got)
-	}
-}
-
-// TestPruneIdentitySalts pins the 48h salt bound: days strictly older than
-// DayString(now-48h) die, the cutoff day and fresher survive, reruns
-// converge, and a missing collection is 0, nil.
-func TestPruneIdentitySalts(t *testing.T) {
-	app := scrubTestApp(t)
-	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
-	cutoffDay := identity.DayString(now.Add(-48 * time.Hour))
-
-	idOld := seedSalt(t, app, "e1", identity.DayString(now.Add(-72*time.Hour)))
-	idEdge := seedSalt(t, app, "e1", cutoffDay)
-	idFresh := seedSalt(t, app, "e1", identity.DayString(now))
-
-	pruned, err := PruneIdentitySalts(app, now)
-	if err != nil {
-		t.Fatalf("PruneIdentitySalts: %v", err)
-	}
-	if pruned != 1 {
-		t.Fatalf("pruned = %d, want 1 (only the 72h day)", pruned)
-	}
-	survivors := liveIDs(t, app, "identity_salts")
-	if survivors[idOld] {
-		t.Fatalf("old salt survived")
-	}
-	for _, id := range []string{idEdge, idFresh} {
-		if !survivors[id] {
-			t.Fatalf("salt %s wrongly pruned (edge/fresh survive)", id)
-		}
-	}
-	if rerun, err := PruneIdentitySalts(app, now); err != nil || rerun != 0 {
-		t.Fatalf("rerun prune = %d, err=%v; want 0 (converges)", rerun, err)
-	}
-
-	// Missing collection (migration not applied): 0, nil, never fatal.
-	bare := parityTestApp(t)
-	if n, err := PruneIdentitySalts(bare, now); err != nil || n != 0 {
-		t.Fatalf("missing-collection prune = %d, err=%v; want 0, nil", n, err)
 	}
 }

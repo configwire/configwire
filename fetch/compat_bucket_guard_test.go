@@ -7,7 +7,7 @@ package fetch
 // Already pinned elsewhere (referenced, not duplicated):
 //   - ?uid=x ignored even with valid ?b= : TestBucketWithUidIgnoredBucketWins
 //   - empty release omits bucket/version-0/etag-none shape: TestEmptyReleaseBodyOmitsBucket, TestAuthOrder_EmptyReleaseShape
-//   - ignored-?userHash=/anonID selection without ?b=: TestBucketAbsentIgnoresUserHashFallsBackToAnon
+//   - ignored-?userHash=/bucket-param selection without ?b=: TestBucketAbsentIgnoresUserHashFallsBackToBucket
 //   - ?country= ignored without ?b=: TestBuildContextCountryServerOnly
 //   - nested/legacy fold without ?b=: TestEvaluateSnapshotNestedLegacyIdentical, TestOldTopLevelCompatDecodesSame
 //   - 304 exact-etag without ?b=: TestAuthOrder_EtagExactMatchIs304
@@ -40,20 +40,20 @@ func canonJSON(v any) string {
 
 // TestCompatOldClientIgnoredHashArmByteIdentical pins that an old client
 // (no ?b=) with a valid ?userHash= is accepted-but-ignored: it evaluates
-// the byte-identical arm as the direct eval.Assign on the server anonID,
+// the byte-identical arm as the direct eval.Assign on the bucket param,
 // not on the client hash. The bucket era keeps the ignore+replace rule,
 // adding only the ?b= branch.
 func TestCompatOldClientIgnoredHashArmByteIdentical(t *testing.T) {
-	const anon = "0123456789abcdef"
+	const bucket = "42"
 	snap := fakeSnapshot()
 	for _, clientHash := range []string{"092081140b677b45", "ffffffffffffffff"} {
 		q := query(`userHash=` + clientHash + `&platform=ios`)
-		ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+		ctx, err := BuildContext(q, bucket, "US")
 		if err != nil {
 			t.Fatalf("old-client ignored-hash fetch err = %v", err)
 		}
-		if ctx.UserHash != anon {
-			t.Fatalf("old-client UserHash = %q, want server anonID %q (userHash ignored)", ctx.UserHash, anon)
+		if ctx.UserHash != bucket {
+			t.Fatalf("old-client UserHash = %q, want bucket param %q (userHash ignored)", ctx.UserHash, bucket)
 		}
 		_, variants := EvaluateSnapshot(snap, ctx, "")
 		want := eval.Assign(eval.Experiment{
@@ -62,26 +62,26 @@ func TestCompatOldClientIgnoredHashArmByteIdentical(t *testing.T) {
 				{Name: "control", WeightBps: 5000},
 				{Name: "treatment", WeightBps: 5000},
 			},
-		}, anon)
+		}, bucket)
 		if variants["new_ui"] != want {
-			t.Fatalf("old-client arm = %q, want anonID-path arm %q", variants["new_ui"], want)
+			t.Fatalf("old-client arm = %q, want bucket arm %q", variants["new_ui"], want)
 		}
 	}
 }
 
-// TestCompatOldClientAnonFallbackArmByteIdentical pins the second old-client
-// path: no ?b= + malformed ?userHash= falls through to the daily anonID
-// (never 400) and evaluates that anonID's arm verbatim.
-func TestCompatOldClientAnonFallbackArmByteIdentical(t *testing.T) {
-	const anon = "0123456789abcdef"
+// TestCompatOldClientBucketFallbackArmByteIdentical pins the second old-client
+// path: no ?b= + malformed ?userHash= falls through to the bucket param
+// (never 400) and evaluates that bucket's arm verbatim.
+func TestCompatOldClientBucketFallbackArmByteIdentical(t *testing.T) {
+	const bucket = "42"
 	snap := fakeSnapshot()
 	q := query(`userHash=nothex&platform=ios`)
-	ctx, err := BuildContext(q, effectiveUserHash(q, anon), "US")
+	ctx, err := BuildContext(q, bucket, "US")
 	if err != nil {
 		t.Fatalf("old-client malformed-hash fetch must not 400, got %v", err)
 	}
-	if ctx.UserHash != anon {
-		t.Fatalf("old-client fallback UserHash = %q, want anonID %q", ctx.UserHash, anon)
+	if ctx.UserHash != bucket {
+		t.Fatalf("old-client fallback UserHash = %q, want bucket %q", ctx.UserHash, bucket)
 	}
 	_, variants := EvaluateSnapshot(snap, ctx, "")
 	want := eval.Assign(eval.Experiment{
@@ -90,9 +90,9 @@ func TestCompatOldClientAnonFallbackArmByteIdentical(t *testing.T) {
 			{Name: "control", WeightBps: 5000},
 			{Name: "treatment", WeightBps: 5000},
 		},
-	}, anon)
+	}, bucket)
 	if variants["new_ui"] != want {
-		t.Fatalf("old-client fallback arm = %q, want anonID arm %q", variants["new_ui"], want)
+		t.Fatalf("old-client fallback arm = %q, want bucket arm %q", variants["new_ui"], want)
 	}
 }
 
@@ -106,7 +106,7 @@ func TestCompatCountryIgnoredAlongsideBucket(t *testing.T) {
 		"lower":    `b=0&country=us`,
 		"absent":   `b=9999`,
 	} {
-		ctx, err := BuildContext(query(raw), effectiveUserHash(query(raw), "0123456789abcdef"), "US")
+		ctx, err := BuildContext(query(raw), "7", "US")
 		if err != nil {
 			t.Fatalf("%s: ?country= alongside ?b= must be accepted, got %v", name, err)
 		}
@@ -114,7 +114,7 @@ func TestCompatCountryIgnoredAlongsideBucket(t *testing.T) {
 			t.Errorf("%s: Country = %q, want server geo %q", name, ctx.Country, "US")
 		}
 	}
-	ctx, err := BuildContext(query(`b=42&country=FR`), effectiveUserHash(query(`b=42`), "0123456789abcdef"), "")
+	ctx, err := BuildContext(query(`b=42&country=FR`), "7", "")
 	if err != nil {
 		t.Fatalf("empty server geo err = %v", err)
 	}
@@ -155,7 +155,7 @@ func TestCompatLegacyFoldIdenticalUnderBucket(t *testing.T) {
 	nestedRaw := []byte(`{"flags":[{"key":"new_ui","type":"bool","default":false,"group":"","rules":[],"experiments":[{"id":"exp1","seed":"seed-1","variants":[{"name":"control","weightBps":5000,"values":{"new_ui":false}},{"name":"treatment","weightBps":5000,"values":{"new_ui":true}}],"status":"running"}]}]}`)
 
 	legacy, nested := decodeSnapshots(t, legacyRaw, nestedRaw)
-	ctx, err := BuildContext(query(`b=42`), "ignored-anon", "")
+	ctx, err := BuildContext(query(`b=42`), "ignored-bucket", "")
 	if err != nil {
 		t.Fatalf("BuildContext b=42 err = %v", err)
 	}
@@ -170,23 +170,21 @@ func TestCompatLegacyFoldIdenticalUnderBucket(t *testing.T) {
 }
 
 // TestCompatBucketArmDayIndependent pins that the stable ?b= arm is
-// day-independent: the same ?b=42 evaluated with two DIFFERENT fallback
-// anonIDs (stand-ins for the day-D and day-D+1 server anonIDs) yields the
-// identical UserHash and the identical arm. The bucket path bypasses
-// Manager.AnonID daily salt entirely (effectiveUserHash returns the
-// canonical number before the fallback is consulted), so the arm is
-// day-independent by construction; the anonID-string substitution IS the
+// day-independent: the same ?b=42 evaluated with two DIFFERENT bucket
+// fallbacks yields the identical UserHash and the identical arm. The bucket
+// path bypasses any fallback before it is consulted, so the arm is
+// day-independent by construction; the bucket-string substitution IS the
 // day boundary for this pure path (no time/salt-store manipulation needed).
 func TestCompatBucketArmDayIndependent(t *testing.T) {
-	const dayD = "day-d-anon-000001"
-	const dayD1 = "day-d1-anon-000002"
+	const dayD = "7"
+	const dayD1 = "0"
 	snap := fakeSnapshot()
 	q := query(`b=42`)
-	ctxD, err := BuildContext(q, effectiveUserHash(q, dayD), "US")
+	ctxD, err := BuildContext(q, dayD, "US")
 	if err != nil {
 		t.Fatalf("day-D bucket fetch err = %v", err)
 	}
-	ctxD1, err := BuildContext(q, effectiveUserHash(q, dayD1), "US")
+	ctxD1, err := BuildContext(q, dayD1, "US")
 	if err != nil {
 		t.Fatalf("day-D+1 bucket fetch err = %v", err)
 	}

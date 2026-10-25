@@ -3,6 +3,16 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.1 — 2026-10-25
+
+### Removed
+
+- Bucket-only identity (released 2026-10-25): bucketing identity is the stable `?b=` bucket only (`configwire/fetch/fetch.go` `BuildContext`/`MintBucket`/`EffectiveBucket`, `configwire/ingest/handler.go` `deriveIdentity`). A valid `?b=` wins verbatim; absent or empty `?b=` is never rejected (fetch mints a fresh bucket evaluated on the mint, ingest stores `""` unattributed); malformed non-empty `?b=` stays `400` (`invalid "b": send "0"-"9999".`). Client `?userHash=`/`?uid=`/`?country=` plus event-body `userHash` and event-body `userId` (any case, even null) are accepted-but-ignored, never `400`, never stored, never logged. Raw `ip` plus PII/device-identifier keys stay strict `400`. The `configwire/identity` salt manager, `DeriveAnonID`/`AnonID`, and their tests are deleted (bucket + geo helpers kept).
+- Orphaned identity storage (migration `1790000022_drop_identity_userhash`): dropped the `identity_salts` collection and the `events.userHash` column (always stored empty, never read). `events.bucket` (renamed from `events.anonId` with values preserved by migration `1790000023_rename_anonid_bucket`) and `events.country` are unchanged; the ingest API still accepts a `userHash`/`userId` body/query value as accepted-but-ignored compat. See `docs/CONTRACT.md`, `docs/SECURITY.md`, `docs/PRIVACY.md`, `docs/DPA.md`. Canonical contract: `github.com/configwire/configwire/blob/main/configwire/docs/CONTRACT.md`.
+- Legacy `GET /hello` (`200 Hello world!`): removed as promised by its deprecation headers; use `GET /healthz` (`200 {"status":"ok"}`), which is unchanged.
+- Dart/Flutter SDKs removed install-ID generation/emission alongside this release (`Targeting.userId`, `postEvent` `userId`, `sha256Hex16`; Flutter install-ID helpers + per-env install-ID prefs keys) — `?b=` is the sole identity; details live in `client/dart/CHANGELOG.md` and `client/flutter/CHANGELOG.md`.
+- Legacy v1 SDK-key fast-hash fallback (removed as promised by its `Deprecated (remove in v0.2.0)` headers): `findSDKKey` (`configwire/ingest/ingest.go`) is verifier-only — rows without a `verifier` never match, so they answer `401` on fetch/ingest/stream. Admin-minted keys (`POST /api/v1/admin/keys`, `hash: ""`, `keyVer: 2`) keep working unchanged; only hand-crafted data-API v1 rows (prefix + sha256, no verifier) stop authenticating. Migration `1790000012_sdk_key_verifier` is untouched (old rows still store, they simply never match).
+
 ## v0.1.13 — 2026-10-24
 
 ### Added
