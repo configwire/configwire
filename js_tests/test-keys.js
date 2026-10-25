@@ -157,17 +157,33 @@ test("renderKeys empty state", function () {
 
 test("renderKeys active vs revoked vs disabled branches pinned exactly", function () {
   var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
-  ctx.CW.state.keys = [{ id: "k1", prefix: "cw-abc", revoked: false }];
+  ctx.CW.state.keys = [{ id: "k1", prefix: "cw-abc", revoked: false, verifier: "$2a$v2" }];
   ctx.CW.renderKeys();
   assert.equal(
     ctx.elementsById["key-list"].innerHTML,
     '<li class="key-row"><code>cw-abc…</code> <span class="badge ok">active</span> <span class="key-limits muted">fetch global/s · ingest global/s</span> <span class="key-actions"><button type="button" data-edit-key="k1">Edit limits</button> <button type="button" data-revoke-key="k1">revoke</button></span></li>'
   );
-  ctx.CW.state.keys = [{ id: "k2", prefix: "cw-xyz", revoked: true }];
+  ctx.CW.state.keys = [{ id: "k2", prefix: "cw-xyz", revoked: true, verifier: "$2a$v2" }];
   ctx.CW.renderKeys();
   assert.equal(
     ctx.elementsById["key-list"].innerHTML,
     '<li class="key-row"><code>cw-xyz…</code> <span class="badge revoked">revoked</span> <span class="key-limits muted">fetch global/s · ingest global/s</span> <span class="key-actions"><button type="button" data-edit-key="k2">Edit limits</button> <button type="button" data-revoke-key="k2" disabled>revoke</button></span></li>'
+  );
+});
+
+test("renderKeys flags verifier-less rows as legacy", function () {
+  var ctx = freshKeys({ getRandomValues: seededGRV, subtle: realSubtle() });
+  ctx.CW.state.keys = [{ id: "k3", prefix: "cw-old", revoked: false }];
+  ctx.CW.renderKeys();
+  assert.equal(
+    ctx.elementsById["key-list"].innerHTML,
+    '<li class="key-row"><code>cw-old…</code> <span class="badge ok">active</span> <span class="badge legacy">legacy</span> <span class="key-limits muted">fetch global/s · ingest global/s</span> <span class="key-actions"><button type="button" data-edit-key="k3">Edit limits</button> <button type="button" data-revoke-key="k3">revoke</button></span></li>'
+  );
+  ctx.CW.state.keys = [{ id: "k4", prefix: "cw-old", revoked: false, verifier: "" }];
+  ctx.CW.renderKeys();
+  assert.ok(
+    ctx.elementsById["key-list"].innerHTML.indexOf('<span class="badge legacy">legacy</span>') !== -1,
+    "empty verifier counts as legacy, got: " + ctx.elementsById["key-list"].innerHTML
   );
 });
 

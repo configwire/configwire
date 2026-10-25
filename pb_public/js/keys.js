@@ -21,6 +21,7 @@
         (k.revoked
           ? ' <span class="badge revoked">revoked</span>'
           : ' <span class="badge ok">active</span>') +
+        (!k.verifier ? ' <span class="badge legacy">legacy</span>' : "") +
         ' <span class="key-limits muted">fetch ' + CW.esc(effFetch) + "/s · ingest " + CW.esc(effIngest) + "/s</span>" +
         ' <span class="key-actions">' +
         '<button type="button" data-edit-key="' + CW.esc(k.id) + '">Edit limits</button>' +

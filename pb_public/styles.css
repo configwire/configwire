@@ -3199,6 +3199,12 @@ td code {
   background: rgba(248, 113, 113, 0.08);
 }
 
+.badge.legacy {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+
 #login-error {
   color: var(--danger);
   font-size: 13px;
