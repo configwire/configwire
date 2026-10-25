@@ -22,6 +22,13 @@
       else if (arest.charAt(0) === "/") aanchor = arest.slice(1);
       return { view: "account", id: "", anchor: aanchor };
     }
+    if (h === "#/p/logs" || h.indexOf("#/p/logs#") === 0 || h.indexOf("#/p/logs/") === 0) {
+      var lrest = h.slice("#/p/logs".length);
+      var lanchor = "";
+      if (lrest.charAt(0) === "#") lanchor = lrest.slice(1);
+      else if (lrest.charAt(0) === "/") lanchor = lrest.slice(1);
+      return { view: "logs", id: "", anchor: lanchor };
+    }
     if (h.indexOf("#/p/") === 0) {
       var rest = h.slice("#/p/".length);
       var anchor = "";
@@ -52,6 +59,7 @@
     var links = nav.querySelectorAll("a");
     var mods = ["flags", "releases", "publish", "keys", "stats", "project-settings"];
     var settingsLink = CW.$("settings-nav-link");
+    var logsLink = CW.$("logs-nav-link");
     var logoutBtn = CW.$("logout-btn");
     if (!CW.state.token) {
       nav.setAttribute("aria-hidden", "true");
@@ -60,9 +68,17 @@
         links[k].setAttribute("aria-disabled", "true");
       }
       nav.style.display = "none";
+      if (logsLink) { logsLink.hidden = true; logsLink.style.display = "none"; }
       if (settingsLink) { settingsLink.hidden = true; settingsLink.style.display = "none"; }
       if (logoutBtn) { logoutBtn.hidden = true; logoutBtn.style.display = "none"; }
       return;
+    }
+    if (logsLink) {
+      logsLink.hidden = false;
+      logsLink.style.display = "";
+      var logsActive = CW.state.view === "logs";
+      if (logsActive) logsLink.setAttribute("aria-current", "page");
+      else if (logsLink.removeAttribute) logsLink.removeAttribute("aria-current");
     }
     if (settingsLink) {
       settingsLink.hidden = false;
@@ -83,7 +99,7 @@
         if (CW.applySsoUiGating) CW.applySsoUiGating();
       }
     } catch (e) { /* best-effort */ }
-    var showNav = !!CW.state.projectId && (CW.state.view === "detail" || CW.state.view === "settings" || CW.state.view === "account");
+    var showNav = !!CW.state.projectId && (CW.state.view === "detail" || CW.state.view === "settings" || CW.state.view === "account" || CW.state.view === "logs");
     if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
       for (var i = 0; i < links.length; i++) {
@@ -115,9 +131,11 @@
     var detail = CW.$("view-detail");
     var account = CW.$("view-account");
     var settings = CW.$("view-settings");
+    var logs = CW.$("view-logs");
     if (home) home.hidden = name !== "home";
     if (detail) detail.hidden = name !== "detail";
     if (settings) settings.hidden = name !== "settings" && name !== "account";
+    if (logs) logs.hidden = name !== "logs";
     if (account) account.hidden = true;
     syncSidebar();
   }
@@ -604,11 +622,21 @@
     if (CW.loadBackupSchedule) CW.loadBackupSchedule().catch(function () { /* inline in backups card */ });
   }
 
+  function showLogs() {
+    clearStaleAllScope();
+    showView("logs");
+    try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
+    if (CW.loadLogSettings) CW.loadLogSettings().catch(function () { /* inline in logs card */ });
+    if (CW.loadLogs) CW.loadLogs(1).catch(function () { /* inline in logs card */ });
+  }
+
   function route() {
     if (!CW.state.token) return;
     var r = parseHash();
     if (r.view === "settings") {
       showSettings();
+    } else if (r.view === "logs") {
+      showLogs();
     } else if (r.view === "account") {
       showSettings();
     } else if (r.view === "detail" && r.id && projectById(r.id)) {
@@ -653,6 +681,7 @@
   CW.showHome = showHome;
   CW.showAccount = showAccount;
   CW.showSettings = showSettings;
+  CW.showLogs = showLogs;
   CW.openProject = openProject;
   CW.route = route;
 })();

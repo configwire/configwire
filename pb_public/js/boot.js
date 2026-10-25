@@ -233,7 +233,7 @@
       ["flag-form", "flag-rules-form", "experiment-form",
         "project-dialog-form", "account-create-form",
         "key-limits-form", "limits-form", "settings-admin-form",
-        "retention-form"
+        "retention-form", "log-settings-form"
       ].forEach(function (id) { CW.armDirtyForm(id); });
     }
     CW.on("flag-type", "change", function () {
@@ -694,6 +694,19 @@
     CW.on("limits-form", "submit", CW.saveLimits);
     CW.on("settings-admin-form", "submit", CW.saveAdminLimit);
     CW.on("retention-form", "submit", CW.saveRetention);
+    CW.on("log-settings-form", "submit", CW.saveLogSettings);
+    CW.on("log-settings-open", "click", function () { if (CW.openLogSettingsDialog) CW.openLogSettingsDialog(); });
+    CW.on("log-settings-cancel", "click", function () {
+      if (CW.closeLogSettingsDialog) CW.closeLogSettingsDialog();
+      else { var dlg = CW.$("log-settings-dialog"); if (dlg && dlg.open) dlg.close(); }
+    });
+    CW.on("log-enabled", "click", function () { if (CW.onLogEnabledSwitch) CW.onLogEnabledSwitch(); });
+    CW.on("logs-filter-form", "submit", function (ev) {
+      if (CW.filterLogs) return CW.filterLogs(ev);
+      ev.preventDefault();
+    });
+    CW.on("logs-prev", "click", function () { if (CW.pageLogs) CW.pageLogs(-1); });
+    CW.on("logs-next", "click", function () { if (CW.pageLogs) CW.pageLogs(1); });
     CW.on("backup-create-form", "submit", CW.createBackup);
     CW.on("backup-upload-btn", "click", CW.triggerBackupUpload);
     CW.on("backup-upload-file", "change", CW.uploadBackup);
@@ -1371,6 +1384,7 @@
     get deleteAccount() { return CW.deleteAccount; },
     get showAccount() { return CW.showAccount; },
     get showSettings() { return CW.showSettings; },
+    get showLogs() { return CW.showLogs; },
     get createProject() { return CW.createProject; }, get createEnv() { return CW.createEnv; },
     get openProjectDialog() { return CW.openProjectDialog; }, get closeProjectDialog() { return CW.closeProjectDialog; },
     get saveProjectDialog() { return CW.saveProjectDialog; },

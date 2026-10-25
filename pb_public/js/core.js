@@ -168,6 +168,8 @@
       applySsoUiGating();
       var ts = $("sidebar-scope");
       if (ts) ts.hidden = !on;
+      var lnl = $("logs-nav-link");
+      if (lnl) { lnl.hidden = !on; lnl.style.display = on ? "" : "none"; }
       var snl = $("settings-nav-link");
       if (snl) { snl.hidden = !on; snl.style.display = on ? "" : "none"; }
       var nav = $("sidebar-nav");
@@ -193,6 +195,8 @@
     if (lb) { lb.hidden = !on; lb.style.display = on ? "" : "none"; }
     var ts = $("sidebar-scope");
     if (ts) ts.hidden = !on;
+    var lnl = $("logs-nav-link");
+    if (lnl) { lnl.hidden = !on; lnl.style.display = on ? "" : "none"; }
     var snl = $("settings-nav-link");
     if (snl) { snl.hidden = !on; snl.style.display = on ? "" : "none"; }
     var nav = $("sidebar-nav");
