@@ -63,6 +63,7 @@
       <a href="#/p/project-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="1.8"/><path d="M8 2.2 9.65 4.03 12.1 3.9 11.97 6.35 13.8 8l-1.83 1.65.13 2.45-2.45-.13L8 13.8l-1.65-1.83L3.9 12.1l.13-2.45L2.2 8l1.83-1.65L3.9 3.9l2.45.13L8 2.2Z"/></svg><span>Settings</span></a>
     </nav>
     <div class="sidebar-foot">
+      <a id="logs-nav-link" href="#/p/logs" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11" /><path d="M2.5 8h11" /><path d="M2.5 12.5h11" /></svg><span>Logs</span></a>
       <a id="settings-nav-link" href="#/p/settings" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="1.8"/><path d="M8 2.2 9.65 4.03 12.1 3.9 11.97 6.35 13.8 8l-1.83 1.65.13 2.45-2.45-.13L8 13.8l-1.65-1.83L3.9 12.1l.13-2.45L2.2 8l1.83-1.65L3.9 3.9l2.45.13L8 2.2Z"/></svg><span>Settings</span></a>
       <button id="logout-btn" type="button" class="btn ghost" hidden>Log out</button>
     </div>
@@ -446,6 +447,35 @@
             </section>
           </div>
         </section>
+        <section id="view-logs" aria-label="Logs" hidden>
+          <div class="settings-grid">
+            <section class="card" aria-labelledby="logs">
+                <div class="card-head">
+                  <h2 id="logs">Logs</h2>
+                  <div class="card-actions"><span class="head-menu-wrap"><button type="button" id="log-settings-open" class="head-menu-btn" aria-haspopup="dialog" aria-label="Log settings">&#8942;</button></span></div>
+                </div>
+              <p class="muted">Superuser server logs, read-only. Tune capture below.</p>
+              <form id="logs-filter-form" class="inline-form" aria-label="Log filters">
+                <label for="logs-level">Level <select id="logs-level" aria-label="Level filter"><option value="">Any</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+                <label for="logs-src">Source <input id="logs-src" type="text" placeholder="src" autocomplete="off" maxlength="128"></label>
+                <button type="submit" class="btn secondary">Filter</button>
+              </form>
+              <table aria-label="Logs">
+                <thead>
+                  <tr><th>ID</th><th>Level</th><th>Message</th><th>Source</th><th>Created</th></tr>
+                </thead>
+                <tbody id="logs-list" aria-label="Log entries">
+                </tbody>
+              </table>
+              <div class="limits-footer">
+                <button id="logs-prev" type="button" class="btn secondary">Prev</button>
+                <span id="logs-page-info" role="status"></span>
+                <button id="logs-next" type="button" class="btn secondary">Next</button>
+              </div>
+              <p id="logs-result" role="status"></p>
+            </section>
+          </div>
+        </section>
         <section id="view-account" aria-label="Account management (legacy alias)" hidden>
         </section>
         <dialog id="cw-dialog" role="alertdialog" aria-labelledby="cw-dialog-title"
@@ -619,6 +649,26 @@
             </div>
           </form>
           <p id="key-limits-result" role="status"></p>
+        </dialog>
+        <dialog id="log-settings-dialog" aria-labelledby="log-settings-dialog-title">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px;">
+            <div>
+              <h3 id="log-settings-dialog-title">Log settings</h3>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+              <button type="button" id="log-enabled" class="log-switch" role="switch" aria-checked="false" aria-label="Capture logs" title="Toggle log capture"><span class="log-switch-knob" aria-hidden="true"></span></button>
+            </div>
+          </div>
+          <form id="log-settings-form" aria-label="Log settings">
+            <p class="muted">When off, the server stops recording new entries.</p>
+            <label>Days kept <input id="log-maxdays" type="number" min="1" max="1825"></label>
+            <p class="muted">Log retention in days (1–1825).</p>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Save</button>
+              <button type="button" id="log-settings-cancel" class="btn ghost">Cancel</button>
+            </div>
+          </form>
+          <p id="log-settings-result" role="status"></p>
         </dialog>
         <dialog id="flag-rules-dialog" aria-labelledby="flag-rules-title">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
@@ -968,6 +1018,7 @@
   <script src="/js/json-editor.js"></script>
   <script src="/js/limits.js"></script>
   <script src="/js/retention.js"></script>
+  <script src="/js/logs.js"></script>
   <script src="/js/backups.js"></script>
   <script src="/js/boot.js"></script>
   <script src="/js/update.js"></script>

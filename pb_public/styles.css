@@ -436,6 +436,7 @@ a.brand:focus-visible {
 /* Author display:flex/inline-flex overrides UA [hidden]; force-hide sidebar
  * chrome (nav + bottom Settings/Log out) when JS sets hidden on logout. */
 #sidebar-nav[hidden],
+#logs-nav-link[hidden],
 #settings-nav-link[hidden],
 #logout-btn[hidden] {
   display: none;
@@ -1373,9 +1374,118 @@ main {
   align-items: flex-start;
 }
 
-#limits-form .limits-footer button[type="submit"] {
-  width: auto;
-}
+  #limits-form .limits-footer button[type="submit"] {
+    width: auto;
+  }
+
+  /* ---- Log settings dialog (index.html #log-settings-dialog): flag /
+   * key-limits dialog idiom — compact labeled rows + right-aligned
+   * footer, no page-card limit-grid boxes. Renderer contract: every id
+   * below is stable (log-settings-form/log-enabled/log-maxdays/
+   * log-settings-cancel/log-settings-result). */
+  #log-settings-form {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  #log-settings-form > label {
+    min-width: 0;
+  }
+
+  #log-settings-form input[type="number"] {
+    width: 100%;
+  }
+
+  /* Capture-logs switch: exact copy of the #backup-s3-switch idiom
+   * (role=switch button + knob, aria-checked drives the fill), re-scoped
+   * to #log-enabled. Lives in the dialog header next to the close
+   * button. No new visual language. */
+
+  #log-enabled.log-switch {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    padding: 0;
+    flex-shrink: 0;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    cursor: pointer;
+  }
+
+  #log-enabled .log-switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--muted-dim);
+    transform: translateX(0);
+    transition: transform 160ms ease, background 160ms ease;
+  }
+
+  #log-enabled[aria-checked="true"] {
+    border-color: rgba(94, 234, 212, 0.4);
+    background: rgba(94, 234, 212, 0.12);
+  }
+
+  #log-enabled[aria-checked="true"] .log-switch-knob {
+    transform: translateX(18px);
+    background: var(--mint);
+  }
+
+  #log-enabled:focus-visible {
+    outline: none;
+    box-shadow: var(--ring);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #log-enabled .log-switch-knob {
+      transition: none;
+    }
+  }
+
+  #log-settings-form .muted {
+    margin: 0;
+  }
+
+  #log-settings-form .form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  #log-settings-result {
+    color: var(--muted);
+    margin: var(--space-2) 0 0;
+    min-height: 1em;
+    font-size: 13px;
+  }
+
+  section[aria-labelledby="logs"] hr {
+    border: none;
+    border-top: 1px solid var(--border-soft);
+    margin: var(--space-4) 0;
+  }
+
+  #logs-filter-form {
+    margin-top: var(--space-3);
+  }
+
+  section[aria-labelledby="logs"] table {
+    margin-top: var(--space-3);
+  }
+
+  section[aria-labelledby="logs"] .limits-footer {
+    margin-top: var(--space-3);
+  }
+
+  #logs-result {
+    margin: var(--space-3) 0 0;
+  }
 
 .limit-field small {
   font-size: 11px;
@@ -4272,7 +4382,8 @@ dialog#flag-dialog {
   overflow-y: auto;
 }
 
-dialog#key-limits-dialog {
+dialog#key-limits-dialog,
+dialog#log-settings-dialog {
   width: min(560px, 92vw);
   max-height: 88dvh;
   overflow-y: auto;
