@@ -1,6 +1,9 @@
 package ingest
 
 import (
+	"errors"
+	"net/http"
+
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/limits"
@@ -54,6 +57,22 @@ func RequireKeyEnv(re *core.RequestEvent, kind KeyEnvKind) (*core.Record, *core.
 	// several projects can never misroute here.
 	env, err := envresolve.ResolveForKey(re.App, slug, key.GetString("env"))
 	if err != nil {
+		prefix := KeyPrefix(re.Request.Header.Get(HeaderKey))
+		reason, status := "wrong-env", http.StatusUnauthorized
+		switch {
+		case errors.Is(err, envresolve.ErrNotFound):
+			reason, status = "unknown-env", http.StatusNotFound
+		case errors.Is(err, envresolve.ErrScopeMismatch):
+			reason, status = "wrong-env", http.StatusUnauthorized
+		default:
+			var amb envresolve.AmbiguousError
+			if errors.As(err, &amb) {
+				reason, status = "ambiguous-env", http.StatusBadRequest
+			} else {
+				reason, status = "resolve-error", http.StatusInternalServerError
+			}
+		}
+		denyWrite(re, reason, status, prefix, "")
 		return nil, nil, envresolve.ToRequestError(re, err)
 	}
 	var allowed bool
@@ -68,6 +87,7 @@ func RequireKeyEnv(re *core.RequestEvent, kind KeyEnvKind) (*core.Record, *core.
 		return key, env, nil
 	}
 	if !allowed {
+		denyWrite(re, "rate-limited", 429, KeyPrefix(re.Request.Header.Get(HeaderKey)), "per-key")
 		if werr := apireq.TooMany(re, "Rate limit exceeded."); werr != nil {
 			return nil, nil, werr
 		}

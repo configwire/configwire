@@ -42,6 +42,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -52,6 +53,8 @@ import (
 	"time"
 
 	"github.com/configwire/configwire/internal/apireq"
+	"github.com/configwire/configwire/logstore"
+	"github.com/configwire/configwire/logx"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -304,6 +307,12 @@ func ResolveUserHash(userHash, userID string) string {
 	return ""
 }
 
+// reqLog is the pre-request guard stderr logger for the ingest package
+// (shared with keyenv.go). logx prefixes every line with "ingest: ".
+// Request lines carry method/path/reason/status only — never key material,
+// tokens, IPs, buckets, or attributes.
+var reqLog = logx.New("ingest")
+
 var (
 	fastCacheMu sync.RWMutex
 	fastCache   = make(map[string]cacheEntry)
@@ -429,7 +438,7 @@ func noteSaturation() {
 	n := slowSaturated.Add(1)
 	now := time.Now().Unix()
 	if last := slowSaturatedLogAt.Load(); now != last && slowSaturatedLogAt.CompareAndSwap(last, now) {
-		log.Printf("ingest: bcrypt verifier saturated (429 x%d), valid keys must retry", n)
+		reqLog.Warn("bcrypt verifier saturated (429 x%d), valid keys must retry", n)
 	}
 }
 
@@ -492,31 +501,59 @@ func findSDKKey(app core.App, full string) (*core.Record, error) {
 // failure → 503 written inline (never 401, so an outage reads as an
 // outage instead of mass credential rotation). Both written paths return
 // ErrKeyResponded: callers must return nil, NOT propagate it.
-func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
-	denied := func() (*core.Record, error) {
-		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
+// denyWrite dual-writes one guard-rejection line: stderr via reqLog and a
+// persisted server_logs row. reason is a decomposed code (missing-header,
+// unknown-key, revoked-key, wrong-env, unknown-env, rate-limited,
+// storage-error — never free text); status is the client-facing status.
+// keyPrefix carries KeyPrefix(full) and is appended as key_prefix=<prefix>
+// only when non-empty (a key was presented — never the full key).
+// limiter names which budget tripped (verifier, per-key) and is appended
+// as limiter=<which> only when non-empty. The message stays a single
+// space-separated k=v line. Never pass full keys, tokens, emails, IPs,
+// buckets, or attrs. reqLog.Request keeps the same reason string.
+// Write errors are best-effort (swallowed, never retry-block the request).
+func denyWrite(re *core.RequestEvent, reason string, status int, keyPrefix, limiter string) {
+	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
+	msg := fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, reason, status)
+	if keyPrefix != "" {
+		msg += " key_prefix=" + keyPrefix
 	}
+	if limiter != "" {
+		msg += " limiter=" + limiter
+	}
+	_ = logstore.Write(re.App, int(logx.LevelWarn), "ingest", msg)
+}
+
+func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	full := re.Request.Header.Get(HeaderKey)
 	if full == "" {
-		return denied()
+		denyWrite(re, "missing-header", http.StatusUnauthorized, "", "")
+		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
 	}
+	prefix := KeyPrefix(full)
 	key, err := findSDKKey(re.App, full)
 	if err != nil {
 		if errors.Is(err, errKeyBusy) {
 			noteSaturation()
+			denyWrite(re, "rate-limited", http.StatusTooManyRequests, prefix, "verifier")
 			if werr := apireq.TooMany(re, "Server busy, retry."); werr != nil {
 				return nil, werr
 			}
 			return nil, ErrKeyResponded
 		}
-		log.Printf("ingest: sdk key lookup failed: %v", err)
+		denyWrite(re, "storage-error", http.StatusServiceUnavailable, prefix, "")
 		if werr := re.JSON(http.StatusServiceUnavailable, map[string]any{"message": "Storage error, retry.", "status": 503}); werr != nil {
 			return nil, werr
 		}
 		return nil, ErrKeyResponded
 	}
-	if key == nil || key.GetBool("revoked") {
-		return denied()
+	if key == nil {
+		denyWrite(re, "unknown-key", http.StatusUnauthorized, prefix, "")
+		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
+	}
+	if key.GetBool("revoked") {
+		denyWrite(re, "revoked-key", http.StatusUnauthorized, prefix, "")
+		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
 	}
 	return key, nil
 }

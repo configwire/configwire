@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/configwire/configwire/identity"
 	"github.com/configwire/configwire/limits"
+	"github.com/configwire/configwire/logstore"
+	"github.com/configwire/configwire/logx"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -70,6 +73,24 @@ func parseBucketCanonical(raw string) (string, *apiError) {
 		return "", badRequest(err.Error())
 	}
 	return b, nil
+}
+
+// acceptWrite dual-writes one success line: stderr via reqLog and a
+// persisted server_logs row (mirrors denyWrite's shape, Info level for
+// success). reason is a decomposed code (accepted — never free text);
+// status is the client-facing status. keyPrefix carries KeyPrefix(full)
+// and is appended as key_prefix=<prefix> only when non-empty (a key was
+// presented — never the full key). The message stays a single
+// space-separated k=v line. Never pass full keys, tokens, emails, IPs,
+// buckets, or attrs. reqLog.Request keeps the same reason string.
+// Write errors are best-effort (swallowed, never retry-block the request).
+func acceptWrite(re *core.RequestEvent, reason string, status int, keyPrefix string) {
+	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
+	msg := fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, reason, status)
+	if keyPrefix != "" {
+		msg += " key_prefix=" + keyPrefix
+	}
+	_ = logstore.Write(re.App, int(logx.LevelInfo), "ingest", msg)
 }
 
 // Register mounts the events ingest route and starts the flush pipeline.
@@ -150,6 +171,7 @@ func postEvents(re *core.RequestEvent) error {
 		// exactly this batch with no duplicates.
 		return re.JSON(http.StatusServiceUnavailable, map[string]any{"message": "Ingest buffer full, retry.", "status": 503})
 	}
+	acceptWrite(re, "accepted", http.StatusAccepted, KeyPrefix(re.Request.Header.Get(HeaderKey)))
 	return re.JSON(http.StatusAccepted, map[string]any{"accepted": len(stored), "status": 202})
 }
 

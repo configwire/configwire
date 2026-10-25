@@ -33,6 +33,7 @@ package limits
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -44,6 +45,8 @@ import (
 	"time"
 
 	"github.com/configwire/configwire/internal/apireq"
+	"github.com/configwire/configwire/logstore"
+	"github.com/configwire/configwire/logx"
 	"github.com/configwire/configwire/security"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -649,6 +652,11 @@ func (l *Limiter) Size() int {
 	return len(l.windows)
 }
 
+// blockLog is the pre-request guard stderr logger for IP/admin-denial
+// rejections. Request lines carry method/path/reason/status only — never
+// header values, tokens, or client IPs.
+var blockLog = logx.New("limits")
+
 // Module state: atomic config under RWMutex plus two dedicated limiters
 // (ip, key); the key limiter ids are namespaced per traffic class
 // ("fetch:"+hash / "ingest:"+hash), so fetch/ingest budgets stay
@@ -933,15 +941,22 @@ func CheckIP(re *core.RequestEvent) bool {
 }
 
 // BlockIP renders the 429 flood response (Retry-After:1, JSON shape
-// {message, status:429} matching the ingest/fetch 429 shape).
+// {message, status:429} matching the ingest/fetch 429 shape). One Request
+// line (reason ip-blocked) keeps the rejection visible in stderr; the
+// client response is unchanged.
 func BlockIP(re *core.RequestEvent) error {
+	blockLog.Request(re.Request.Method, re.Request.URL.Path, "ip-blocked", http.StatusTooManyRequests)
+	_ = logstore.Write(re.App, int(logx.LevelWarn), "limits", fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, "ip-blocked", http.StatusTooManyRequests))
 	security.SetHeaders(re)
 	return apireq.TooMany(re, "Rate limit exceeded.")
 }
 
 // BlockAdmin renders the 403 admin-denied response (JSON shape
 // {message, status:403}); no Retry-After since this is policy, not load.
+// One Request line (reason admin-denied); the client response is unchanged.
 func BlockAdmin(re *core.RequestEvent) error {
+	blockLog.Request(re.Request.Method, re.Request.URL.Path, "admin-denied", http.StatusForbidden)
+	_ = logstore.Write(re.App, int(logx.LevelWarn), "limits", fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, "admin-denied", http.StatusForbidden))
 	security.SetHeaders(re)
 	return re.JSON(http.StatusForbidden, map[string]any{
 		"message": "Admin access denied for this IP.",
