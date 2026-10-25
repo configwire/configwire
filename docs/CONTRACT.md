@@ -246,7 +246,12 @@ discipline.
 Rule condition is either one `{field, op, value[, seed]}` object or a
 non-empty array (max 10) of such objects, AND-ed at eval
 (`platform=ios AND custom.tier<=3`); the dialog writes a single object
-for one row and an array for 2+ rows.
+for one row and an array for 2+ rows. Percentage rollout is the
+`percentile` field: ops `<=` (value `0-9999` inclusive, e.g. `<= 999`
+≈ 10%) and `between` (value `[lo,hi]` inclusive both ends); bucketed
+via `Bucket(?b=+seed)%10000` per-fetch, `seed` comes from the condition
+(`ctx.PercentileSeed` is always empty from fetch, so `seed` is required —
+missing/empty seed or bucket never matches). Ref: `configwire/eval/eval.go:40-43,285-310`.
 
 Ref: `configwire/releases/snapshot.go:78-147` (shapes), `:304-399` (builder).
 
