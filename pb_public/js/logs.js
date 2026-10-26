@@ -138,7 +138,7 @@
     var levelEl = CW.$("logs-level");
     var srcEl = CW.$("logs-src");
     var lv = level != null && level !== "" ? level
-      : (levelEl && levelEl.value != null && levelEl.value !== "" ? levelEl.value : currentFilter("level", ""));
+      : (levelEl && levelEl.value != null ? levelEl.value : currentFilter("level", ""));
     var sc = src != null ? src
       : (srcEl && srcEl.value != null ? srcEl.value : currentFilter("src", ""));
     var pg = page != null ? page : currentFilter("page", 1);
