@@ -249,3 +249,7 @@ If the server does not come back (bad zip, disk full), re-run with the pre-resto
 ## 7. Data residency
 
 All backup bytes stay where you put them. The SQLite file (`pb_data/data.db`), the local `backups/` dir, and any S3 bucket you configure are operator controlled. ConfigWire never copies backup data elsewhere. Pick the bucket region and endpoint with `CONFIGWIRE_BACKUP_S3_REGION` / `CONFIGWIRE_BACKUP_S3_ENDPOINT` / `CONFIGWIRE_BACKUP_S3_BUCKET` (section 4) to match your residency needs, and keep backup and upload buckets separate. Rotation follows `cronMaxKeep` in both stores: the newest `@auto_*` files survive and older ones are pruned (`0` keeps all, section 2). Record uploads stored via top-level `s3.*` are not inside backup zips (section 6); back up that bucket separately if uploads matter. Releases rows inside backups carry free-text author and note fields, so keep PII out of them; see `SECURITY.md` section 3 and `CONTRACT.md` for the releases shape.
+
+## 8. Migration history squash (v0.2.x)
+
+The pre-v0.2 migrations are squashed into one baseline init equal to the v0.1.13 schema — upgrade to latest v0.1.x (v0.1.13) BEFORE moving to v0.2.x, never skip straight from an older release. After upgrading, run `go run . migrate history-sync --dir <pb_data>` once if the `_migrations` table still references the deleted incremental files; fresh installs need nothing.

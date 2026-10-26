@@ -3,6 +3,12 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Migrations squashed: the pre-v0.2 history (`1787875200` init + `1790000000`..`1790000021`) is now a single baseline init equal to the v0.1.13 schema, with only the three v0.2 deltas (`1790000022` drop identity storage, `1790000023` rename `anonId` to `bucket`, `1790000024` server logs) on top. Fresh installs are unaffected; databases below v0.1.13 must upgrade to v0.1.13 first, and operators whose `_migrations` table references the deleted files run `migrate history-sync` once.
+
 ## v0.2.0-rc.4 — 2026-10-26
 
 ### Fixed
