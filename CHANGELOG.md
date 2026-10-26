@@ -3,6 +3,12 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.3 — 2026-10-26
+
+### Fixed
+
+- Admin styles (`configwire/pb_public/styles.css`): removed a stray closing brace and normalized formatting (dedented the over-indented log-settings dialog block, combinator spacing, blank lines) — no visual or behavior change.
+
 ## v0.2.0-rc.2 — 2026-10-26
 
 ### Added
