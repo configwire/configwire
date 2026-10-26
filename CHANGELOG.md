@@ -3,6 +3,12 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.4 — 2026-10-26
+
+### Fixed
+
+- Logs level filter (`#/p/logs`): the dropdown now shows level names (`DEBUG`/`INFO`/`WARN`/`ERROR`) instead of raw numbers (`0`–`3`, values unchanged so `GET /api/v1/admin/logs?level=` is untouched), and picking `Any` clears the filter again — previously the empty selection fell back to the stale stored level, so the table stayed filtered until the page was reopened.
+
 ## v0.2.0-rc.3 — 2026-10-26
 
 ### Fixed
