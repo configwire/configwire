@@ -525,6 +525,7 @@ a.brand:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   #admin-current-ip.ip-status-pill::before,
   #admin-current-country.ip-status-pill::before {
     animation: none;
@@ -1031,6 +1032,7 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .project-card,
   .project-card:hover {
     transform: none;
@@ -1212,6 +1214,7 @@ main {
 }
 
 @media (max-width: 640px) {
+
   #publish-form label:has(#publish-note),
   #publish-form label:has(#publish-base) {
     flex: 1 1 100%;
@@ -1373,118 +1376,118 @@ main {
   align-items: flex-start;
 }
 
-  #limits-form .limits-footer button[type="submit"] {
-    width: auto;
-  }
+#limits-form .limits-footer button[type="submit"] {
+  width: auto;
+}
 
-  /* ---- Log settings dialog (index.html #log-settings-dialog): flag /
+/* ---- Log settings dialog (index.html #log-settings-dialog): flag /
    * key-limits dialog idiom — compact labeled rows + right-aligned
    * footer, no page-card limit-grid boxes. Renderer contract: every id
    * below is stable (log-settings-form/log-enabled/log-maxdays/
    * log-settings-cancel/log-settings-result). */
-  #log-settings-form {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-2);
-  }
+#log-settings-form {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
 
-  #log-settings-form > label {
-    min-width: 0;
-  }
+#log-settings-form>label {
+  min-width: 0;
+}
 
-  #log-settings-form input[type="number"] {
-    width: 100%;
-  }
+#log-settings-form input[type="number"] {
+  width: 100%;
+}
 
-  /* Capture-logs switch: exact copy of the #backup-s3-switch idiom
+/* Capture-logs switch: exact copy of the #backup-s3-switch idiom
    * (role=switch button + knob, aria-checked drives the fill), re-scoped
    * to #log-enabled. Lives in the dialog header next to the close
    * button. No new visual language. */
 
-  #log-enabled.log-switch {
-    position: relative;
-    width: 40px;
-    height: 22px;
-    padding: 0;
-    flex-shrink: 0;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--panel-2);
-    cursor: pointer;
-  }
+#log-enabled.log-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  cursor: pointer;
+}
 
+#log-enabled .log-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted-dim);
+  transform: translateX(0);
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+#log-enabled[aria-checked="true"] {
+  border-color: rgba(94, 234, 212, 0.4);
+  background: rgba(94, 234, 212, 0.12);
+}
+
+#log-enabled[aria-checked="true"] .log-switch-knob {
+  transform: translateX(18px);
+  background: var(--mint);
+}
+
+#log-enabled:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
   #log-enabled .log-switch-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--muted-dim);
-    transform: translateX(0);
-    transition: transform 160ms ease, background 160ms ease;
+    transition: none;
   }
+}
 
-  #log-enabled[aria-checked="true"] {
-    border-color: rgba(94, 234, 212, 0.4);
-    background: rgba(94, 234, 212, 0.12);
-  }
+#log-settings-form .muted {
+  margin: 0;
+}
 
-  #log-enabled[aria-checked="true"] .log-switch-knob {
-    transform: translateX(18px);
-    background: var(--mint);
-  }
+#log-settings-form .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
 
-  #log-enabled:focus-visible {
-    outline: none;
-    box-shadow: var(--ring);
-  }
+#log-settings-result {
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
+  min-height: 1em;
+  font-size: 13px;
+}
 
-  @media (prefers-reduced-motion: reduce) {
-    #log-enabled .log-switch-knob {
-      transition: none;
-    }
-  }
+section[aria-labelledby="logs"] hr {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: var(--space-4) 0;
+}
 
-  #log-settings-form .muted {
-    margin: 0;
-  }
+#logs-filter-form {
+  margin-top: var(--space-3);
+}
 
-  #log-settings-form .form-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
-  }
+section[aria-labelledby="logs"] table {
+  margin-top: var(--space-3);
+}
 
-  #log-settings-result {
-    color: var(--muted);
-    margin: var(--space-2) 0 0;
-    min-height: 1em;
-    font-size: 13px;
-  }
+section[aria-labelledby="logs"] .limits-footer {
+  margin-top: var(--space-3);
+}
 
-  section[aria-labelledby="logs"] hr {
-    border: none;
-    border-top: 1px solid var(--border-soft);
-    margin: var(--space-4) 0;
-  }
-
-  #logs-filter-form {
-    margin-top: var(--space-3);
-  }
-
-  section[aria-labelledby="logs"] table {
-    margin-top: var(--space-3);
-  }
-
-  section[aria-labelledby="logs"] .limits-footer {
-    margin-top: var(--space-3);
-  }
-
-  #logs-result {
-    margin: var(--space-3) 0 0;
-  }
+#logs-result {
+  margin: var(--space-3) 0 0;
+}
 
 .limit-field small {
   font-size: 11px;
@@ -1597,8 +1600,9 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-#admin-current-ip.ip-status-pill::before,
-#admin-current-country.ip-status-pill::before {
+
+  #admin-current-ip.ip-status-pill::before,
+  #admin-current-country.ip-status-pill::before {
     animation: none;
   }
 }
@@ -4116,11 +4120,11 @@ section[aria-labelledby="stats"] form.inline-form button {
   margin: 0;
 }
 
-#flag-rules-form .rule-cond-row + .rule-cond-row {
+#flag-rules-form .rule-cond-row+.rule-cond-row {
   margin-top: 24px;
 }
 
-#flag-rules-form .rule-cond-row + .rule-cond-row::before {
+#flag-rules-form .rule-cond-row+.rule-cond-row::before {
   content: "AND";
   position: absolute;
   top: -19px;
@@ -4173,6 +4177,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   min-width: 140px;
   order: 3;
 }
+
 /* Custom attr name sits inline right after the Field select (same flex
  * line), not wrapped below: DOM order puts it 6th, so pull it forward
  * with order and keep it narrow enough to fit beside Field + Operator. */
@@ -4527,11 +4532,13 @@ dialog h4 {
   display: inline-flex;
   flex-shrink: 0;
 }
+
 .field-info-btn {
   color: var(--muted);
   font-size: 16px;
   line-height: 1;
 }
+
 .field-info-bubble {
   display: none;
   position: absolute;
@@ -4548,19 +4555,23 @@ dialog h4 {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
   z-index: 30;
 }
+
 .field-info:hover .field-info-bubble,
 .field-info:focus-within .field-info-bubble,
 .field-info.open .field-info-bubble {
   display: block;
 }
+
 .field-info-inside {
   flex: 1;
 }
+
 .field-info-inside input {
   width: 100%;
   padding-right: 32px;
   box-sizing: border-box;
 }
+
 .field-info-btn-inside {
   position: absolute;
   right: 2px;
@@ -5382,11 +5393,11 @@ dialog#promote-dialog {
   gap: var(--space-2);
 }
 
-#backup-schedule-helper-dialog .backup-schedule-helper-grid > label {
+#backup-schedule-helper-dialog .backup-schedule-helper-grid>label {
   min-width: 0;
 }
 
-#backup-schedule-helper-dialog .backup-schedule-helper-grid > label[hidden] {
+#backup-schedule-helper-dialog .backup-schedule-helper-grid>label[hidden] {
   display: none;
 }
 
@@ -5507,7 +5518,7 @@ section[aria-labelledby="backups-s3"] .card-head {
   display: none;
 }
 
-#backup-s3-form .backup-s3-grid > label {
+#backup-s3-form .backup-s3-grid>label {
   min-width: 0;
 }
 
