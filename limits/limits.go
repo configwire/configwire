@@ -437,20 +437,38 @@ func ValidateAdminAllowedIPs(in []string) error {
 }
 
 // canonicalAdminAllowedIPs returns the storable form: normalized, empty
-// stays empty (allow-all). Invalid entries fall back to empty (allow all)
-// rather than trusting env/DB blindly.
+// stays empty (allow-all). Invalid entries are dropped individually with
+// a warning — valid entries stay enforced — so one bad env/DB entry can
+// never silently convert the whole list to allow-all. Empty input, or
+// input with no valid entries after filtering, stays empty (allow-all).
 func canonicalAdminAllowedIPs(in []string) []string {
 	if len(in) == 0 {
 		return []string{}
 	}
 	norm := normalizeAdminAllowedIPs(in)
-	if err := ValidateAdminAllowedIPs(norm); err != nil {
-		return []string{}
-	}
 	if len(norm) == 0 {
 		return []string{}
 	}
-	return norm
+	var out []string
+	var dropped []string
+	for _, entry := range norm {
+		if net.ParseIP(entry) != nil {
+			out = append(out, entry)
+			continue
+		}
+		if _, _, err := net.ParseCIDR(entry); err == nil {
+			out = append(out, entry)
+			continue
+		}
+		dropped = append(dropped, entry)
+	}
+	if len(dropped) > 0 {
+		blockLog.Warn("dropping %d invalid adminAllowedIPs entries (%s), keeping %d valid", len(dropped), strings.Join(dropped, ","), len(out))
+	}
+	if len(out) == 0 {
+		return []string{}
+	}
+	return out
 }
 
 // IsAdminIPAllowed reports whether ip may access admin paths. Empty
@@ -597,7 +615,8 @@ func (e *configError) Error() string { return e.msg }
 
 // clampConfig forces every numeric field into 1..10000 (used when loading
 // env/DB values that bypass admin validation), canonicalizes the admin
-// allowlist (empty stays allow-all, invalid falls back to allow-all) and
+// allowlist (empty stays allow-all, invalid entries are dropped with a
+// warning while valid entries stay enforced) and
 // normalizes the header orders to the storable form (empty/invalid becomes
 // the code defaults).
 func clampConfig(c Config) Config {

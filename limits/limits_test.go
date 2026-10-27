@@ -326,6 +326,33 @@ func TestAdminAllowlist(t *testing.T) {
 	}
 }
 
+func TestCanonicalAdminAllowedIPsDropsInvalid(t *testing.T) {
+	mixed := canonicalAdminAllowedIPs([]string{"1.2.3.4", "not-an-ip", "10.0.0.0/8", "999.999.0.0", "", "  "})
+	want := map[string]bool{"1.2.3.4": true, "10.0.0.0/8": true}
+	if len(mixed) != len(want) {
+		t.Fatalf("mixed valid+invalid should keep only valid, got %q", mixed)
+	}
+	for _, e := range mixed {
+		if !want[e] {
+			t.Fatalf("unexpected entry kept: %q (all=%q)", e, mixed)
+		}
+	}
+	resetForTest(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: []string{"1.2.3.4", "not-an-ip", "10.0.0.0/8"}})
+	if !IsAdminIPAllowed("1.2.3.4") || !IsAdminIPAllowed("10.7.8.9") {
+		t.Fatal("valid entries must stay enforced after filtering invalid")
+	}
+	if IsAdminIPAllowed("9.9.9.9") {
+		t.Fatal("non-allowlisted IP must stay denied once valid entries survive")
+	}
+	allInvalid := canonicalAdminAllowedIPs([]string{"not-an-ip", "999.999.0.0/99"})
+	if len(allInvalid) != 0 {
+		t.Fatalf("all-invalid input must yield empty (allow-all with warning), got %q", allInvalid)
+	}
+	if got := canonicalAdminAllowedIPs(nil); len(got) != 0 {
+		t.Fatalf("empty input must stay empty (allow-all), got %q", got)
+	}
+}
+
 // adminEvent builds an /api/v1/admin/* request event whose resolved
 // client IP is ip (loopback remote trusts the forwarded header; bare
 // IPs go through RemoteAddr).
