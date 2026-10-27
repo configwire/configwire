@@ -3,6 +3,12 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.8 — 2026-10-27
+
+### Fixed
+
+- Docker publish actually floats the `vX.Y.Z-rc` tag now (`.github/workflows/configwire-image.yml`): the `v0.2.0-rc.7` approach used a `docker/metadata-action` `type=semver` pattern, which is a documented no-op on prereleases (only `{{version}}`/`{{raw}}` extend), so `v0.2.0-rc` was never published and pulls failed with `not found`. A `Derive floating RC tag` step now derives the float from `GITHUB_REF_NAME` (`v0.2.0-rc.8` → `v0.2.0-rc`, empty otherwise) and publishes it as `type=raw`, guarded so a stable `v0.2.0` never claims `v0.2.0-rc`. Pushing `v0.2.0-rc.8` moves `v0.2.0-rc` to it.
+
 ## v0.2.0-rc.7 — 2026-10-27
 
 ### Changed
