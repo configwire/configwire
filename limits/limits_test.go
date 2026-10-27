@@ -219,6 +219,9 @@ func TestCheckIPAdminAllowlist(t *testing.T) {
 	if CheckIP(newAdminEvent("203.0.113.9:1234")) {
 		t.Fatal("non-allowlisted admin IP should be blocked")
 	}
+	if !IsAdminDenied(newAdminEvent("203.0.113.9:1234")) {
+		t.Fatal("allowlist-denied admin request must classify as admin-denied (403, not 429)")
+	}
 }
 
 func TestAllowBurstBehavior(t *testing.T) {
@@ -497,5 +500,73 @@ func TestCheckIPCollectionsKeepsRateLimit(t *testing.T) {
 	}
 	if IsAdminDenied(over) {
 		t.Fatal("rate-limited (not allowlist-denied) request must not classify as admin-denied")
+	}
+}
+
+// TestAdminBackupsSettingsAllowlist pins that the PocketBase-native
+// superuser surfaces are covered by the admin allowlist: denied IPs take
+// the 403 path on /api/backups* and /api/settings* (a superuser token
+// alone no longer grants access from a denied IP), while the per-file
+// token download (/api/backups/{key}?token=, the one route bound without
+// superuser auth) still passes from any IP.
+func TestAdminBackupsSettingsAllowlist(t *testing.T) {
+	newEvent := func(target, remote string) *core.RequestEvent {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = remote
+		re := &core.RequestEvent{}
+		re.Request = req
+		return re
+	}
+	for _, path := range []string{
+		"/api/backups",
+		"/api/backups/backup.zip",
+		"/api/settings",
+		"/api/settings/app",
+	} {
+		if !IsAdminPath(path) {
+			t.Fatalf("%s must classify as an admin path", path)
+		}
+	}
+	if !IsAdminPath("/api/collections/flags/records") {
+		t.Fatal("data API path must keep classifying as an admin path")
+	}
+	resetForTest(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: []string{"1.2.3.4"}})
+	for _, target := range []string{"/api/backups", "/api/settings", "/api/settings/app"} {
+		denied := newEvent(target, "203.0.113.9:1234")
+		if CheckIP(denied) {
+			t.Fatalf("non-allowlisted IP should be blocked on %s", target)
+		}
+		if !IsAdminDenied(denied) {
+			t.Fatalf("blocked %s request must classify as admin-denied (403, not 429)", target)
+		}
+	}
+	if !CheckIP(newEvent("/api/backups", "1.2.3.4:1234")) {
+		t.Fatal("allowlisted IP should pass /api/backups")
+	}
+	if !CheckIP(newEvent("/api/settings", "1.2.3.4:1234")) {
+		t.Fatal("allowlisted IP should pass /api/settings")
+	}
+	// Per-file token download bypasses the allowlist from a denied IP.
+	token := newEvent("/api/backups/backup.zip?token=file-token-123", "203.0.113.9:1234")
+	if !CheckIP(token) {
+		t.Fatal("file-token backup download should pass from a non-allowlisted IP")
+	}
+	if IsAdminDenied(token) {
+		t.Fatal("file-token backup download must not classify as admin-denied")
+	}
+	// Same download shape without the token stays allowlist-gated.
+	bare := newEvent("/api/backups/backup.zip", "203.0.113.9:1234")
+	if CheckIP(bare) {
+		t.Fatal("tokenless backup download should be blocked from a non-allowlisted IP")
+	}
+	if !IsAdminDenied(bare) {
+		t.Fatal("blocked tokenless backup download must classify as admin-denied (403, not 429)")
+	}
+	// Empty allowlist keeps allow-all on the newly covered surfaces.
+	resetForTest(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: nil})
+	for _, target := range []string{"/api/backups", "/api/settings"} {
+		if !CheckIP(newEvent(target, "203.0.113.9:1234")) {
+			t.Fatalf("empty allowlist should allow %s", target)
+		}
 	}
 }

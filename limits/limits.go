@@ -488,12 +488,34 @@ func IsAdminIPAllowed(ip string) bool {
 // IsAdminPath reports whether path is an admin API path: the ConfigWire
 // admin routes (/api/v1/admin/*) AND the PocketBase data API
 // (/api/collections/*), which serves superuser tokens full read/write on
-// every collection. The allowlist must cover both or it is not a
-// boundary: without /api/collections/*, a token alone grants full admin
-// access from any IP regardless of the allowlist.
+// every collection, AND the PocketBase-native superuser surfaces
+// (/api/backups*, /api/settings*) which are likewise superuser-gated
+// upstream (except the file-token download, see
+// isBackupFileTokenDownload). The allowlist must cover all of them or it
+// is not a boundary: without them, a token alone grants admin access
+// from any IP regardless of the allowlist.
 func IsAdminPath(path string) bool {
 	return strings.HasPrefix(path, "/api/v1/admin/") ||
-		strings.HasPrefix(path, "/api/collections/")
+		strings.HasPrefix(path, "/api/collections/") ||
+		path == "/api/backups" || strings.HasPrefix(path, "/api/backups/") ||
+		path == "/api/settings" || strings.HasPrefix(path, "/api/settings/")
+}
+
+// isBackupFileTokenDownload reports whether re is a PocketBase backup
+// file-token download: GET /api/backups/{key}?token= (built in
+// pb_public/js/backups.js as backupDownloadPath), the one /api/backups
+// route bound WITHOUT RequireSuperuserAuth(). IsAdminPath only ever sees
+// URL.Path (no query string), so the exemption cannot live there — it is
+// checked alongside IsAdminPath in CheckIP/IsAdminDenied via the request
+// query. All other /api/backups* shapes stay allowlist-gated.
+func isBackupFileTokenDownload(re *core.RequestEvent) bool {
+	if re == nil || re.Request == nil || re.Request.URL == nil {
+		return false
+	}
+	if !strings.HasPrefix(re.Request.URL.Path, "/api/backups/") {
+		return false
+	}
+	return re.Request.URL.Query().Has("token")
 }
 
 // isCollectionsPath reports whether path hits the PocketBase data API.
@@ -507,7 +529,11 @@ func isCollectionsPath(path string) bool {
 
 // IsAdminDenied reports whether re is an admin-path request whose client
 // IP is rejected by the allowlist (wiring helper to pick 403 vs 429).
+// Backup file-token downloads are exempt (public per-file token route).
 func IsAdminDenied(re *core.RequestEvent) bool {
+	if isBackupFileTokenDownload(re) {
+		return false
+	}
 	if !IsAdminPath(re.Request.URL.Path) {
 		return false
 	}
@@ -901,8 +927,11 @@ func CheckAdmin(re *core.RequestEvent) bool {
 }
 
 // CheckIP reports whether re may proceed: non-/api/ paths always pass;
-// admin paths (/api/v1/admin/*, /api/collections/*) are gated by the IP
-// allowlist (denied callers get the 403 via IsAdminDenied/BlockAdmin);
+// admin paths (/api/v1/admin/*, /api/collections/*, /api/backups*,
+// /api/settings*) are gated by the IP allowlist (denied callers get the
+// 403 via IsAdminDenied/BlockAdmin), except backup file-token downloads
+// (/api/backups/{key}?token=) which carry a per-file token instead of
+// superuser auth and bypass the allowlist;
 // /api/collections/* additionally consumes one global per-IP token so
 // superuser login keeps rate limiting; other /api/* consumes one global
 // per-IP token. Pure check — the caller renders 403 (admin-denied) or
@@ -911,7 +940,7 @@ func CheckIP(re *core.RequestEvent) bool {
 	if !strings.HasPrefix(re.Request.URL.Path, "/api/") {
 		return true
 	}
-	if IsAdminPath(re.Request.URL.Path) {
+	if IsAdminPath(re.Request.URL.Path) && !isBackupFileTokenDownload(re) {
 		ip := ClientIP(re)
 		allowed := len(GetConfig().AdminAllowedIPs) == 0
 		if ip != "" {
@@ -966,7 +995,7 @@ func BlockAdmin(re *core.RequestEvent) error {
 
 // Middleware adapts the IP check to a PocketBase router BindFunc: non-API
 // paths and allowed IPs call next; denied admin-path callers
-// (/api/v1/admin/* and /api/collections/*) get the 403 WITHOUT reaching
+// (/api/v1/admin/*, /api/collections/*, /api/backups*, /api/settings*)
 // auth (must be bound before auth-dependent routes), while over-budget
 // non-admin /api/* callers get the 429. Either renders before auth.
 // Usage (wiring layer): se.Router.BindFunc(func(re *core.RequestEvent) error {
