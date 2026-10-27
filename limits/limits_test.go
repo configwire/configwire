@@ -562,6 +562,18 @@ func TestAdminBackupsSettingsAllowlist(t *testing.T) {
 	if !IsAdminDenied(bare) {
 		t.Fatal("blocked tokenless backup download must classify as admin-denied (403, not 429)")
 	}
+	// Non-GET with ?token= stays allowlist-gated: the exemption is the
+	// GET file-download route only.
+	postReq := httptest.NewRequest(http.MethodPost, "/api/backups/backup.zip?token=file-token-123", nil)
+	postReq.RemoteAddr = "203.0.113.9:1234"
+	postRe := &core.RequestEvent{}
+	postRe.Request = postReq
+	if CheckIP(postRe) {
+		t.Fatal("POST with ?token= should stay allowlist-gated from a non-allowlisted IP")
+	}
+	if !IsAdminDenied(postRe) {
+		t.Fatal("blocked POST with ?token= must classify as admin-denied (403, not 429)")
+	}
 	// Empty allowlist keeps allow-all on the newly covered surfaces.
 	resetForTest(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: nil})
 	for _, target := range []string{"/api/backups", "/api/settings"} {

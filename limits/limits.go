@@ -504,12 +504,16 @@ func IsAdminPath(path string) bool {
 // isBackupFileTokenDownload reports whether re is a PocketBase backup
 // file-token download: GET /api/backups/{key}?token= (built in
 // pb_public/js/backups.js as backupDownloadPath), the one /api/backups
-// route bound WITHOUT RequireSuperuserAuth(). IsAdminPath only ever sees
+// route bound WITHOUT RequireSuperuserAuth(). GET-only: any other method
+// with ?token= stays allowlist-gated. IsAdminPath only ever sees
 // URL.Path (no query string), so the exemption cannot live there — it is
 // checked alongside IsAdminPath in CheckIP/IsAdminDenied via the request
 // query. All other /api/backups* shapes stay allowlist-gated.
 func isBackupFileTokenDownload(re *core.RequestEvent) bool {
 	if re == nil || re.Request == nil || re.Request.URL == nil {
+		return false
+	}
+	if re.Request.Method != http.MethodGet {
 		return false
 	}
 	if !strings.HasPrefix(re.Request.URL.Path, "/api/backups/") {
