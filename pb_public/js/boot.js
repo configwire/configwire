@@ -233,7 +233,7 @@
       ["flag-form", "flag-rules-form", "experiment-form",
         "project-dialog-form", "account-create-form",
         "key-limits-form", "limits-form", "settings-admin-form",
-        "retention-form", "log-settings-form"
+        "log-settings-form"
       ].forEach(function (id) { CW.armDirtyForm(id); });
     }
     CW.on("flag-type", "change", function () {
@@ -693,7 +693,6 @@
     CW.on("key-limits-cancel", "click", function () { if (CW.closeKeyLimitsDialog) CW.closeKeyLimitsDialog(); });
     CW.on("limits-form", "submit", CW.saveLimits);
     CW.on("settings-admin-form", "submit", CW.saveAdminLimit);
-    CW.on("retention-form", "submit", CW.saveRetention);
     CW.on("log-settings-form", "submit", CW.saveLogSettings);
     CW.on("log-settings-open", "click", function () { if (CW.openLogSettingsDialog) CW.openLogSettingsDialog(); });
     CW.on("log-settings-cancel", "click", function () {
