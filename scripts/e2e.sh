@@ -230,6 +230,16 @@ CODE_BADHASH=$(curl -s -o /tmp/cw-t17-badhash.json -w "%{http_code}" --max-time 
 CODE_ANON=$(curl -s -o /tmp/cw-t17-anon.json -w "%{http_code}" --max-time 10 \
   "$BASE_URL/api/v1/env/e2e/config?platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
 [ "$CODE_ANON" = "200" ] && pass "anonymous fetch 200" || fail "anonymous fetch (code $CODE_ANON)"
+# Dual-serve: a client-sent ?env= of any shape is accepted-but-ignored —
+# the legacy path slug gates resolution while the query value never does.
+CODE_ENVQ=$(curl -s -D /tmp/cw-t17-envq-hdr.txt -o /tmp/cw-t17-envq.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/env/e2e/config?env=no-such-env&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_ENVQ" = "200" ] && pass "legacy ?env=wrong-slug accepted-but-ignored 200" || fail "legacy ?env=wrong-slug (code $CODE_ENVQ)"
+grep -qi "^X-CW-Deprecated-env: *true" /tmp/cw-t17-envq-hdr.txt 2>/dev/null \
+  && pass "legacy ?env= stamps deprecated-env header" || fail "legacy ?env= deprecated-env header"
+CODE_ENVQA=$(curl -s -o /tmp/cw-t17-envqa.json -w "%{http_code}" --max-time 10 \
+  "$BASE_URL/api/v1/config?env=no-such-env&platform=ios&appVersion=2.1.0" -H "X-ConfigWire-Key: $SDK_KEY" 2>/dev/null || echo "000")
+[ "$CODE_ENVQA" = "200" ] && pass "alias ?env=wrong-slug accepted-but-ignored 200" || fail "alias ?env=wrong-slug (code $CODE_ENVQA)"
 # Ignore rule: ?userHash= (any shape) is accepted-but-ignored — bucketing
 # uses the stable ?b= bucket, so a different valid hash and a malformed
 # hash must land on the SAME arm as the ?b=-pinned fetch. A sent ?userHash=
@@ -407,6 +417,22 @@ CODE=$(curl -s -o /tmp/cw-t17-ev-uid.json -w "%{http_code}" --max-time 10 -X POS
   "$BASE_URL/api/v1/env/e2e/events" -H "X-ConfigWire-Key: $SDK_KEY" \
   -H "Content-Type: application/json" -d "$EV_UID" 2>/dev/null || echo "000")
 [ "$CODE" = "202" ] && pass "ingest userId/UserId body keys 202 (accepted-but-ignored)" || fail "ingest userId body keys (code $CODE)"
+
+# ---- Dual-serve aliases: same handlers with no {env} segment ------------
+echo "--- Dual-serve: key-only alias ingest + stream ---"
+EV_ALIAS='{"events":[{"kind":"exposure","flag":"alias-probe","variant":"control"}]}'
+CODE=$(curl -s -o /tmp/cw-t17-ev-alias.json -w "%{http_code}" --max-time 10 -X POST \
+  "$BASE_URL/api/v1/events" -H "X-ConfigWire-Key: $SDK_KEY" \
+  -H "Content-Type: application/json" -d "$EV_ALIAS" 2>/dev/null || echo "000")
+[ "$CODE" = "202" ] && pass "alias ingest 202" || fail "alias ingest (code $CODE)"
+curl -s -D /tmp/cw-t17-stream-legacy-hdr.txt -o /dev/null --max-time 5 \
+  "$BASE_URL/api/v1/env/e2e/stream" -H "X-ConfigWire-Key: $SDK_KEY" -H "Accept: text/event-stream" 2>/dev/null || true
+grep -q "^HTTP/.* 200" /tmp/cw-t17-stream-legacy-hdr.txt 2>/dev/null \
+  && pass "legacy stream 200 SSE headers" || fail "legacy stream headers"
+curl -s -D /tmp/cw-t17-stream-alias-hdr.txt -o /dev/null --max-time 5 \
+  "$BASE_URL/api/v1/stream" -H "X-ConfigWire-Key: $SDK_KEY" -H "Accept: text/event-stream" 2>/dev/null || true
+grep -q "^HTTP/.* 200" /tmp/cw-t17-stream-alias-hdr.txt 2>/dev/null \
+  && pass "alias stream 200 SSE headers" || fail "alias stream headers"
 
 # ---- STAGE 3F: failure asserts (unknown flag zeros + malformed since 400) ---
 echo "--- STAGE 3F: unknown flag 200-zeros + malformed since 400 ---"

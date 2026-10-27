@@ -3,7 +3,7 @@
 // Accepted JSON (defined here; the experiment variant overlay lives in
 // configwire/eval/experiment.go):
 //
-//	POST /api/v1/env/:env/events
+//	POST /api/v1/env/:env/events (POST /api/v1/events alias)
 //	Header: X-ConfigWire-Key: <full sdk key>
 //	Body: {"events":[{"kind":"fetch|exposure","flag":"<key>","variant":"<name>",
 //	    "userHash":"<opaque>", "ts":"2026-09-22T00:00:00Z | 1726870000"}]}

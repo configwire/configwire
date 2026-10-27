@@ -5,6 +5,10 @@ All notable changes to the ConfigWire server (`configwire/`, image
 
 ## Unreleased
 
+### Added
+
+- Dual-serve SDK routes (additive, non-breaking): legacy `/api/v1/env/{env}/config|events|stream` paths are canonical again alongside the key-only aliases `GET /api/v1/config`, `POST /api/v1/events`, `GET /api/v1/stream` (+ their `OPTIONS` preflights, same handlers and stamping). `RequireKeyEnv` validates a non-empty `{env}` slug against the key's bound env (mismatch 401 wrong-env, ambiguous 400 where reachable) and resolves alias traffic purely from the key. Old SDKs work against the new server; new SDKs (legacy paths again) work against old servers. A client-sent `?env=` of any shape stays accepted-but-ignored (trimmed non-empty stamps `X-CW-Deprecated-env: true` on fetch/ingest, silently ignored on the stream, never logged). Admin `/api/v1/admin/env/*` routes are unchanged.
+
 ### Changed
 
 - Migrations squashed: the pre-v0.2 history (`1787875200` init + `1790000000`..`1790000021`) is now a single baseline init equal to the v0.1.13 schema, with only the three v0.2 deltas (`1790000022` drop identity storage, `1790000023` rename `anonId` to `bucket`, `1790000024` server logs) on top. Fresh installs are unaffected; databases below v0.1.13 must upgrade to v0.1.13 first, and operators whose `_migrations` table references the deleted files run `migrate history-sync` once.

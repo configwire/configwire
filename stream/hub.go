@@ -1,6 +1,6 @@
 // Package stream implements the production SSE update endpoint.
 //
-//	GET /api/v1/env/:env/stream
+//	GET /api/v1/env/:env/stream (GET /api/v1/stream alias)
 //
 // Transport contract (Dart client lib/src/realtime.dart, authoritative):
 //   - Header X-ConfigWire-Key (real SDK key, same RequireSDKKey reuse as

@@ -1,14 +1,16 @@
 // Package fetch implements the SDK delivery endpoint.
 //
-//	GET /api/v1/env/:env/config?platform=&appVersion=&locale=&country=&userHash=&attrs=<json>&exp=<status>
+//	GET /api/v1/env/{env}/config?platform=&appVersion=&locale=&country=&userHash=&attrs=<json>&exp=<status>&env=<ignored>
+//	GET /api/v1/config (same handler, key-only alias)
 //
 // FETCH CONTRACT:
 //   - Auth: X-ConfigWire-Key via ingest.RequireSDKKey reuse. Unknown, missing,
 //     revoked, or env-mismatched keys -> 401. SDK keys and userIDs are never
 //     logged (hashes only); evaluation cost is O(flags + rules) per request.
-//   - Env: resolved deterministically from the key's env (the key's env
-//     IS the env, so a slug shared by several projects can never
-//     misroute). Unknown slug -> 404. Order is 401 (key) -> 404/400
+//   - Env: legacy paths validate the {env} slug against the key's bound env
+//     (the key's env IS the env, so a slug shared by several projects can
+//     never misroute); the key-only alias resolves purely from the key.
+//     Unknown slug -> 404. Order is 401 (key) -> 404/400
 //     (env) -> 401 (key not scoped to this env) -> 304/200.
 //   - Empty release: an env with NO release row yet -> 200 with
 //     {"version":0,"etag":"none","values":{},"variants":{},"fetchAt":...}.
@@ -173,9 +175,13 @@ func corsOrigin() string {
 }
 
 // Register mounts the SDK delivery endpoint with gzip encoding.
+// Dual-serve: legacy /api/v1/env/{env}/config (canonical, SDK-emitted)
+// plus the key-only /api/v1/config alias (same handler, same stamping).
 func Register(se *core.ServeEvent) {
 	se.Router.GET("/api/v1/env/{env}/config", getConfig).Bind(apis.Gzip())
+	se.Router.GET("/api/v1/config", getConfig).Bind(apis.Gzip())
 	se.Router.OPTIONS("/api/v1/env/{env}/config", optionsConfig)
+	se.Router.OPTIONS("/api/v1/config", optionsConfig)
 }
 
 // optionsConfig answers the CORS preflight for fetch (no auth: preflights
@@ -198,6 +204,10 @@ const userHashCompatHeader = "X-CW-Deprecated-userHash"
 // accepted-but-ignored: bucketing always uses the stable ?b= bucket.
 // Spelling mirrors v0.1.9.
 const uidCompatHeader = "X-CW-Deprecated-uid"
+
+// envCompatHeader signals that a client-sent ?env= was
+// accepted-but-ignored: env resolves purely from the SDK key.
+const envCompatHeader = "X-CW-Deprecated-env"
 
 // ParseBucket validates the stable-bucket ?b= query param (clean seam for
 // the T2 mint branch and the T7 events/ingest ?b= honor — both reuse this
@@ -226,6 +236,15 @@ func stampUserHashCompat(h http.Header, q url.Values) {
 func stampUidCompat(h http.Header, q url.Values) {
 	if strings.TrimSpace(q.Get("uid")) != "" {
 		h.Set(uidCompatHeader, "true")
+	}
+}
+
+// stampEnvCompat sets the compat header when the client sent a
+// trimmed non-empty ?env= (accepted-but-ignored; the key's bound env
+// wins). Absent/empty/blank sends no header. The value is never logged.
+func stampEnvCompat(h http.Header, q url.Values) {
+	if strings.TrimSpace(q.Get("env")) != "" {
+		h.Set(envCompatHeader, "true")
 	}
 }
 
@@ -568,10 +587,11 @@ func setCORS(re *core.RequestEvent) {
 	re.Response.Header().Set("Access-Control-Allow-Origin", corsOrigin())
 }
 
-// getConfig handles GET /api/v1/env/:env/config.
+// getConfig handles GET /api/v1/env/:env/config and the key-only alias.
 // Order: CORS stamp -> 401 (key) -> 404 (env) -> 401 (env scope) ->
 // 429 (rate) -> 400/414 (attrs) -> 200 empty (no release) -> 304
 // (etag match) -> 200. Key+resolve+429 via ingest.RequireKeyEnv.
+// A client ?env= query value of any shape is accepted-but-ignored.
 func getConfig(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	setCORS(re)
@@ -582,8 +602,12 @@ func getConfig(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-
+	// The ?env= compat stamp runs before any request-specific validation
+	// so malformed ?b=/attrs still carry the header on their 400/414
+	// (the stamp only reads the query, never the validated values).
 	q := re.Request.URL.Query()
+	stampEnvCompat(re.Response.Header(), q)
+
 	country := identity.CountryFromHeadersWith(re.Request.Header, limits.GetConfig().CountryHeaders)
 	parsed, perr := ParseBucket(q)
 	if perr != nil {

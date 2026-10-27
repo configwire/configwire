@@ -24,10 +24,22 @@ Conventions used below:
 - Admin paths use superuser auth (`Authorization: <token>`, bare, Bearer optional).
 - `Ref` cites the handler source that owns each shape.
 
-## 1. Fetch — `GET /api/v1/env/{env}/config`
+## 1. Fetch — `GET /api/v1/env/{env}/config` (canonical) + `GET /api/v1/config` alias
 
 Ref: `configwire/fetch/fetch.go` (`BuildContext`, `ParseBucket`,
-`MintBucket`, `EffectiveBucket`), route `:151`, preflight `:159`.
+`MintBucket`, `EffectiveBucket`).
+
+Dual-serve: the legacy `GET /api/v1/env/{env}/config` path is canonical
+(SDK-emitted, works against old and new servers). The key-only
+`GET /api/v1/config` alias serves the same handler with no `{env}`
+segment (env resolves purely from the SDK key). A client-sent `?env=`
+query value of any shape is accepted-but-ignored (never `400`/`401`/`404`
+from it); a trimmed non-empty `?env=` stamps `X-CW-Deprecated-env: true`
+on the response, empty equals absent (no header). The value is never
+logged. This asymmetry is deliberate: the `?env=` stamp runs before
+input validation (so it is present on `400`s), while the
+`?userHash=`/`?uid=` stamps run after validation (so they are lost on
+`400`s); the stream alias never stamps.
 
 Identity is bucket-only: bucketing uses the stable `?b=` bucket
 (`0`-`9999`, canonical plain int string, see §1e).
@@ -61,11 +73,12 @@ valid `?b=` or a fresh mint, never empty on fetch) — there is no
 Auth/env order: CORS stamp then 401 (key) then 404 (unknown env slug)
 then 401 (key not scoped to this env) then 429 (rate) then 400/414
 (attrs) then 200 (empty release) then 304/200.
-Ref: `configwire/fetch/fetch.go:559-562`.
+Ref: `configwire/fetch/fetch.go` (`getConfig`).
 
 Multi-project slugs: the env is resolved deterministically from the
 key's env record (the key's env IS the env), so a slug shared by
-several projects can never misroute on SDK paths. Admin paths take an
+several projects can never misroute on SDK paths. Key-only aliases
+carry no slug and resolve purely from the key. Admin paths take an
 optional `?project=<projectId>` qualifier; a slug shared by 2+
 projects without it then `400` (ambiguous, names the collision),
 while unambiguous slugs keep working without it. Ref:
@@ -84,7 +97,8 @@ while unambiguous slugs keep working without it. Ref:
 - `fetchAt`: server time, RFC3339Nano.
 - Gzip when the client sends `Accept-Encoding: gzip`. Ref: `:137`.
 - CORS `Access-Control-Allow-Origin: *` by default, or `CONFIGWIRE_CORS_ORIGIN` when set. Ref: `:128-133,440-442,449-450`.
-- `OPTIONS /api/v1/env/{env}/config` answers `204` with `Allow-Methods`, `Allow-Headers`, `Max-Age: 86400`. Ref: `:141-150`.
+- `OPTIONS /api/v1/env/{env}/config` and `OPTIONS /api/v1/config`
+  answer `204` with `Allow-Methods`, `Allow-Headers`, `Max-Age: 86400`.
 
 ### 1b. Empty release (env has no release row yet) — `200`, never 404
 
@@ -410,14 +424,23 @@ existing `RegisterHook` (`OnRecordAfterCreateSuccess` on
 `releases`) emits one `config_update` frame to the DEST env's
 subscribers. Ref: `configwire/stream/stream.go:RegisterHook`.
 
-## 4. Events ingest — `POST /api/v1/env/{env}/events`
+## 4. Events ingest — `POST /api/v1/env/{env}/events` (canonical) + `POST /api/v1/events` alias
 
-Ref: `configwire/ingest/handler.go:74-76` (order), `configwire/ingest/ingest.go:132-169` (body).
+Ref: `configwire/ingest/handler.go` (order), `configwire/ingest/ingest.go` (body).
+
+Dual-serve: the legacy `POST /api/v1/env/{env}/events` path is canonical
+(SDK-emitted, works against old and new servers). The key-only
+`POST /api/v1/events` alias serves the same handler with no `{env}`
+segment (env resolves purely from the SDK key). A client-sent `?env=`
+query value of any shape is accepted-but-ignored (never `400`/`401`/`404`
+from it); a trimmed non-empty `?env=` stamps `X-CW-Deprecated-env: true`
+on the response, empty equals absent (no header). The value is never
+logged.
 
 Order: 401 (key) then 404 (unknown env slug) / 400 (ambiguous slug,
 key-less callers only) / 401 (env-scope mismatch) then 429 (rate)
 then 400/413 (body) then 202.
-Ref: `configwire/ingest/handler.go:92-102`.
+Ref: `configwire/ingest/handler.go` (`postEvents`).
 
 Request:
 
@@ -608,9 +631,17 @@ Success `200`:
   flag ID (resolved once, never re-resolved per row/bucket), so
   renamed/orphaned flags keep their history.
 
-## 6. Stream — `GET /api/v1/env/{env}/stream`
+## 6. Stream — `GET /api/v1/env/{env}/stream` (canonical) + `GET /api/v1/stream` alias
 
 Ref: `configwire/stream/stream.go` (handler + hook), `configwire/stream/hub.go` (hub).
+
+Dual-serve: the legacy `GET /api/v1/env/{env}/stream` path is canonical
+(SDK-emitted, works against old and new servers). The key-only
+`GET /api/v1/stream` alias serves the same handler with no `{env}`
+segment (env resolves purely from the SDK key). A client-sent `?env=`
+query value of any shape is accepted-but-ignored (never `400`/`401`/`404`
+from it; no compat header is stamped on this path). The value is never
+logged.
 
 Production endpoint, always on (no feature gate). Real-key auth via
 `ingest.RequireSDKKey` plus env-scope check, same order as

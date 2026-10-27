@@ -150,6 +150,52 @@ func requestWithRecorder(app core.App, full string) (*core.RequestEvent, *httpte
 	return re, rec
 }
 
+// TestRequireKeyEnvAliasStorageError500 pins that a storage failure on
+// the key-only alias path reads as an outage (500, retryable), never as
+// an unknown env (404, which would send operators rotating keys during
+// an outage). Technique mirrors TestRequireSDKKeyDBError503's fixture
+// sabotage (plus the DROP TABLE precedent in account_test.go): the key
+// row stays valid (sdk_keys intact, so key auth succeeds) while the
+// environments table is dropped, so env resolution fails with a storage
+// error rather than sql.ErrNoRows. The dangling-key 404 case stays
+// pinned separately by TestRequireKeyEnvAliasDanglingKeyEnvIs404.
+func TestRequireKeyEnvAliasStorageError500(t *testing.T) {
+	app := lookupTestApp(t)
+	ResetKeyCache()
+	defer ResetKeyCache()
+
+	envs := core.NewBaseCollection("environments")
+	if err := app.Save(envs); err != nil {
+		t.Fatalf("save environments collection: %v", err)
+	}
+	envRec := core.NewRecord(envs)
+	if err := app.Save(envRec); err != nil {
+		t.Fatalf("save env record: %v", err)
+	}
+	const good = "cw-alias-500-0001"
+	seedKey(t, app, good, envRec.Id, false)
+	ResetKeyCache()
+
+	if _, err := app.DB().NewQuery("DROP TABLE environments").Execute(); err != nil {
+		t.Fatalf("drop environments table: %v", err)
+	}
+	for name, kind := range map[string]KeyEnvKind{
+		"fetch": KindFetch, "ingest": KindIngest, "stream": KindStream,
+	} {
+		re, rec := requestWithRecorder(app, good)
+		_, _, err := RequireKeyEnv(re, kind)
+		if !errors.Is(err, ErrKeyResponded) {
+			t.Errorf("%s: storage error must yield ErrKeyResponded, got %v", name, err)
+			continue
+		}
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("%s: storage error status = %d, want 500", name, rec.Code)
+		} else if body := rec.Body.String(); !strings.Contains(body, "internal error") || strings.Contains(body, "no such table") {
+			t.Errorf("%s: 500 body = %q, want generic text without driver detail", name, body)
+		}
+	}
+}
+
 // TestRequireSDKKeyDBError503 pins that a storage lookup failure reads
 // as an outage (503, retryable), never as a bad credential (401, which
 // would send operators rotating keys during an outage).

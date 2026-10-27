@@ -25,12 +25,25 @@ var module struct {
 // else empty). Spelling mirrors v0.1.9.
 const uidCompatHeader = "X-CW-Deprecated-uid"
 
+// envCompatHeader signals that a client-sent ?env= was
+// accepted-but-ignored: env resolves purely from the SDK key.
+const envCompatHeader = "X-CW-Deprecated-env"
+
 // stampUidCompat sets the compat header when the client sent a trimmed
 // non-empty ?uid= (accepted-but-ignored). Absent/empty/blank sends no
 // header.
 func stampUidCompat(re *core.RequestEvent) {
 	if strings.TrimSpace(re.Request.URL.Query().Get("uid")) != "" {
 		re.Response.Header().Set(uidCompatHeader, "true")
+	}
+}
+
+// stampEnvCompat sets the compat header when the client sent a trimmed
+// non-empty ?env= (accepted-but-ignored). Absent/empty/blank sends no
+// header. The value is never logged.
+func stampEnvCompat(re *core.RequestEvent) {
+	if strings.TrimSpace(re.Request.URL.Query().Get("env")) != "" {
+		re.Response.Header().Set(envCompatHeader, "true")
 	}
 }
 
@@ -101,6 +114,7 @@ func Register(se *core.ServeEvent) {
 	module.batcher.Start()
 	RegisterFlagCacheHooks(se.App)
 	se.Router.POST("/api/v1/env/{env}/events", postEvents)
+	se.Router.POST("/api/v1/events", postEvents)
 	se.App.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
 		module.batcher.Stop()
 		return e.Next()
@@ -122,7 +136,8 @@ func EnableWAL(app core.App) {
 }
 
 // Order: 401 (key) → 404 (env) / 400 (ambiguous slug) / 401 (scope) →
-// 429 (rate) → 400/413 (body) → 202.
+// 429 (rate) → 400/413 (body) → 202. A client ?env= query value of any
+// shape is accepted-but-ignored (never 400/401/404 from it).
 // Uses re.App for every request-scoped lookup (never a captured app).
 func postEvents(re *core.RequestEvent) error {
 	_, env, err := RequireKeyEnv(re, KindIngest)
@@ -132,6 +147,10 @@ func postEvents(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
+	// The ?env= compat stamp runs before body/bucket validation so
+	// malformed bodies and ?b= still carry the header on their 400/413
+	// (the stamp only reads the query, never the validated values).
+	stampEnvCompat(re)
 	body, aerr := readBody(re)
 	if aerr != nil {
 		return writeAPIError(re, aerr)
