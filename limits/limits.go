@@ -463,7 +463,7 @@ func canonicalAdminAllowedIPs(in []string) []string {
 		dropped = append(dropped, entry)
 	}
 	if len(dropped) > 0 {
-		blockLog.Warn("dropping %d invalid adminAllowedIPs entries (%s), keeping %d valid", len(dropped), strings.Join(dropped, ","), len(out))
+		blockLog.Warn("dropping %d invalid adminAllowedIPs entries, keeping %d valid", len(dropped), len(out))
 	}
 	if len(out) == 0 {
 		return []string{}
