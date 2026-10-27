@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Empty bodies -> 400 (BindBody alone would silently return nil);

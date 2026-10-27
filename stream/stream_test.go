@@ -12,9 +12,9 @@ import (
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/internal/testhelp"
 
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 )
 
 // streamTestApp boots a TestApp with the three collections getStream and

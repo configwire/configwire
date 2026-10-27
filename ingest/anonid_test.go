@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/identity"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // TestValidateBodyUserHashAcceptedButIgnored pins ignore+replace: a client

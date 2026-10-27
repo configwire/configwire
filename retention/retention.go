@@ -23,8 +23,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Defaults mirror purge.RawRetentionDays / purge.RollupRetentionDays:

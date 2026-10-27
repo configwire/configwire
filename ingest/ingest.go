@@ -53,12 +53,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/flagkey"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/logstore"
 	"github.com/configwire/configwire/logx"
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 const (

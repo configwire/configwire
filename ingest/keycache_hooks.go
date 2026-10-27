@@ -1,6 +1,6 @@
 package ingest
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // RegisterKeyCacheHooks evicts the process-local SDK-key fast cache when an
 // sdk_keys row changes. It binds OnRecordAfterUpdateSuccess /

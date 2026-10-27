@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // TooMany renders the 429 rate-limit response (Retry-After:1, JSON shape

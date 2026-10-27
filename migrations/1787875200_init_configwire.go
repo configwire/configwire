@@ -29,8 +29,8 @@ package migrations
 // incremental files run `migrate history-sync` to prune missing entries.
 
 import (
-	"github.com/pocketbase/pocketbase/core"
-	m "github.com/pocketbase/pocketbase/migrations"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	m "ganigeorgiev.com/pocketbase/pocketbase/migrations"
 )
 
 // Stable collection ids so relation fields can reference targets and the

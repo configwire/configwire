@@ -1,6 +1,6 @@
 package ingest
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // RegisterFlagCacheHooks evicts the process-local flag-ID cache when a
 // flags row changes. It binds OnRecordAfterCreateSuccess /

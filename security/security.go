@@ -16,7 +16,7 @@ package security
 import (
 	"fmt"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // hstsMaxAge is the opt-in Strict-Transport-Security max-age in seconds.

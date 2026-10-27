@@ -44,12 +44,12 @@ import (
 	"sync"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/logstore"
 	"github.com/configwire/configwire/logx"
 	"github.com/configwire/configwire/security"
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // Defaults allow the k6 load gate (100 rps fetch + 50 rps exposure)

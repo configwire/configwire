@@ -75,6 +75,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/identity"
 	"github.com/configwire/configwire/ingest"
@@ -83,10 +84,9 @@ import (
 	"github.com/configwire/configwire/logx"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/security"
-	"github.com/pocketbase/dbx"
 
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // MaxAttrsBytes bounds the raw ?attrs= parameter; longer -> 414.

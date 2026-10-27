@@ -6,7 +6,7 @@
 # Or: docker compose up --build
 # Or: docker build --build-arg GO_TAGS=no_ui -t configwire ./configwire
 # (strips the PocketBase admin UI at /_/ via upstream's built-in no_ui
-# tag: github.com/pocketbase/pocketbase/ui/embed_no_ui.go leaves
+# tag: ganigeorgiev.com/pocketbase/pocketbase/ui/embed_no_ui.go leaves
 # ui.DistDirFS nil so /_/ routes never register. Our Admin UI at /
 # (./pb_public) and all /api/* routes are unaffected — still copied below.)
 FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS builder

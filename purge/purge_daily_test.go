@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // TestEventDailyDeletePathIsBounded is the RED-before gate: the stale

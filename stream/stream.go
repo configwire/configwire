@@ -12,7 +12,7 @@ import (
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/security"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // maxStreamsPerKey caps concurrent SSE connections per SDK key (keyed by

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // StoredEvent is one validated event ready for persistence. It carries IDs,

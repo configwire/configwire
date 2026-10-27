@@ -22,9 +22,9 @@ package migrations
 // in-place copies cannot shift the cursor; a rerun converges.
 
 import (
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
-	m "github.com/pocketbase/pocketbase/migrations"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	m "ganigeorgiev.com/pocketbase/pocketbase/migrations"
 )
 
 // renamePageSize bounds one cursor page: one page = one short transaction.

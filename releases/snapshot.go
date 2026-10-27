@@ -71,9 +71,9 @@ import (
 	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/flagkey"
 
-	"github.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/dbx"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Flag key shape is enforced by flagkey.Check so the dry assemble

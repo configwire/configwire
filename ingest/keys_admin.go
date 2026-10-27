@@ -4,9 +4,9 @@ import (
 	"log"
 	"net/http"
 
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/internal/apireq"
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // mintKeyRequest is the admin key-minting body. Only env/fetchRps/

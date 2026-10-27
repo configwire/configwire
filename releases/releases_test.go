@@ -11,7 +11,7 @@ import (
 
 	"github.com/configwire/configwire/eval"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 func goodVariants() any {

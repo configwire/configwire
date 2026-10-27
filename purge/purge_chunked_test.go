@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // TestPurgeRawPathIsBounded is the RED-before gate: no load-all of the raw

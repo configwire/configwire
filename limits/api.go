@@ -7,8 +7,8 @@ import (
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Register loads persisted tunables (seeding the singleton row when

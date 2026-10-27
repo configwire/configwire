@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 	"github.com/configwire/configwire/releases"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
 )
 
 // envGuardTestApp boots a TestApp with the production hooks bound (the

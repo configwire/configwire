@@ -22,8 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/limits"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // TestAuthOrder_KeySeams pins the (prefix, verifier) lookup contract that 401s

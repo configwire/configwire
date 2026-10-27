@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // deniedEvent builds a RequestEvent missing the setup-token header, so

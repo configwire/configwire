@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/internal/testhelp"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // withSetupToken sets the package setupToken snapshot for the test and

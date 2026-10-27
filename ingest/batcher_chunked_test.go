@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/tests"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 )
 
 // flushTestApp wraps flushBenchApp (defined in batcher_bench_test.go);

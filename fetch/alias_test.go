@@ -16,10 +16,10 @@ import (
 	"strings"
 	"testing"
 
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/internal/testhelp"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
 )
 
 func fetchAliasTestApp(t *testing.T) *tests.TestApp {

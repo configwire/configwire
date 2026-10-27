@@ -9,7 +9,7 @@ import (
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/limits"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // KeyEnvKind selects which per-second rate-limit bucket RequireKeyEnv

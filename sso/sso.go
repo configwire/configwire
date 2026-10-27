@@ -48,7 +48,7 @@ import (
 	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/security"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Auth modes for CONFIGWIRE_AUTH_MODE (default ModeStandard).

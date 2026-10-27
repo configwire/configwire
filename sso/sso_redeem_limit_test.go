@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // callRedeemFromIP invokes postRedeem with an explicit client IP,

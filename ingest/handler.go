@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/identity"
 	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/logstore"
 	"github.com/configwire/configwire/logx"
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 var module struct {

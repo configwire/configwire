@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Values never logged.
