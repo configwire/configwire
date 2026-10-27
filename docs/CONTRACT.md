@@ -286,7 +286,7 @@ Ref: `:28-34`.
 
 Publish validation failures then `400`: empty project
 (`nothing to publish`), bad key shape (`^[A-Za-z_][A-Za-z0-9_.-]*$`,
-1-128 chars), bad flag type (must be
+1-128 chars, unified flagkey.MaxLen cap across publish/ingest/stats), bad flag type (must be
 `number|string|bool|json`), default or rule value not coercible to the
 flag type, bad rule condition shape (unknown field/op, missing value
 key, bare `custom`, empty or over-10 condition array, non-object array

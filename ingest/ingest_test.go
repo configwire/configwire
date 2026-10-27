@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/configwire/configwire/flagkey"
 )
 
 func TestHashUserKnownVector(t *testing.T) {
@@ -130,7 +132,7 @@ func TestValidateBodyFlagRules(t *testing.T) {
 		t.Fatalf("missing flag must decode to empty, got %+v", events)
 	}
 	over := ev("exposure")
-	over["flag"] = strings.Repeat("f", MaxFlagLen+1)
+	over["flag"] = strings.Repeat("f", flagkey.MaxLen+1)
 	if _, aerr := ValidateBody(body(t, []any{over})); aerr == nil || aerr.Status != 400 {
 		t.Fatalf("over-limit flag must be 400, got %v", aerr)
 	}
@@ -140,9 +142,9 @@ func TestValidateBodyFlagRules(t *testing.T) {
 		t.Fatalf("NUL flag must be 400, got %v", aerr)
 	}
 	atCap := ev("exposure")
-	atCap["flag"] = strings.Repeat("f", MaxFlagLen)
+	atCap["flag"] = strings.Repeat("f", flagkey.MaxLen)
 	if _, aerr := ValidateBody(body(t, []any{atCap})); aerr != nil {
-		t.Fatalf("flag at exactly MaxFlagLen must pass, got %v", aerr)
+		t.Fatalf("flag at exactly flagkey.MaxLen must pass, got %v", aerr)
 	}
 	unknown := ev("exposure")
 	unknown["flag"] = "never_defined_flag"

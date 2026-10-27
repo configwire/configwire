@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +24,7 @@ import (
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/eval"
 	"github.com/configwire/configwire/fetch"
+	"github.com/configwire/configwire/flagkey"
 	"github.com/configwire/configwire/ingest"
 	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/logstore"
@@ -158,15 +158,8 @@ func setStaticCacheHeaders(re *core.RequestEvent) {
 	}
 }
 
-var flagKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
-
-const maxFlagKeyLength = 128
-
 func checkFlagKey(key string) error {
-	if len(key) == 0 || len(key) > maxFlagKeyLength || !flagKeyPattern.MatchString(key) {
-		return errors.New("invalid flag key: must match ^[A-Za-z_][A-Za-z0-9_.-]*$ and be 1-128 chars")
-	}
-	return nil
+	return flagkey.Check(key)
 }
 
 // checkRuleRegexConditions validates regex conditions at rule write time

@@ -8,8 +8,8 @@
 //
 // SINCE GRAMMAR: ?since=<N>d (days), default 7d when absent, clamped to a
 // max of 90d. Malformed values (abc, -5d, 0d, 7h, bare numbers) -> 400.
-// FLAG FILTER: ?flag=<key> scopes counts to one flag (max 64 chars,
-// longer -> 400); absent/empty stays env-wide. The verbatim key is
+// FLAG FILTER: ?flag=<key> scopes counts to one flag (max flagkey.MaxLen
+// chars, longer -> 400); absent/empty stays env-wide. The verbatim key is
 // resolved once per request to the stored flag record ID scoped to the
 // env's project (key + project, never global key) and the ID — never
 // the verbatim key — is what rows/buckets are matched against, so
@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/configwire/configwire/envresolve"
+	"github.com/configwire/configwire/flagkey"
 	"github.com/configwire/configwire/purge"
 	"github.com/configwire/configwire/releases"
 	"github.com/configwire/configwire/retention"
@@ -50,8 +51,8 @@ const (
 	DefaultSinceDays = 7
 	// MaxSinceDays clamps large ?since= values (e.g. 400d -> 90d).
 	MaxSinceDays = 90
-	// MaxFlagLen caps ?flag= length; longer values -> 400.
-	MaxFlagLen = 64
+	// Flag keys are bounded by flagkey.MaxLen, shared with publish and
+	// ingest so a published flag is always stats-queryable.
 )
 
 // maxSinceDays returns the active ?since= clamp from the retention
@@ -97,11 +98,11 @@ func errBadSince() error {
 
 // ParseFlag validates the ?flag= query value purely (no I/O), so it is
 // unit-testable. "" -> "" (no filter, env-wide). Otherwise the verbatim
-// string (no trimming/normalization); longer than MaxFlagLen -> error,
+// string (no trimming/normalization); longer than flagkey.MaxLen -> error,
 // which the handler maps to 400.
 func ParseFlag(raw string) (string, error) {
-	if len(raw) > MaxFlagLen {
-		return "", &sinceError{msg: "invalid flag: must be at most 64 characters."}
+	if len(raw) > flagkey.MaxLen {
+		return "", &sinceError{msg: fmt.Sprintf("invalid flag: must be at most %d characters.", flagkey.MaxLen)}
 	}
 	return raw, nil
 }

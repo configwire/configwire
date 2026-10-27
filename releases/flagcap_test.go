@@ -3,7 +3,7 @@ package releases
 // Unlimited-flags characterization: no per-project flag cap exists on
 // any path. The publish gate (ValidateSnapshot below) must accept flag
 // counts at, just above, and well above the retired per-project cap.
-// Key-shape (1-128, regex), type, and weight validations are unchanged
+// Key-shape (1-128 per flagkey.MaxLen, regex), type, and weight validations
 // and stay pinned by releases_test.go.
 
 import (

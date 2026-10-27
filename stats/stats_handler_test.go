@@ -2,6 +2,7 @@ package stats
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+
+	"github.com/configwire/configwire/flagkey"
 )
 
 // flagIgnoranceApp builds a TestApp with the five collections getStats
@@ -328,12 +331,12 @@ func TestGetStatsFiltersByFlag(t *testing.T) {
 		t.Errorf("unknown echo.flag = %v, want unknown_flag_xyz", got)
 	}
 
-	// Over-long flag: ParseFlag rejects >64 chars, which the handler
-	// maps to 400 (BadRequestError). callStats would Fatalf on the
-	// returned error, so invoke getStats directly and assert the error.
-	longFlag := strings.Repeat("f", MaxFlagLen+1)
+	// Over-long flag: ParseFlag rejects >flagkey.MaxLen chars, which the
+	// handler maps to 400 (BadRequestError). callStats would Fatalf on
+	// the returned error, so invoke getStats directly and assert the error.
+	longFlag := strings.Repeat("f", flagkey.MaxLen+1)
 	if _, err := ParseFlag(longFlag); err == nil {
-		t.Fatalf("ParseFlag(65 chars): expected error, got nil")
+		t.Fatalf("ParseFlag(%d chars): expected error, got nil", flagkey.MaxLen+1)
 	}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/env/dev/stats?since=7d&flag="+longFlag, nil)
@@ -343,7 +346,7 @@ func TestGetStatsFiltersByFlag(t *testing.T) {
 	re.Response = rec
 	if err := getStats(re); err == nil {
 		t.Errorf("getStats over-long flag: expected 400 error, got nil")
-	} else if !strings.Contains(err.Error(), "at most 64") {
+	} else if !strings.Contains(err.Error(), fmt.Sprintf("at most %d", flagkey.MaxLen)) {
 		t.Errorf("getStats over-long flag error = %q, want flag length cap", err.Error())
 	}
 }

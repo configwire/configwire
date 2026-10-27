@@ -53,6 +53,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/configwire/configwire/flagkey"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/logstore"
 	"github.com/configwire/configwire/logx"
@@ -71,8 +72,8 @@ const (
 	MaxEventBytes = 64 << 10
 	// MaxVariantLen bounds variant names in runes (chars); over-limit → 400.
 	MaxVariantLen = 64
-	// MaxFlagLen bounds flag keys in runes (chars); over-limit → 400.
-	MaxFlagLen = 64
+	// Flag keys are bounded by flagkey.MaxLen (shared with publish and
+	// stats so a published flag is always ingestible); over-limit → 400.
 	// MaxUserHashLen bounds opaque user hashes in runes (chars); over-limit → 400.
 	MaxUserHashLen = 128
 	// MaxFutureSkew tolerates clock skew for future ts; beyond → 400.
@@ -138,7 +139,7 @@ var forbiddenEventKeys = map[string]struct{}{
 // ValidateBody parses and validates a request body purely (no I/O), so it is
 // unit-testable. It enforces: non-empty JSON with an "events" array,
 // 1..MaxBatchEvents items, per-event ≤ MaxEventBytes, kind ∈
-// {fetch,exposure}, optional flag ≤ MaxFlagLen runes with no NUL byte,
+// {fetch,exposure}, optional flag ≤ flagkey.MaxLen runes with no NUL byte,
 // no raw "ip" or PII/device-identifier keys (case-insensitive; body
 // userId in any casing is accepted-but-ignored, never stored or logged,
 // never rejects), parseable ts. A client body "userHash" key is accepted (length/NUL
@@ -228,8 +229,8 @@ func validateRawEvent(raw json.RawMessage) (EventIn, *apiError) {
 	// resolves it against the flags collection scoped to the env's
 	// project (key + project) before enqueue, storing the record ID, or
 	// leaving the flag relation unset for unknown keys.
-	if len([]rune(r.Flag)) > MaxFlagLen {
-		return ev, badRequest("flag too long: max 64 chars.")
+	if len([]rune(r.Flag)) > flagkey.MaxLen {
+		return ev, badRequest(fmt.Sprintf("flag too long: max %d chars.", flagkey.MaxLen))
 	}
 	if len([]rune(r.Variant)) > MaxVariantLen {
 		return ev, badRequest("variant too long: max 64 chars.")
