@@ -178,6 +178,11 @@ jobs:
             # expand to the full string on pre-releases.
             type=semver,pattern=v{{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
 
+            # Floating rc tracks the latest release candidate, so pushing
+            # v0.2.0-rc.6 also moves v0.2.0-rc to it. Prerelease only:
+            # without the guard a stable v0.2.0 would also claim v0.2.0-rc.
+            type=semver,pattern=v{{major}}.{{minor}}.{{patch}}-rc,enable=${{ contains(github.ref_name, '-rc.') }}
+
             # Only stable versions update latest.
             # v1.2.3      -> latest
             # v1.2.3-rc.1 -> no latest
