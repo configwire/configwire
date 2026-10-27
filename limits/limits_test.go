@@ -194,7 +194,8 @@ func TestCheckIPEmptyIPSharesBucket(t *testing.T) {
 
 // TestCheckIPAdminAllowlist pins the admin-path allowlist gate: an
 // allowed client IP passes /api/v1/admin/* while a denied one is
-// blocked, independent of the global rate budget.
+// blocked (403 path), and allowlisted callers additionally consume the
+// global per-IP budget (over-budget → 429 path).
 func TestCheckIPAdminAllowlist(t *testing.T) {
 	newAdminEvent := func(remote string) *core.RequestEvent {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/limits", nil)
@@ -221,6 +222,20 @@ func TestCheckIPAdminAllowlist(t *testing.T) {
 	}
 	if !IsAdminDenied(newAdminEvent("203.0.113.9:1234")) {
 		t.Fatal("allowlist-denied admin request must classify as admin-denied (403, not 429)")
+	}
+	// Allowlisted admin callers consume the global per-IP budget: with a
+	// small bucket the first hits pass, then over-budget hits block via
+	// the 429 path (not admin-denied, so the middleware renders 429).
+	resetForTest(Config{GlobalRps: 2, Burst: 2, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: []string{"1.2.3.4"}})
+	if !CheckIP(newAdminEvent("1.2.3.4:1234")) || !CheckIP(newAdminEvent("1.2.3.4:1234")) {
+		t.Fatal("first two allowlisted admin requests should pass")
+	}
+	over := newAdminEvent("1.2.3.4:1234")
+	if CheckIP(over) {
+		t.Fatal("third admin request in the same window should be rate-limited")
+	}
+	if IsAdminDenied(over) {
+		t.Fatal("rate-limited (not allowlist-denied) admin request must not classify as admin-denied")
 	}
 }
 
@@ -281,9 +296,10 @@ func TestAllowFetchIngest(t *testing.T) {
 
 // TestAdminAllowlist pins the allowlist semantics: empty allows any IP
 // (including ""), exact IPs and CIDRs (v4 + v6) match, non-matches deny,
-// and an unparseable client IP denies when the list is non-empty. There
-// is no admin req/s rate limiting: repeated calls from an allowed IP
-// always pass.
+// and an unparseable client IP denies when the list is non-empty.
+// IsAdminIPAllowed/CheckAdmin are pure allowlist checks with no budget;
+// CheckIP additionally enforces the global per-IP budget on admin paths
+// (pinned below with a small bucket).
 func TestAdminAllowlist(t *testing.T) {
 	// Empty allowlist = allow all.
 	resetForTest(Config{GlobalRps: 200, Burst: 400, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: nil})
@@ -318,11 +334,19 @@ func TestAdminAllowlist(t *testing.T) {
 			t.Errorf("CheckAdmin should deny %q", ip)
 		}
 	}
-	// No admin req/s limiting: an allowed IP never exhausts a budget.
-	for i := 0; i < 50; i++ {
-		if !CheckAdmin(adminEvent("1.2.3.4")) {
-			t.Fatalf("allowed admin IP should never be rate-limited (hit %d)", i+1)
-		}
+	// CheckIP enforces the global per-IP budget on admin paths: with a
+	// small bucket the first hits pass, then over-budget hits block via
+	// the 429 path (not admin-denied).
+	resetForTest(Config{GlobalRps: 2, Burst: 2, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: []string{"1.2.3.4"}})
+	if !CheckIP(adminEvent("1.2.3.4")) || !CheckIP(adminEvent("1.2.3.4")) {
+		t.Fatal("first two allowlisted admin requests should pass")
+	}
+	over := adminEvent("1.2.3.4")
+	if CheckIP(over) {
+		t.Fatal("third admin request in the same window should be rate-limited")
+	}
+	if IsAdminDenied(over) {
+		t.Fatal("rate-limited admin request must not classify as admin-denied")
 	}
 }
 
@@ -506,9 +530,9 @@ func TestCheckIPCollectionsAllowlist(t *testing.T) {
 }
 
 // TestCheckIPCollectionsKeepsRateLimit pins that allowed data-API
-// callers still consume the global per-IP budget (unlike
-// /api/v1/admin/*, which is allowlist-only): superuser login keeps
-// brute-force protection when the allowlist is empty.
+// callers still consume the global per-IP budget (like all other
+// allowlisted admin paths): superuser login keeps brute-force protection
+// when the allowlist is empty.
 func TestCheckIPCollectionsKeepsRateLimit(t *testing.T) {
 	resetForTest(Config{GlobalRps: 2, Burst: 2, FetchRps: 100, IngestRps: 50, AdminAllowedIPs: nil})
 	newLoginEvent := func() *core.RequestEvent {

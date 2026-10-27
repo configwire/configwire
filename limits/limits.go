@@ -540,15 +540,6 @@ func isBackupFileTokenDownload(re *core.RequestEvent) bool {
 	return re.Request.URL.Query().Has("token")
 }
 
-// isCollectionsPath reports whether path hits the PocketBase data API.
-// Data-API requests pass the allowlist check but additionally consume a
-// global per-IP token (unlike /api/v1/admin/*, which is allowlist-only by
-// contract), so superuser auth endpoints keep brute-force rate limiting
-// even when the allowlist is empty (allow-all).
-func isCollectionsPath(path string) bool {
-	return strings.HasPrefix(path, "/api/collections/")
-}
-
 // IsAdminDenied reports whether re is an admin-path request whose client
 // IP is rejected by the allowlist (wiring helper to pick 403 vs 429).
 // Backup file-token downloads are exempt (public per-file token route).
@@ -709,8 +700,9 @@ var blockLog = logx.New("limits")
 // Module state: atomic config under RWMutex plus two dedicated limiters
 // (ip, key); the key limiter ids are namespaced per traffic class
 // ("fetch:"+hash / "ingest:"+hash), so fetch/ingest budgets stay
-// logically independent without consuming each other. Admin paths use no
-// limiter: they are gated by the AdminAllowedIPs allowlist instead.
+// logically independent without consuming each other. Allowlisted admin
+// paths consume one global per-IP token (same budget as other /api/*);
+// the AdminAllowedIPs allowlist additionally gates them (denied → 403).
 var (
 	cfgMu      sync.RWMutex
 	current    = clampConfig(loadDefaultsFromEnv())
@@ -954,11 +946,11 @@ func CheckAdmin(re *core.RequestEvent) bool {
 // /api/settings*) are gated by the IP allowlist (denied callers get the
 // 403 via IsAdminDenied/BlockAdmin), except backup file-token downloads
 // (/api/backups/{key}?token=) which carry a per-file token instead of
-// superuser auth and bypass the allowlist;
-// /api/collections/* additionally consumes one global per-IP token so
-// superuser login keeps rate limiting; other /api/* consumes one global
-// per-IP token. Pure check — the caller renders 403 (admin-denied) or
-// 429 (global) via BlockAdmin / BlockIP.
+// superuser auth and bypass the allowlist; allowlisted admin callers
+// additionally consume one global per-IP token so brute-force protection
+// holds even when the allowlist is empty (allow-all); other /api/*
+// consumes one global per-IP token. Pure check — the caller renders 403
+// (admin-denied) or 429 (global) via BlockAdmin / BlockIP.
 func CheckIP(re *core.RequestEvent) bool {
 	if !strings.HasPrefix(re.Request.URL.Path, "/api/") {
 		return true
@@ -972,13 +964,15 @@ func CheckIP(re *core.RequestEvent) bool {
 		if !allowed {
 			return false
 		}
-		if isCollectionsPath(re.Request.URL.Path) {
-			if ip == "" {
-				ip = "unknown"
-			}
-			return AllowIP(ip)
+		// Allowlisted admin paths additionally consume one global per-IP
+		// token, same as the collections branch: the allowlist picks 403
+		// vs pass, the global bucket picks pass vs 429. Denied IPs return
+		// above without touching the bucket, so IsAdminDenied still
+		// reports them as admin-denied (403 takes precedence over 429).
+		if ip == "" {
+			ip = "unknown"
 		}
-		return true
+		return AllowIP(ip)
 	}
 	ip := ClientIP(re)
 	// Empty IP shares one "unknown" bucket instead of fail-opening:
@@ -1017,10 +1011,11 @@ func BlockAdmin(re *core.RequestEvent) error {
 }
 
 // Middleware adapts the IP check to a PocketBase router BindFunc: non-API
-// paths and allowed IPs call next; denied admin-path callers
+// paths and allowed under-budget IPs call next; denied admin-path callers
 // (/api/v1/admin/*, /api/collections/*, /api/backups*, /api/settings*)
-// auth (must be bound before auth-dependent routes), while over-budget
-// non-admin /api/* callers get the 429. Either renders before auth.
+// get the 403 WITHOUT reaching auth (must be bound before auth-dependent
+// routes), while over-budget callers get the 429. Either renders before
+// auth.
 // Usage (wiring layer): se.Router.BindFunc(func(re *core.RequestEvent) error {
 // return limits.Middleware(re.Next)(re) }) — or inline CheckIP with
 // IsAdminDenied to pick BlockAdmin vs BlockIP.
