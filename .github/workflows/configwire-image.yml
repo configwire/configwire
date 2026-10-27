@@ -158,6 +158,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Derive floating RC tag
+        id: float
+        run: |
+          ref="${GITHUB_REF_NAME:-}"
+          tag=""
+          case "$ref" in
+            v[0-9]*.[0-9]*.[0-9]*-rc.[0-9]*)
+              if printf '%s' "$ref" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'; then
+                tag="${ref%-rc.*}-rc"
+              fi
+              ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -179,9 +193,12 @@ jobs:
             type=semver,pattern=v{{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
 
             # Floating rc tracks the latest release candidate, so pushing
-            # v0.2.0-rc.6 also moves v0.2.0-rc to it. Prerelease only:
+            # v0.2.0-rc.7 also moves v0.2.0-rc to it. Prerelease only:
             # without the guard a stable v0.2.0 would also claim v0.2.0-rc.
-            type=semver,pattern=v{{major}}.{{minor}}.{{patch}}-rc,enable=${{ contains(github.ref_name, '-rc.') }}
+            # NOTE: docker/metadata-action semver patterns are a no-op on
+            # prereleases (only {{version}}/{{raw}} extend), so the float
+            # comes from steps.float as a raw tag instead.
+            type=raw,value=${{ steps.float.outputs.tag }},enable=${{ steps.float.outputs.tag != '' }}
 
             # Only stable versions update latest.
             # v1.2.3      -> latest
