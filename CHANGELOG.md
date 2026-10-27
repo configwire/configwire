@@ -3,7 +3,7 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
-## Unreleased
+## v0.2.0-rc.6 — 2026-10-27
 
 ### Added
 
@@ -12,6 +12,18 @@ All notable changes to the ConfigWire server (`configwire/`, image
 ### Changed
 
 - Migrations squashed: the pre-v0.2 history (`1787875200` init + `1790000000`..`1790000021`) is now a single baseline init equal to the v0.1.13 schema, with only the three v0.2 deltas (`1790000022` drop identity storage, `1790000023` rename `anonId` to `bucket`, `1790000024` server logs) on top. Fresh installs are unaffected; databases below v0.1.13 must upgrade to v0.1.13 first, and operators whose `_migrations` table references the deleted files run `migrate history-sync` once.
+- Flag-key bound unified at 128 via the shared `flagkey` package (`configwire/flagkey`, `configwire/main.go`, `configwire/releases/snapshot.go`, `configwire/ingest/ingest.go`, `configwire/stats/stats.go`): publish, ingest event bodies, and the stats `?flag=` filter all enforce the same `MaxLen=128` + `^[A-Za-z_][A-Za-z0-9_.-]*$` shape (matching the migration max), so a published flag is always ingestible and stats-queryable. Ingest/stats previously rejected over-long keys at a shorter bound; they now meet publish at 128 (`400` past it). Docs: `docs/CONTRACT.md` §publish.
+- PocketBase moved to its new home (`ganigeorgiev.com/pocketbase/*`, per `https://ganigeorgiev.com/pocketbase/pocketbase/releases`): all Go imports swap from `github.com/pocketbase/*` (both `configwire/` and `cloud/orchestrator/` modules) and the version bumps `v0.40.5` → `v0.41.0` (`dbx` `v1.12.0` → `v1.13.0`, `ozzo-validation/v4` `v4.3.0` → `v4.4.1`, plus `fexpr` `v0.6.0` → `v0.7.0` and new `tygoja`, all indirect). No API or wire change; `go build` + `go vet` + `go test ./...` green in both modules.
+
+### Removed
+
+- Retention Settings card removed from the Admin UI (`pb_public/js/retention.js`, `index.html`, `js/router.js`, `js/boot.js`): the Settings page no longer renders a retention editor. The superuser `GET/PUT /api/v1/admin/retention` API and the `CONFIGWIRE_RAW_RETENTION_DAYS` / `CONFIGWIRE_ROLLUP_RETENTION_DAYS` boot envs are unchanged.
+
+### Fixed
+
+- Admin IP allowlist now covers the PocketBase-native superuser surfaces (`configwire/limits/limits.go` `IsAdminPath`): `/api/backups*` and `/api/settings*` join `/api/v1/admin/*` + `/api/collections/*` behind the allowlist, so a superuser token alone no longer grants backup/settings access from a denied IP. The one route without superuser auth — the per-file download `GET /api/backups/{key}?token=` (built as `backupDownloadPath`) — bypasses the allowlist via `isBackupFileTokenDownload` (GET-only; any other method with `?token=` stays allowlist-gated, denied IPs answer `403`).
+- Allowlisted admin paths consume one global per-IP token (`configwire/limits/limits.go` `CheckIP`): same budget as other `/api/*`, so brute-force protection holds even when the allowlist is empty (allow-all). `403` allowlist-denials take precedence over `429` (denied IPs return before touching the bucket); the now-redundant collections-only branch is removed.
+- Fail-closed allowlist parsing (`configwire/limits/limits.go` `canonicalAdminAllowedIPs`): invalid IPs/CIDRs are dropped individually with a count-only warn log (no entry echoed, so a pasted secret never lands in stderr) while valid entries stay enforced — one bad env/DB entry can never silently convert the whole list to allow-all. Empty input, or input with no valid entries after filtering, stays empty (allow-all).
 
 ## v0.2.0-rc.4 — 2026-10-26
 
