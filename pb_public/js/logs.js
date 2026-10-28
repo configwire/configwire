@@ -6,7 +6,7 @@
 
   var MIN_DAYS = 1;
   var MAX_DAYS = 1825;
-  var PER_PAGE = 50;
+  var PER_PAGE = 10;
 
   function isValidLogDays(n) {
     return typeof n === "number" && isFinite(n) &&
@@ -225,9 +225,10 @@
   }
 
   function clearAllLogFilters() {
+    var keepPerPage = (CW.state.logFilters && CW.state.logFilters.perPage) || PER_PAGE;
     CW.state.logFilters = {
       level: "", src: "", project: "", key: "",
-      status: "", reason: "", limiter: "", page: 1
+      status: "", reason: "", limiter: "", page: 1, perPage: keepPerPage
     };
     syncLogFilterInputs();
     return reloadLogsFirstPage();
