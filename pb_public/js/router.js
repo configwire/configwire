@@ -57,7 +57,7 @@
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
     var links = nav.querySelectorAll("a");
-    var mods = ["flags", "releases", "publish", "keys", "stats", "project-settings"];
+    var mods = ["flags", "releases", "keys", "stats", "project-settings"];
     var settingsLink = CW.$("settings-nav-link");
     var logsLink = CW.$("logs-nav-link");
     var logoutBtn = CW.$("logout-btn");

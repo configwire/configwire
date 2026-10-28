@@ -199,7 +199,7 @@ function stubApiMut(calls) {
 function sidebar() {
   var nav = el("sidebar-nav");
   var links = [];
-  for (var i = 0; i < 6; i++) {
+  for (var i = 0; i < 5; i++) {
     var a = h.document.createElement("a");
     a.attrs = {};
     a.setAttribute = function (k, v) { this.attrs[k] = v; };
@@ -224,8 +224,8 @@ test("syncSidebar: home hides nav, detail shows project hrefs", function () {
   h.CW.syncSidebar();
   assert.equal(sb.nav.style.display, "");
   assert.equal(sb.links[0].attrs.href, "#/p/p1#flags");
-  assert.equal(sb.links[4].attrs.href, "#/p/p1#stats");
-  assert.equal(sb.links[5].attrs.href, "#/p/p1#project-settings");
+  assert.equal(sb.links[3].attrs.href, "#/p/p1#stats");
+  assert.equal(sb.links[4].attrs.href, "#/p/p1#project-settings");
   h.CW.state.view = "settings";
   h.CW.syncSidebar();
   assert.equal(el("settings-nav-link").attrs["aria-current"], "page");
