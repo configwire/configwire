@@ -96,12 +96,17 @@ func parseBucketCanonical(raw string) (string, *apiError) {
 // presented — never the full key). projectID is the env's project record
 // ID, appended as project=<id> (IDs never contain spaces, so the k=v
 // line stays parseable) so the log viewer can show the project name;
-// empty stays omitted. The message stays a single
+// empty stays omitted. Success lines skip the store (but keep the stderr
+// line) when the successLogs setting is off; rejections always persist.
+// The message stays a single
 // space-separated k=v line. Never pass full keys, tokens, emails, IPs,
 // buckets, or attrs. reqLog.Request keeps the same reason string.
 // Write errors are best-effort (swallowed, never retry-block the request).
 func acceptWrite(re *core.RequestEvent, reason string, status int, keyPrefix, projectID string) {
 	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
+	if !logstore.GetConfig().SuccessLogs {
+		return
+	}
 	msg := fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, reason, status)
 	if keyPrefix != "" {
 		msg += " key_prefix=" + keyPrefix

@@ -1381,14 +1381,14 @@ main {
 }
 
 /* ---- Log settings dialog (index.html #log-settings-dialog): flag /
-   * key-limits dialog idiom — compact labeled rows + right-aligned
-   * footer, no page-card limit-grid boxes. Renderer contract: every id
-   * below is stable (log-settings-form/log-enabled/log-maxdays/
-   * log-settings-cancel/log-settings-result). */
+ * key-limits dialog idiom — compact labeled rows + right-aligned
+ * footer, no page-card limit-grid boxes. Renderer contract: every id
+ * below is stable (log-settings-form/log-enabled/log-success/
+ * log-settings-card/log-maxdays/log-settings-cancel/log-settings-result). */
 #log-settings-form {
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: var(--space-4);
 }
 
 #log-settings-form>label {
@@ -1399,12 +1399,41 @@ main {
   width: 100%;
 }
 
-/* Capture-logs switch: exact copy of the #backup-s3-switch idiom
-   * (role=switch button + knob, aria-checked drives the fill), re-scoped
-   * to #log-enabled. Lives in the dialog header next to the close
-   * button. No new visual language. */
+.log-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 13px;
+  color: var(--text);
+}
 
-#log-enabled.log-switch {
+.log-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4);
+}
+
+.log-settings-card[hidden] {
+  display: none;
+}
+
+.log-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Log switches: exact copy of the #backup-s3-switch idiom
+ * (role=switch button + knob, aria-checked drives the fill), shared by
+ * the header capture switch (#log-enabled) and the in-form success
+ * switch (#log-success). No new visual language. */
+
+.log-switch {
   position: relative;
   width: 40px;
   height: 22px;
@@ -1416,7 +1445,7 @@ main {
   cursor: pointer;
 }
 
-#log-enabled .log-switch-knob {
+.log-switch .log-switch-knob {
   position: absolute;
   top: 2px;
   left: 2px;
@@ -1428,23 +1457,23 @@ main {
   transition: transform 160ms ease, background 160ms ease;
 }
 
-#log-enabled[aria-checked="true"] {
+.log-switch[aria-checked="true"] {
   border-color: rgba(94, 234, 212, 0.4);
   background: rgba(94, 234, 212, 0.12);
 }
 
-#log-enabled[aria-checked="true"] .log-switch-knob {
+.log-switch[aria-checked="true"] .log-switch-knob {
   transform: translateX(18px);
   background: var(--mint);
 }
 
-#log-enabled:focus-visible {
+.log-switch:focus-visible {
   outline: none;
   box-shadow: var(--ring);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #log-enabled .log-switch-knob {
+  .log-switch .log-switch-knob {
     transition: none;
   }
 }
@@ -1465,6 +1494,10 @@ main {
   margin: var(--space-2) 0 0;
   min-height: 1em;
   font-size: 13px;
+}
+
+#log-settings-result:empty {
+  display: none;
 }
 
 section[aria-labelledby="logs"] hr {

@@ -36,10 +36,16 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/types"
 )
 
-// Defaults mirror the intended operator history window: store on, 30d.
+// Defaults mirror the intended operator history window: store on, 30d,
+// success lines on.
 const (
 	DefaultEnabled = true
 	DefaultMaxDays = 30
+
+	// DefaultSuccessLogs keeps success lines (served/cached/accepted)
+	// in the store. When false, only rejections reach server_logs
+	// (stderr keeps every line either way).
+	DefaultSuccessLogs = true
 
 	// MinDays / MaxDays bound the knob (1d..1825d = 5yr max, same as
 	// retention).
@@ -57,15 +63,17 @@ const (
 
 // Settings carries the tunable log-store policy.
 type Settings struct {
-	Enabled bool `json:"enabled"`
-	MaxDays int  `json:"maxDays"`
+	Enabled     bool `json:"enabled"`
+	MaxDays     int  `json:"maxDays"`
+	SuccessLogs bool `json:"successLogs"`
 }
 
 // Defaults returns the code defaults (before env/DB overrides).
 func Defaults() Settings {
 	return Settings{
-		Enabled: DefaultEnabled,
-		MaxDays: DefaultMaxDays,
+		Enabled:     DefaultEnabled,
+		MaxDays:     DefaultMaxDays,
+		SuccessLogs: DefaultSuccessLogs,
 	}
 }
 
@@ -103,12 +111,13 @@ func loadDefaultsFromEnv() Settings {
 	c := Defaults()
 	c.Enabled = parseEnvBool("CONFIGWIRE_LOG_STORE_ENABLED", c.Enabled)
 	c.MaxDays = parseEnvInt("CONFIGWIRE_LOG_STORE_MAX_DAYS", c.MaxDays)
+	c.SuccessLogs = parseEnvBool("CONFIGWIRE_LOG_STORE_SUCCESS_LOGS", c.SuccessLogs)
 	return c
 }
 
-// ValidateSettings enforces 1..1825 on maxDays (enabled is a plain bool,
-// always valid). Violations are 400-style settingsErrors for the future
-// admin PUT path.
+// ValidateSettings enforces 1..1825 on maxDays (enabled/successLogs are
+// plain bools, always valid). Violations are 400-style settingsErrors
+// for the future admin PUT path.
 func ValidateSettings(c Settings) error {
 	if c.MaxDays < MinDays || c.MaxDays > MaxDays {
 		return &settingsError{msg: "invalid maxDays: must be 1..1825."}
@@ -211,6 +220,7 @@ func EnsureLoaded(app core.App) {
 		rec.Set("key", globalKey)
 		rec.Set("enabled", c.Enabled)
 		rec.Set("maxDays", c.MaxDays)
+		rec.Set("successLogs", c.SuccessLogs)
 		if err := app.Save(rec); err != nil {
 			log.Printf("logstore: failed to seed log_settings: %v", err)
 		}
@@ -222,6 +232,13 @@ func EnsureLoaded(app core.App) {
 	c.Enabled = rec.GetBool("enabled")
 	if v := rec.GetInt("maxDays"); v > 0 {
 		c.MaxDays = v
+	}
+	// successLogs defaults true, and GetBool cannot tell an explicit
+	// false from a missing (pre-migration) field — so only a collection
+	// that actually carries the field overrides the default. The
+	// migration backfills the row, making this a stale-schema guard.
+	if collection.Fields.GetByName("successLogs") != nil {
+		c.SuccessLogs = rec.GetBool("successLogs")
 	}
 	cfgMu.Lock()
 	current = clampSettings(c)
@@ -263,6 +280,7 @@ func upsertGlobalRow(app core.App, c Settings) error {
 	}
 	rec.Set("enabled", c.Enabled)
 	rec.Set("maxDays", c.MaxDays)
+	rec.Set("successLogs", c.SuccessLogs)
 	return app.Save(rec)
 }
 

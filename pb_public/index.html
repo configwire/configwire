@@ -639,8 +639,16 @@
           </div>
           <form id="log-settings-form" aria-label="Log settings">
             <p class="muted">When off, the server stops recording new entries.</p>
-            <label>Days kept <input id="log-maxdays" type="number" min="1" max="1825"></label>
-            <p class="muted">Log retention in days (1–1825).</p>
+            <div class="log-settings-card" id="log-settings-card">
+              <div class="log-settings-group">
+                <div class="log-switch-row"><span>Success lines</span><button type="button" id="log-success" class="log-switch" role="switch" aria-checked="true" aria-label="Success lines" title="Toggle success-line capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+                <p class="muted">When off, only rejections are recorded.</p>
+              </div>
+              <div class="log-settings-group">
+                <label>Days kept <input id="log-maxdays" type="number" min="1" max="1825"></label>
+                <p class="muted">Log retention in days (1–1825).</p>
+              </div>
+            </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Save</button>
               <button type="button" id="log-settings-cancel" class="btn ghost">Cancel</button>

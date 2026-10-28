@@ -16,7 +16,7 @@ import (
 // Register loads persisted tunables (seeding the singleton row when
 // absent) and mounts the superuser-only admin endpoints:
 //
-//	GET /api/v1/admin/log-settings -> {enabled,maxDays}
+//	GET /api/v1/admin/log-settings -> {enabled,maxDays,successLogs}
 //	PUT /api/v1/admin/log-settings -> validates maxDays 1..1825,
 //	    updates memory + upserts the log_settings row,
 //	    returns the same shape.
@@ -36,14 +36,16 @@ func Register(se *core.ServeEvent) {
 // logSettingsBody is the wire shape for GET responses and PUT requests.
 // Pointers keep absent/null (keep stored) distinct from explicit values.
 type logSettingsBody struct {
-	Enabled *bool `json:"enabled"`
-	MaxDays *int  `json:"maxDays"`
+	Enabled     *bool `json:"enabled"`
+	MaxDays     *int  `json:"maxDays"`
+	SuccessLogs *bool `json:"successLogs"`
 }
 
 func toSettingsBody(c Settings) map[string]any {
 	return map[string]any{
-		"enabled": c.Enabled,
-		"maxDays": c.MaxDays,
+		"enabled":     c.Enabled,
+		"maxDays":     c.MaxDays,
+		"successLogs": c.SuccessLogs,
 	}
 }
 
@@ -65,8 +67,9 @@ func putLogSettings(re *core.RequestEvent) error {
 	}
 	stored := GetConfig()
 	next := Settings{
-		Enabled: resolvePUTBool(stored.Enabled, req.Enabled),
-		MaxDays: resolvePUTInt(stored.MaxDays, req.MaxDays),
+		Enabled:     resolvePUTBool(stored.Enabled, req.Enabled),
+		MaxDays:     resolvePUTInt(stored.MaxDays, req.MaxDays),
+		SuccessLogs: resolvePUTBool(stored.SuccessLogs, req.SuccessLogs),
 	}
 	if err := ValidateSettings(next); err != nil {
 		return re.BadRequestError(err.Error(), nil)

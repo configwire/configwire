@@ -700,6 +700,7 @@
       else { var dlg = CW.$("log-settings-dialog"); if (dlg && dlg.open) dlg.close(); }
     });
     CW.on("log-enabled", "click", function () { if (CW.onLogEnabledSwitch) CW.onLogEnabledSwitch(); });
+    CW.on("log-success", "click", function () { if (CW.onLogSuccessSwitch) CW.onLogSuccessSwitch(); });
     CW.on("logs-filter-form", "submit", function (ev) {
       if (CW.filterLogs) return CW.filterLogs(ev);
       ev.preventDefault();

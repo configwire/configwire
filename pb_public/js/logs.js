@@ -25,14 +25,32 @@
     if (sw && sw.setAttribute) sw.setAttribute("aria-checked", on ? "true" : "false");
   }
 
+  function setLogSuccessSwitch(on) {
+    var sw = CW.$("log-success");
+    if (sw && sw.setAttribute) sw.setAttribute("aria-checked", on ? "true" : "false");
+  }
+
   function isLogEnabledSwitchOn() {
     var sw = CW.$("log-enabled");
     if (sw && sw.getAttribute) return sw.getAttribute("aria-checked") === "true";
     return currentVal("enabled", false);
   }
 
+  function isLogSuccessSwitchOn() {
+    var sw = CW.$("log-success");
+    if (sw && sw.getAttribute) return sw.getAttribute("aria-checked") === "true";
+    return currentVal("successLogs", true);
+  }
+
   function onLogEnabledSwitch() {
     setLogEnabledSwitch(!isLogEnabledSwitchOn());
+    syncLogSettingsBody();
+    if (CW.markFormDirty) CW.markFormDirty("log-settings-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("log-settings-form");
+  }
+
+  function onLogSuccessSwitch() {
+    setLogSuccessSwitch(!isLogSuccessSwitchOn());
     if (CW.markFormDirty) CW.markFormDirty("log-settings-form");
     else if (CW.refreshFormSubmit) CW.refreshFormSubmit("log-settings-form");
   }
@@ -40,8 +58,18 @@
   function setSettingsInputs(d) {
     if (!d) return;
     if (d.enabled != null) setLogEnabledSwitch(!!d.enabled);
+    if (d.successLogs != null) setLogSuccessSwitch(!!d.successLogs);
     var daysEl = CW.$("log-maxdays");
     if (daysEl && d.maxDays != null) daysEl.value = d.maxDays;
+    syncLogSettingsBody();
+  }
+
+  function syncLogSettingsBody() {
+    var card = CW.$("log-settings-card");
+    if (!card) return;
+    var hide = !isLogEnabledSwitchOn();
+    if (card.hidden != null) card.hidden = hide;
+    else if (card.style) card.style.display = hide ? "none" : "";
   }
 
   function renderLogSettings(data) {
@@ -99,6 +127,7 @@
     var enabled = isLogEnabledSwitchOn();
     var body = {
       enabled: enabled,
+      successLogs: isLogSuccessSwitchOn(),
       maxDays: numOr("log-maxdays", currentVal("maxDays", NaN))
     };
     var msg = validateLogSettings(body.maxDays);
@@ -580,7 +609,9 @@
 
   CW.renderLogSettings = renderLogSettings;
   CW.setLogEnabledSwitch = setLogEnabledSwitch;
+  CW.setLogSuccessSwitch = setLogSuccessSwitch;
   CW.onLogEnabledSwitch = onLogEnabledSwitch;
+  CW.onLogSuccessSwitch = onLogSuccessSwitch;
   CW.loadLogSettings = loadLogSettings;
   CW.saveLogSettings = saveLogSettings;
   CW.openLogSettingsDialog = openLogSettingsDialog;
