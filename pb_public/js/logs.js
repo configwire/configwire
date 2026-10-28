@@ -180,7 +180,8 @@
     if (pp > 200) pp = 200;
     return {
       level: lv, src: sc, page: pg, perPage: pp,
-      project: currentFilter("project", ""), key: currentFilter("key", ""),
+      project: currentFilter("project", ""), env: currentFilter("env", ""),
+      key: currentFilter("key", ""),
       status: currentFilter("status", ""), reason: currentFilter("reason", ""),
       limiter: currentFilter("limiter", "")
     };
@@ -195,7 +196,7 @@
     if (lv !== "") parts.push("level=" + encodeURIComponent(lv));
     var sc = String(f.src == null ? "" : f.src).replace(/^\s+|\s+$/g, "");
     if (sc !== "") parts.push("src=" + encodeURIComponent(sc));
-    var kinds = ["project", "key", "status", "reason", "limiter"];
+    var kinds = ["project", "env", "key", "status", "reason", "limiter"];
     for (var ki = 0; ki < kinds.length; ki++) {
       var kv = String(f[kinds[ki]] == null ? "" : f[kinds[ki]]).replace(/^\s+|\s+$/g, "");
       if (kv !== "") parts.push(kinds[ki] + "=" + encodeURIComponent(kv));
@@ -203,10 +204,11 @@
     return "/api/v1/admin/logs?" + parts.join("&");
   }
 
-  var LOG_FILTER_KINDS = ["level", "src", "project", "key", "status", "reason", "limiter"];
+  var LOG_FILTER_KINDS = ["level", "src", "project", "env", "key", "status", "reason", "limiter"];
 
   function logFilterKindLabel(kind) {
-    return kind === "project" ? "Project" : kind === "key" ? "Key" :
+    return kind === "project" ? "Project" : kind === "env" ? "Environment" :
+      kind === "key" ? "Key" :
       kind === "src" ? "Source" : kind === "status" ? "Status" :
       kind === "reason" ? "Reason" : kind === "limiter" ? "Limiter" :
       kind === "level" ? "Level" : kind;
@@ -216,6 +218,10 @@
     if (kind === "project") {
       var rec = projectByIdLocal(val);
       return rec ? (rec.name || rec.id) : val;
+    }
+    if (kind === "env") {
+      var erec = envByIdLocal(val);
+      return erec ? (erec.slug || erec.id) : val;
     }
     if (kind === "level") {
       var n = parseInt(val, 10);
@@ -256,7 +262,7 @@
   function clearAllLogFilters() {
     var keepPerPage = (CW.state.logFilters && CW.state.logFilters.perPage) || PER_PAGE;
     CW.state.logFilters = {
-      level: "", src: "", project: "", key: "",
+      level: "", src: "", project: "", env: "", key: "",
       status: "", reason: "", limiter: "", page: 1, perPage: keepPerPage
     };
     syncLogFilterInputs();
@@ -398,6 +404,39 @@
     return { id: p.projectId, name: p.projectId, missing: true };
   }
 
+  // Local env map for the logs viewer (CW.state.logEnvs, NOT scope's
+  // CW.state.envs which holds only the current project's envs — logs span
+  // projects). Best-effort preload alongside ensureLogScope: never rejects,
+  // so logs render even when the read fails.
+  function envByIdLocal(id) {
+    var list = (CW.state && CW.state.logEnvs) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === id) return list[i];
+    }
+    return null;
+  }
+
+  function ensureLogEnvs() {
+    var list = (CW.state && CW.state.logEnvs) || [];
+    if (list.length || !CW.apiAll) return Promise.resolve();
+    return CW.apiAll("/api/collections/environments/records?perPage=200").then(function (items) {
+      CW.state.logEnvs = (items || []).slice().sort(function (a, b) {
+        return (a.slug || "") < (b.slug || "") ? -1 : 1;
+      });
+    }, function () { /* best-effort: render without names */ });
+  }
+
+  // Resolve a display env from the item payload's env ID (columns only —
+  // the env ID is never in the message line). Rows with an empty env
+  // (old rows) yield no pill; unknown IDs fall back to the raw ID with
+  // the same missing-record styling as projectForLog.
+  function envForLog(envId) {
+    if (!envId) return null;
+    var rec = envByIdLocal(envId);
+    if (rec) return { id: envId, name: rec.slug || rec.id };
+    return { id: envId, name: envId, missing: true };
+  }
+
   function reasonClass(reason) {
     if (reason === "accepted" || reason === "served" || reason === "cached") return "is-ok";
     if (reason === "rate-limited") return "is-warn";
@@ -461,7 +500,7 @@
       '" data-f-val="' + CW.esc(val) + '" title="' + CW.esc(title) + '">' + CW.esc(label) + "</button>";
   }
 
-  function messageCellHtml(raw, src) {
+  function messageCellHtml(raw, src, envId) {
     var p = parseLogMessage(raw);
     if (!p.method && !p.path) {
       return '<div class="log-msg"><span class="log-raw">' + CW.esc(raw) + "</span></div>";
@@ -476,6 +515,12 @@
       var pcls = "log-chip log-project" + (proj.missing ? " is-missing" : "");
       var ptitle = proj.missing ? "Project record not found (deleted?)" : "Project";
       meta += filterChip("project", proj.id, pcls, ptitle, proj.name);
+    }
+    var env = envForLog(envId);
+    if (env) {
+      var ecls = "log-chip log-env" + (env.missing ? " is-missing" : "");
+      var etitle = env.missing ? "Environment record not found (deleted?)" : "Environment";
+      meta += filterChip("env", env.id, ecls, etitle, env.name);
     }
     if (p.keyPrefix) meta += filterChip("key", p.keyPrefix, "log-chip log-key", "SDK key prefix", p.keyPrefix);
     if (src) meta += filterChip("src", src, "log-chip log-source", "Source", src);
@@ -535,7 +580,7 @@
         var it = items[i] || {};
         html += '<tr><td class="log-rownum-cell" title="' + CW.esc(it.id) + '">' + (((page - 1) * perPage) + i + 1) + "</td>" +
           '<td><span class="log-level ' + levelClass(it.level) + '">' + CW.esc(levelName(it.level)) + "</span></td>" +
-          '<td class="log-msg-cell">' + messageCellHtml(it.message, it.src) + "</td>" +
+          '<td class="log-msg-cell">' + messageCellHtml(it.message, it.src, it.env) + "</td>" +
           '<td class="log-created-cell">' + createdCellHtml(it.created) + "</td></tr>";
       }
       if (!html) {
@@ -570,7 +615,7 @@
   function loadLogs(page, level, src) {
     var f = readFilters(page, level, src);
     CW.state.logFilters = {
-      level: f.level, src: f.src, project: f.project, key: f.key,
+      level: f.level, src: f.src, project: f.project, env: f.env, key: f.key,
       status: f.status, reason: f.reason, limiter: f.limiter, page: f.page,
       perPage: f.perPage
     };
@@ -586,12 +631,13 @@
         throw err;
       });
     }
-    // Resolve project names in parallel with the log fetch; render as
-    // soon as both settle (scope never blocks or fails the render).
+    // Resolve project names + env slugs before the log fetch, so chips
+    // and pills render with names on the first pass. The scope loads
+    // never reject, so they can delay but never block or fail the render.
     return Promise.all([
       ensureLogScope(),
-      fetchLogs()
-    ]).then(function (both) { return both[1]; });
+      ensureLogEnvs()
+    ]).then(fetchLogs);
   }
 
   function refreshLogs() {
@@ -632,6 +678,17 @@
   CW.validateLogSettings = validateLogSettings;
   CW.parseLogMessage = parseLogMessage;
   CW.parseLogUTC = parseLogUTC;
+  CW.readFilters = readFilters;
+  CW.buildLogsPath = buildLogsPath;
+  CW.logFilterKindLabel = logFilterKindLabel;
+  CW.logFilterLabel = logFilterLabel;
+  CW.toggleLogFilter = toggleLogFilter;
+  CW.clearLogFilter = clearLogFilter;
+  CW.clearAllLogFilters = clearAllLogFilters;
+  CW.renderActiveLogFilters = renderActiveLogFilters;
+  CW.messageCellHtml = messageCellHtml;
+  CW.envByIdLocal = envByIdLocal;
+  CW.envForLog = envForLog;
   CW.logRetentionMinDays = MIN_DAYS;
   CW.logRetentionMaxDays = MAX_DAYS;
 })();

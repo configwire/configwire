@@ -1668,6 +1668,16 @@ button.log-chip:focus-visible {
   border-style: dashed;
 }
 
+.log-chip.log-env {
+  color: var(--text);
+  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.log-chip.log-env.is-missing {
+  border-style: dashed;
+}
+
 .log-chip.log-reason.is-ok,
 .log-chip.log-status.is-ok {
   color: var(--mint);
