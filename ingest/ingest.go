@@ -514,11 +514,15 @@ func findSDKKey(app core.App, full string) (*core.Record, error) {
 // keyPrefix carries KeyPrefix(full) and is appended as key_prefix=<prefix>
 // only when non-empty (a key was presented — never the full key).
 // limiter names which budget tripped (verifier, per-key) and is appended
-// as limiter=<which> only when non-empty. The message stays a single
-// space-separated k=v line. Never pass full keys, tokens, emails, IPs,
-// buckets, or attrs. reqLog.Request keeps the same reason string.
-// Write errors are best-effort (swallowed, never retry-block the request).
-func denyWrite(re *core.RequestEvent, reason string, status int, keyPrefix, limiter string) {
+// as limiter=<which> only when non-empty. envID carries the resolved env
+// record ID when the code path already holds one, else "" (denial
+// precedes env resolution — no record exists yet — so nothing is
+// stored). Writers here use live env records, so plain Save stays valid.
+// The message stays a single space-separated k=v line. Never pass full
+// keys, tokens, emails, IPs, buckets, or attrs. reqLog.Request keeps the
+// same reason string. Write errors are best-effort (swallowed, never
+// retry-block the request).
+func denyWrite(re *core.RequestEvent, reason string, status int, keyPrefix, limiter, envID string) {
 	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
 	msg := fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, reason, status)
 	if keyPrefix != "" {
@@ -527,13 +531,17 @@ func denyWrite(re *core.RequestEvent, reason string, status int, keyPrefix, limi
 	if limiter != "" {
 		msg += " limiter=" + limiter
 	}
-	_ = logstore.Write(re.App, int(logx.LevelWarn), "ingest", msg)
+	_ = logstore.Write(re.App, logstore.Entry{
+		Level: int(logx.LevelWarn), Src: "ingest", Message: msg,
+		KeyPrefix: keyPrefix, Limiter: limiter, Status: status, Reason: reason, Env: envID,
+	})
 }
 
 func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	full := re.Request.Header.Get(HeaderKey)
 	if full == "" {
-		denyWrite(re, "missing-header", http.StatusUnauthorized, "", "")
+		// env "" — no key presented, precedes env resolution.
+		denyWrite(re, "missing-header", http.StatusUnauthorized, "", "", "")
 		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
 	}
 	prefix := KeyPrefix(full)
@@ -541,24 +549,28 @@ func RequireSDKKey(re *core.RequestEvent) (*core.Record, error) {
 	if err != nil {
 		if errors.Is(err, errKeyBusy) {
 			noteSaturation()
-			denyWrite(re, "rate-limited", http.StatusTooManyRequests, prefix, "verifier")
+			// env "" — verifier saturated during key auth, env unresolved.
+			denyWrite(re, "rate-limited", http.StatusTooManyRequests, prefix, "verifier", "")
 			if werr := apireq.TooMany(re, "Server busy, retry."); werr != nil {
 				return nil, werr
 			}
 			return nil, ErrKeyResponded
 		}
-		denyWrite(re, "storage-error", http.StatusServiceUnavailable, prefix, "")
+		// env "" — storage failure during key auth, env unresolved.
+		denyWrite(re, "storage-error", http.StatusServiceUnavailable, prefix, "", "")
 		if werr := re.JSON(http.StatusServiceUnavailable, map[string]any{"message": "Storage error, retry.", "status": 503}); werr != nil {
 			return nil, werr
 		}
 		return nil, ErrKeyResponded
 	}
 	if key == nil {
-		denyWrite(re, "unknown-key", http.StatusUnauthorized, prefix, "")
+		// env "" — unknown key, precedes env resolution.
+		denyWrite(re, "unknown-key", http.StatusUnauthorized, prefix, "", "")
 		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
 	}
 	if key.GetBool("revoked") {
-		denyWrite(re, "revoked-key", http.StatusUnauthorized, prefix, "")
+		// env "" — revoked key, precedes env resolution.
+		denyWrite(re, "revoked-key", http.StatusUnauthorized, prefix, "", "")
 		return nil, re.UnauthorizedError("Missing or invalid SDK key.", nil)
 	}
 	return key, nil

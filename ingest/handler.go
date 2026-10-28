@@ -96,13 +96,15 @@ func parseBucketCanonical(raw string) (string, *apiError) {
 // presented — never the full key). projectID is the env's project record
 // ID, appended as project=<id> (IDs never contain spaces, so the k=v
 // line stays parseable) so the log viewer can show the project name;
-// empty stays omitted. Success lines skip the store (but keep the stderr
+// empty stays omitted. envID is the resolved env record ID, stored on
+// the env column (never parsed from the message path: paths hold
+// renameable slugs, not IDs). Success lines skip the store (but keep the stderr
 // line) when the successLogs setting is off; rejections always persist.
 // The message stays a single
 // space-separated k=v line. Never pass full keys, tokens, emails, IPs,
 // buckets, or attrs. reqLog.Request keeps the same reason string.
 // Write errors are best-effort (swallowed, never retry-block the request).
-func acceptWrite(re *core.RequestEvent, reason string, status int, keyPrefix, projectID string) {
+func acceptWrite(re *core.RequestEvent, reason string, status int, keyPrefix, projectID, envID string) {
 	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
 	if !logstore.GetConfig().SuccessLogs {
 		return
@@ -114,7 +116,10 @@ func acceptWrite(re *core.RequestEvent, reason string, status int, keyPrefix, pr
 	if projectID != "" {
 		msg += " project=" + projectID
 	}
-	_ = logstore.Write(re.App, int(logx.LevelInfo), "ingest", msg)
+	_ = logstore.Write(re.App, logstore.Entry{
+		Level: int(logx.LevelInfo), Src: "ingest", Message: msg,
+		Project: projectID, Env: envID, KeyPrefix: keyPrefix, Status: status, Reason: reason,
+	})
 }
 
 // Register mounts the events ingest route and starts the flush pipeline.
@@ -201,7 +206,7 @@ func postEvents(re *core.RequestEvent) error {
 		// exactly this batch with no duplicates.
 		return re.JSON(http.StatusServiceUnavailable, map[string]any{"message": "Ingest buffer full, retry.", "status": 503})
 	}
-	acceptWrite(re, "accepted", http.StatusAccepted, KeyPrefix(re.Request.Header.Get(HeaderKey)), env.GetString("project"))
+	acceptWrite(re, "accepted", http.StatusAccepted, KeyPrefix(re.Request.Header.Get(HeaderKey)), env.GetString("project"), env.Id)
 	return re.JSON(http.StatusAccepted, map[string]any{"accepted": len(stored), "status": 202})
 }
 

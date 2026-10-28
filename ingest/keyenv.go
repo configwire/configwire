@@ -89,7 +89,8 @@ func RequireKeyEnv(re *core.RequestEvent, kind KeyEnvKind) (*core.Record, *core.
 		return key, env, nil
 	}
 	if !allowed {
-		denyWrite(re, "rate-limited", 429, KeyPrefix(re.Request.Header.Get(HeaderKey)), "per-key")
+		// env env.Id — per-second bucket trips after key+resolve, record in hand.
+		denyWrite(re, "rate-limited", 429, KeyPrefix(re.Request.Header.Get(HeaderKey)), "per-key", env.Id)
 		if werr := apireq.TooMany(re, "Rate limit exceeded."); werr != nil {
 			return nil, nil, werr
 		}
@@ -119,7 +120,8 @@ func resolveLegacy(re *core.RequestEvent, key *core.Record, slug string) (*core.
 				reason, status = "resolve-error", http.StatusInternalServerError
 			}
 		}
-		denyWrite(re, reason, status, prefix, "")
+		// env "" — slug failed to resolve, no env record.
+		denyWrite(re, reason, status, prefix, "", "")
 		return nil, envresolve.ToRequestError(re, err)
 	}
 	return env, nil
@@ -144,7 +146,8 @@ func resolveKeyOnly(re *core.RequestEvent, key *core.Record) (*core.Record, erro
 	} else if rec, ferr := re.App.FindRecordById("environments", keyEnvID); ferr != nil {
 		if !errors.Is(ferr, sql.ErrNoRows) {
 			prefix := KeyPrefix(re.Request.Header.Get(HeaderKey))
-			denyWrite(re, "resolve-error", http.StatusInternalServerError, prefix, "")
+			// env "" — storage failure resolving the key's env, no record.
+			denyWrite(re, "resolve-error", http.StatusInternalServerError, prefix, "", "")
 			if werr := apireq.Internal(re, "ingest: failed to resolve env", ferr); werr != nil {
 				return nil, werr
 			}
@@ -165,7 +168,8 @@ func resolveKeyOnly(re *core.RequestEvent, key *core.Record) (*core.Record, erro
 		default:
 			reason, status = "resolve-error", http.StatusInternalServerError
 		}
-		denyWrite(re, reason, status, prefix, "")
+		// env "" — binding missing/dangling, no env record.
+		denyWrite(re, reason, status, prefix, "", "")
 		return nil, envresolve.ToRequestError(re, resolveErr)
 	}
 	return env, nil
