@@ -1479,6 +1479,29 @@ section[aria-labelledby="logs"] hr {
 
 section[aria-labelledby="logs"] table {
   margin-top: var(--space-3);
+  table-layout: fixed;
+}
+
+section[aria-labelledby="logs"] th:nth-child(1),
+section[aria-labelledby="logs"] td:nth-child(1) {
+  width: 56px;
+}
+
+section[aria-labelledby="logs"] th:nth-child(2),
+section[aria-labelledby="logs"] td:nth-child(2) {
+  width: 90px;
+}
+
+section[aria-labelledby="logs"] th:nth-child(4),
+section[aria-labelledby="logs"] td:nth-child(4) {
+  width: 170px;
+}
+
+.log-rownum-cell {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 section[aria-labelledby="logs"] .limits-footer {
@@ -1751,6 +1774,7 @@ button.log-chip:focus-visible {
 }
 
 .log-created {
+  font-size: 14px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   border-bottom: 1px dotted var(--muted-dim);

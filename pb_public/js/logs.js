@@ -463,7 +463,7 @@
     var d = parseLogUTC(s);
     if (!d) return CW.esc(s);
     var text = d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) +
-      "<br>" + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
+      " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes()) + ":" + pad2(d.getSeconds());
     return '<span class="log-created" title="UTC: ' + CW.esc(d.toISOString()) + '">' + text + "</span>";
   }
 
@@ -472,6 +472,7 @@
     CW.state.logs = data;
     var items = Array.isArray(data.items) ? data.items : [];
     var page = data.page || 1;
+    var perPage = data.perPage > 0 ? data.perPage : 50;
     CW.state.logFilters = CW.state.logFilters || {};
     CW.state.logFilters.page = page;
     var box = CW.$("logs-list");
@@ -479,7 +480,7 @@
       var html = "";
       for (var i = 0; i < items.length; i++) {
         var it = items[i] || {};
-        html += "<tr><td>" + CW.esc(it.id) + "</td>" +
+        html += '<tr><td class="log-rownum-cell" title="' + CW.esc(it.id) + '">' + (((page - 1) * perPage) + i + 1) + "</td>" +
           '<td><span class="log-level ' + levelClass(it.level) + '">' + CW.esc(levelName(it.level)) + "</span></td>" +
           '<td class="log-msg-cell">' + messageCellHtml(it.message, it.src) + "</td>" +
           '<td class="log-created-cell">' + createdCellHtml(it.created) + "</td></tr>";
