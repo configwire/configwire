@@ -421,14 +421,14 @@
     var proj = projectForLog(p);
     if (proj) {
       var pcls = "log-chip log-project" + (proj.missing ? " is-missing" : "");
-      var ptitle = (proj.missing ? "Project record not found (deleted?)" : "Project") + " · tap to filter";
+      var ptitle = proj.missing ? "Project record not found (deleted?)" : "Project";
       meta += filterChip("project", proj.id, pcls, ptitle, proj.name);
     }
-    if (p.keyPrefix) meta += filterChip("key", p.keyPrefix, "log-chip log-key", "SDK key prefix · tap to filter", p.keyPrefix);
-    if (src) meta += filterChip("src", src, "log-chip log-source", "Source · tap to filter", src);
-    if (p.status) meta += filterChip("status", p.status, "log-chip log-status " + statusClass(p.status), statusHint(p.status) + " · tap to filter", p.status);
-    if (p.reason) meta += filterChip("reason", p.reason, "log-chip log-reason " + reasonClass(p.reason), reasonHint(p.reason) + " · tap to filter", p.reason);
-    if (p.limiter) meta += filterChip("limiter", p.limiter, "log-chip log-limiter", "Rate-limit budget · tap to filter", p.limiter);
+    if (p.keyPrefix) meta += filterChip("key", p.keyPrefix, "log-chip log-key", "SDK key prefix", p.keyPrefix);
+    if (src) meta += filterChip("src", src, "log-chip log-source", "Source", src);
+    if (p.status) meta += filterChip("status", p.status, "log-chip log-status " + statusClass(p.status), statusHint(p.status), p.status);
+    if (p.reason) meta += filterChip("reason", p.reason, "log-chip log-reason " + reasonClass(p.reason), reasonHint(p.reason), p.reason);
+    if (p.limiter) meta += filterChip("limiter", p.limiter, "log-chip log-limiter", "Rate-limit budget", p.limiter);
     for (var i = 0; i < p.extra.length; i++) {
       meta += '<span class="log-chip log-extra">' + CW.esc(p.extra[i]) + "</span>";
     }
