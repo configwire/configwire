@@ -1489,6 +1489,177 @@ section[aria-labelledby="logs"] .limits-footer {
   margin: var(--space-3) 0 0;
 }
 
+/* ---- Logs table rich cells (logs.js messageCellHtml/createdCellHtml):
+ * method badge + mono path on top, meta chips below; project pill,
+ * reason/status/key chips mirror the .badge pill idiom. Created shows
+ * local time, UTC on hover via title. */
+.log-msg-cell {
+  min-width: 280px;
+}
+
+.log-msg-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.log-method {
+  display: inline-block;
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.log-method.is-get {
+  color: var(--mint);
+  border-color: rgba(94, 234, 212, 0.4);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+.log-method.is-post {
+  color: var(--accent-hover);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.log-method.is-put {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.log-method.is-del {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.log-path {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+  min-width: 0;
+}
+
+.log-msg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.log-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--panel-2);
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-chip.log-project {
+  color: var(--text);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.log-chip.log-project.is-missing {
+  border-style: dashed;
+}
+
+.log-chip.log-reason.is-ok,
+.log-chip.log-status.is-ok {
+  color: var(--mint);
+  border-color: rgba(94, 234, 212, 0.4);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+.log-chip.log-status.is-info {
+  color: var(--accent-hover);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.log-chip.log-reason.is-warn,
+.log-chip.log-status.is-warn {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.log-chip.log-reason.is-err,
+.log-chip.log-status.is-err {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.log-chip.log-key {
+  font-family: ui-monospace, monospace;
+  font-weight: 500;
+}
+
+.log-level {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.log-level.is-debug {
+  color: var(--muted);
+}
+
+.log-level.is-info {
+  color: var(--accent-hover);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.log-level.is-warn {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.log-level.is-err {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.log-src {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.log-created {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px dotted var(--muted-dim);
+  cursor: help;
+}
+
 .limit-field small {
   font-size: 11px;
   line-height: 1.5;

@@ -148,15 +148,21 @@ var reqLog = logx.New("fetch")
 // never free text); status is the client-facing status. keyPrefix
 // carries ingest.KeyPrefix(full) and is appended as key_prefix=<prefix>
 // only when non-empty (a key was presented — never the full key).
+// projectID is the env's project record ID, appended as project=<id>
+// (IDs never contain spaces, so the k=v line stays parseable) so the
+// log viewer can show the project name; empty stays omitted.
 // The message stays a single space-separated k=v line. Never pass full
 // keys, tokens, emails, IPs, buckets, or attrs. reqLog.Request keeps
 // the same reason string. Write errors are best-effort (swallowed,
 // never retry-block the request).
-func serveWrite(re *core.RequestEvent, reason string, status int, keyPrefix string) {
+func serveWrite(re *core.RequestEvent, reason string, status int, keyPrefix, projectID string) {
 	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
 	msg := fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, reason, status)
 	if keyPrefix != "" {
 		msg += " key_prefix=" + keyPrefix
+	}
+	if projectID != "" {
+		msg += " project=" + projectID
 	}
 	_ = logstore.Write(re.App, int(logx.LevelInfo), "fetch", msg)
 }
@@ -639,7 +645,7 @@ func getConfig(re *core.RequestEvent) error {
 	re.Response.Header().Set("ETag", etag)
 	if EtagMatches(re.Request.Header.Get("If-None-Match"), etag) {
 		setFetchCacheHeaders(re)
-		serveWrite(re, "cached", http.StatusNotModified, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)))
+		serveWrite(re, "cached", http.StatusNotModified, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)), env.GetString("project"))
 		return re.NoContent(http.StatusNotModified)
 	}
 
@@ -671,7 +677,7 @@ func getConfig(re *core.RequestEvent) error {
 	if releases.IsLegacyTopLevel(snapBytes) {
 		markDeprecatedSnapshot(re.Response.Header())
 	}
-	serveWrite(re, "served", http.StatusOK, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)))
+	serveWrite(re, "served", http.StatusOK, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)), env.GetString("project"))
 	return re.JSON(http.StatusOK, evaluatedBody(
 		rel.GetInt("version"),
 		etag,
