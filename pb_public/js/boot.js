@@ -707,6 +707,7 @@
     });
     CW.on("logs-prev", "click", function () { if (CW.pageLogs) CW.pageLogs(-1); });
     CW.on("logs-next", "click", function () { if (CW.pageLogs) CW.pageLogs(1); });
+    CW.on("logs-refresh", "click", function () { if (CW.refreshLogs) CW.refreshLogs(); });
     CW.on("backup-create-form", "submit", CW.createBackup);
     CW.on("backup-upload-btn", "click", CW.triggerBackupUpload);
     CW.on("backup-upload-file", "change", CW.uploadBackup);

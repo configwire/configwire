@@ -594,6 +594,11 @@
     ]).then(function (both) { return both[1]; });
   }
 
+  function refreshLogs() {
+    var page = (CW.state.logFilters && CW.state.logFilters.page) || 1;
+    return loadLogs(page).catch(function (e) { console.warn('logs: refresh', e); });
+  }
+
   function filterLogs(ev) {
     if (ev) ev.preventDefault();
     return loadLogs(1).catch(function (e) { console.warn('logs: filter refresh', e); });
@@ -619,6 +624,7 @@
   CW.renderLogs = renderLogs;
   CW.loadLogs = loadLogs;
   CW.filterLogs = filterLogs;
+  CW.refreshLogs = refreshLogs;
   CW.pageLogs = pageLogs;
   // Pure validators exported for js_tests (same precedent as
   // retention.js CW.isValidRetentionDays): no behavior change.

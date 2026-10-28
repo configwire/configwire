@@ -2530,6 +2530,10 @@ a:focus-visible {
   color: var(--text);
 }
 
+.card-actions .logs-refresh-btn {
+  width: var(--input-h);
+}
+
 .card-actions .head-menu {
   position: absolute;
   right: 0;
