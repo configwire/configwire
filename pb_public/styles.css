@@ -1570,6 +1570,24 @@ section[aria-labelledby="logs"] .limits-footer {
   white-space: nowrap;
 }
 
+button.log-chip {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  height: auto;
+  cursor: pointer;
+}
+
+button.log-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+button.log-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
 .log-chip.log-project {
   color: var(--text);
   border-color: rgba(59, 130, 246, 0.45);
@@ -1612,6 +1630,91 @@ section[aria-labelledby="logs"] .limits-footer {
   font-weight: 500;
 }
 
+.log-chip.log-source {
+  font-family: ui-monospace, monospace;
+  font-weight: 500;
+  color: var(--muted);
+  border-color: rgba(94, 234, 212, 0.25);
+}
+
+/* ---- Logs active-filter bar (logs.js renderActiveLogFilters): pills for
+ * every active dimension with × to remove, plus Clear all. Hidden when
+ * no filter is active (flex would override the hidden UA style). */
+.log-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: var(--space-3);
+}
+
+.log-active-filters[hidden] {
+  display: none;
+}
+
+.log-filter-pill {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  height: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text);
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-filter-pill:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.log-filter-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 3px;
+  vertical-align: 1px;
+  opacity: 0.7;
+}
+
+.log-filter-x svg {
+  display: block;
+}
+
+.log-filter-pill:hover .log-filter-x {
+  opacity: 1;
+}
+
+.log-filter-pill:focus-visible,
+.log-filter-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.log-filter-clear {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  height: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.log-filter-clear:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
 .log-level {
   display: inline-block;
   font-size: 10px;
@@ -1645,12 +1748,6 @@ section[aria-labelledby="logs"] .limits-footer {
   color: var(--danger);
   border-color: rgba(248, 113, 113, 0.4);
   background: rgba(248, 113, 113, 0.08);
-}
-
-.log-src {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .log-created {

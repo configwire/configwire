@@ -355,10 +355,69 @@ func Purge(app core.App) (int, error) {
 // queryPageSize caps one viewer page.
 const queryPageSize = 500
 
-// Query lists server_logs rows newest-first for the future viewer
-// endpoint. level < 0 matches any level; empty src matches any src.
+// LogQuery carries the viewer filters for Query. Empty strings match
+// anything; Level < 0 matches any level. Project/Key/Status/Reason/
+// Limiter match their k=v tokens inside message (see messageTokens);
+// the API layer validates them to [A-Za-z0-9_-] so LIKE metacharacters
+// cannot appear.
+type LogQuery struct {
+	Level                                      int
+	Src, Project, Key, Status, Reason, Limiter string
+}
+
+// messageTokens maps the message-embedded filters to their k=v token
+// names, in wire order. Server writers emit single-space-separated
+// tokens whose values never contain spaces, and no "k=" is a suffix of
+// another token, so one LIKE per token is an exact match.
+func (q LogQuery) messageTokens() [][2]string {
+	var out [][2]string
+	if q.Project != "" {
+		out = append(out, [2]string{"project", q.Project})
+	}
+	if q.Key != "" {
+		out = append(out, [2]string{"key_prefix", q.Key})
+	}
+	if q.Status != "" {
+		out = append(out, [2]string{"status", q.Status})
+	}
+	if q.Reason != "" {
+		out = append(out, [2]string{"reason", q.Reason})
+	}
+	if q.Limiter != "" {
+		out = append(out, [2]string{"limiter", q.Limiter})
+	}
+	return out
+}
+
+// likeEscape escapes SQLite LIKE metacharacters for use with an
+// explicit ESCAPE '\' clause.
+func likeEscape(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
+// MessageExprs returns dbx LIKE expressions for the message-embedded
+// filters (used for total counts next to Query's page). Values are
+// pre-validated to [A-Za-z0-9_-] and LIKE-escaped under an explicit
+// ESCAPE clause. (dbx.Like cannot be used here: it backslash-escapes
+// the underscore inside the "key_prefix" token name without emitting
+// ESCAPE, so that token could never match in SQLite.)
+func (q LogQuery) MessageExprs() []dbx.Expression {
+	var exprs []dbx.Expression
+	for i, t := range q.messageTokens() {
+		name := "toklike" + strconv.Itoa(i)
+		exprs = append(exprs, dbx.NewExp(`"message" LIKE {:`+name+`} ESCAPE '\'`, dbx.Params{
+			name: "% " + t[0] + "=" + likeEscape(t[1]) + "%",
+		}))
+	}
+	return exprs
+}
+
+// Query lists server_logs rows newest-first for the viewer endpoint.
 // page starts at 1, perPage clamps to 1..500 (default 50 on invalid).
-func Query(app core.App, level int, src string, page, perPage int) ([]*core.Record, error) {
+func Query(app core.App, q LogQuery, page, perPage int) ([]*core.Record, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -367,13 +426,18 @@ func Query(app core.App, level int, src string, page, perPage int) ([]*core.Reco
 	}
 	var filters []string
 	params := dbx.Params{}
-	if level >= 0 {
+	if q.Level >= 0 {
 		filters = append(filters, "level = {:level}")
-		params["level"] = level
+		params["level"] = q.Level
 	}
-	if strings.TrimSpace(src) != "" {
+	if strings.TrimSpace(q.Src) != "" {
 		filters = append(filters, "src = {:src}")
-		params["src"] = src
+		params["src"] = q.Src
+	}
+	for i, t := range q.messageTokens() {
+		name := "tok" + strconv.Itoa(i)
+		filters = append(filters, "message ~ {:"+name+"}")
+		params[name] = " " + t[0] + "=" + t[1]
 	}
 	filter := strings.Join(filters, " && ")
 	return app.FindRecordsByFilter(logsCollection, filter, "-created", perPage, (page-1)*perPage, params)

@@ -144,7 +144,12 @@
     var pg = page != null ? page : currentFilter("page", 1);
     pg = parseInt(pg, 10);
     if (!isFinite(pg) || pg < 1) pg = 1;
-    return { level: lv, src: sc, page: pg };
+    return {
+      level: lv, src: sc, page: pg,
+      project: currentFilter("project", ""), key: currentFilter("key", ""),
+      status: currentFilter("status", ""), reason: currentFilter("reason", ""),
+      limiter: currentFilter("limiter", "")
+    };
   }
 
   function buildLogsPath(f) {
@@ -153,7 +158,113 @@
     if (lv !== "") parts.push("level=" + encodeURIComponent(lv));
     var sc = String(f.src == null ? "" : f.src).replace(/^\s+|\s+$/g, "");
     if (sc !== "") parts.push("src=" + encodeURIComponent(sc));
+    var kinds = ["project", "key", "status", "reason", "limiter"];
+    for (var ki = 0; ki < kinds.length; ki++) {
+      var kv = String(f[kinds[ki]] == null ? "" : f[kinds[ki]]).replace(/^\s+|\s+$/g, "");
+      if (kv !== "") parts.push(kinds[ki] + "=" + encodeURIComponent(kv));
+    }
     return "/api/v1/admin/logs?" + parts.join("&");
+  }
+
+  var LOG_FILTER_KINDS = ["level", "src", "project", "key", "status", "reason", "limiter"];
+
+  function logFilterKindLabel(kind) {
+    return kind === "project" ? "Project" : kind === "key" ? "Key" :
+      kind === "src" ? "Source" : kind === "status" ? "Status" :
+      kind === "reason" ? "Reason" : kind === "limiter" ? "Limiter" :
+      kind === "level" ? "Level" : kind;
+  }
+
+  function logFilterLabel(kind, val) {
+    if (kind === "project") {
+      var rec = projectByIdLocal(val);
+      return rec ? (rec.name || rec.id) : val;
+    }
+    if (kind === "level") {
+      var n = parseInt(val, 10);
+      return levelName(isFinite(n) ? n : val);
+    }
+    return val;
+  }
+
+  function syncLogFilterInputs() {
+    var f = CW.state.logFilters || {};
+    var levelEl = CW.$("logs-level");
+    if (levelEl && levelEl.value != null) levelEl.value = f.level == null ? "" : f.level;
+    var srcEl = CW.$("logs-src");
+    if (srcEl && srcEl.value != null) srcEl.value = f.src == null ? "" : f.src;
+  }
+
+  function reloadLogsFirstPage() {
+    return loadLogs(1).catch(function (e) { console.warn('logs: filter refresh', e); });
+  }
+
+  function toggleLogFilter(kind, val) {
+    CW.state.logFilters = CW.state.logFilters || {};
+    var f = CW.state.logFilters;
+    f[kind] = (f[kind] === val) ? "" : val;
+    syncLogFilterInputs();
+    return reloadLogsFirstPage();
+  }
+
+  function clearLogFilter(kind) {
+    CW.state.logFilters = CW.state.logFilters || {};
+    CW.state.logFilters[kind] = "";
+    syncLogFilterInputs();
+    return reloadLogsFirstPage();
+  }
+
+  function clearAllLogFilters() {
+    CW.state.logFilters = {
+      level: "", src: "", project: "", key: "",
+      status: "", reason: "", limiter: "", page: 1
+    };
+    syncLogFilterInputs();
+    return reloadLogsFirstPage();
+  }
+
+  function renderActiveLogFilters() {
+    var box = CW.$("logs-active-filters");
+    if (!box) return;
+    var f = CW.state.logFilters || {};
+    var html = "";
+    for (var i = 0; i < LOG_FILTER_KINDS.length; i++) {
+      var kind = LOG_FILTER_KINDS[i];
+      var val = f[kind];
+      if (val == null || val === "") continue;
+      html += '<button type="button" class="log-filter-pill" data-f-clear="' + CW.esc(kind) +
+        '" title="Remove filter">' + CW.esc(logFilterKindLabel(kind) + ": " + logFilterLabel(kind, val)) +
+        ' <span class="log-filter-x" aria-hidden="true"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span></button>';
+    }
+    if (html) html += '<button type="button" class="log-filter-clear" data-f-clearall="1">Clear all</button>';
+    box.innerHTML = html;
+    if (box.hidden != null) box.hidden = !html;
+  }
+
+  function wireLogFilterClicks() {
+    var list = CW.$("logs-list");
+    if (list && !list.__cwLogChipsWired && list.addEventListener) {
+      list.addEventListener("click", function (ev) {
+        var t = ev && ev.target ? ev.target : null;
+        var chip = t && t.closest ? t.closest("[data-f-kind]") : null;
+        if (!chip || !chip.getAttribute) return;
+        var kind = chip.getAttribute("data-f-kind");
+        var val = chip.getAttribute("data-f-val");
+        if (kind && val != null) toggleLogFilter(kind, val);
+      });
+      list.__cwLogChipsWired = true;
+    }
+    var bar = CW.$("logs-active-filters");
+    if (bar && !bar.__cwLogPillsWired && bar.addEventListener) {
+      bar.addEventListener("click", function (ev) {
+        var t = ev && ev.target ? ev.target : null;
+        if (!t || !t.closest) return;
+        if (t.closest("[data-f-clearall]")) { clearAllLogFilters(); return; }
+        var pill = t.closest("[data-f-clear]");
+        if (pill && pill.getAttribute) clearLogFilter(pill.getAttribute("data-f-clear"));
+      });
+      bar.__cwLogPillsWired = true;
+    }
   }
 
   function totalPagesOf(data) {
@@ -198,8 +309,6 @@
       else if (k === "project") out.projectId = v;
       else out.extra.push(tok);
     }
-    var m = out.path.match(/^\/api\/v1\/env\/([^\/]+)\//);
-    out.envSlug = m ? m[1] : "";
     return out;
   }
 
@@ -232,8 +341,8 @@
   function projectForLog(p) {
     if (!p.projectId) return null;
     var rec = projectByIdLocal(p.projectId);
-    if (rec) return { name: rec.name || rec.id };
-    return { name: p.projectId, missing: true };
+    if (rec) return { id: p.projectId, name: rec.name || rec.id };
+    return { id: p.projectId, name: p.projectId, missing: true };
   }
 
   function reasonClass(reason) {
@@ -294,7 +403,12 @@
     return LOG_STATUS_HINTS[s] || ("HTTP status " + s);
   }
 
-  function messageCellHtml(raw) {
+  function filterChip(kind, val, cls, title, label) {
+    return '<button type="button" class="' + cls + '" data-f-kind="' + CW.esc(kind) +
+      '" data-f-val="' + CW.esc(val) + '" title="' + CW.esc(title) + '">' + CW.esc(label) + "</button>";
+  }
+
+  function messageCellHtml(raw, src) {
     var p = parseLogMessage(raw);
     if (!p.method && !p.path) {
       return '<div class="log-msg"><span class="log-raw">' + CW.esc(raw) + "</span></div>";
@@ -306,16 +420,15 @@
     var meta = "";
     var proj = projectForLog(p);
     if (proj) {
-      var cls = "log-chip log-project" + (proj.missing ? " is-missing" : "");
-      var title = proj.missing ? "Project record not found (deleted?)" : "Project";
-      meta += '<span class="' + cls + '" title="' + CW.esc(title) + '">' + CW.esc(proj.name) + "</span>";
-    } else if (p.envSlug) {
-      meta += '<span class="log-chip log-env" title="Environment">' + CW.esc(p.envSlug) + "</span>";
+      var pcls = "log-chip log-project" + (proj.missing ? " is-missing" : "");
+      var ptitle = (proj.missing ? "Project record not found (deleted?)" : "Project") + " · tap to filter";
+      meta += filterChip("project", proj.id, pcls, ptitle, proj.name);
     }
-    if (p.keyPrefix) meta += '<span class="log-chip log-key" title="SDK key prefix">' + CW.esc(p.keyPrefix) + "</span>";
-    if (p.status) meta += '<span class="log-chip log-status ' + statusClass(p.status) + '" title="' + CW.esc(statusHint(p.status)) + '">' + CW.esc(p.status) + "</span>";
-    if (p.reason) meta += '<span class="log-chip log-reason ' + reasonClass(p.reason) + '" title="' + CW.esc(reasonHint(p.reason)) + '">' + CW.esc(p.reason) + "</span>";
-    if (p.limiter) meta += '<span class="log-chip log-limiter" title="Rate-limit budget">' + CW.esc(p.limiter) + "</span>";
+    if (p.keyPrefix) meta += filterChip("key", p.keyPrefix, "log-chip log-key", "SDK key prefix · tap to filter", p.keyPrefix);
+    if (src) meta += filterChip("src", src, "log-chip log-source", "Source · tap to filter", src);
+    if (p.status) meta += filterChip("status", p.status, "log-chip log-status " + statusClass(p.status), statusHint(p.status) + " · tap to filter", p.status);
+    if (p.reason) meta += filterChip("reason", p.reason, "log-chip log-reason " + reasonClass(p.reason), reasonHint(p.reason) + " · tap to filter", p.reason);
+    if (p.limiter) meta += filterChip("limiter", p.limiter, "log-chip log-limiter", "Rate-limit budget · tap to filter", p.limiter);
     for (var i = 0; i < p.extra.length; i++) {
       meta += '<span class="log-chip log-extra">' + CW.esc(p.extra[i]) + "</span>";
     }
@@ -368,15 +481,16 @@
         var it = items[i] || {};
         html += "<tr><td>" + CW.esc(it.id) + "</td>" +
           '<td><span class="log-level ' + levelClass(it.level) + '">' + CW.esc(levelName(it.level)) + "</span></td>" +
-          '<td class="log-msg-cell">' + messageCellHtml(it.message) + "</td>" +
-          '<td><span class="log-src">' + CW.esc(it.src) + "</span></td>" +
+          '<td class="log-msg-cell">' + messageCellHtml(it.message, it.src) + "</td>" +
           '<td class="log-created-cell">' + createdCellHtml(it.created) + "</td></tr>";
       }
       if (!html) {
-        html = '<tr><td colspan="5">No logs.</td></tr>';
+        html = '<tr><td colspan="4">No logs.</td></tr>';
       }
       box.innerHTML = html;
     }
+    renderActiveLogFilters();
+    wireLogFilterClicks();
     var info = CW.$("logs-page-info");
     if (info) {
       var total = typeof data.total === "number" ? data.total : items.length;
@@ -391,7 +505,10 @@
 
   function loadLogs(page, level, src) {
     var f = readFilters(page, level, src);
-    CW.state.logFilters = { level: f.level, src: f.src, page: f.page };
+    CW.state.logFilters = {
+      level: f.level, src: f.src, project: f.project, key: f.key,
+      status: f.status, reason: f.reason, limiter: f.limiter, page: f.page
+    };
     function fetchLogs() {
       return CW.api(buildLogsPath(f)).then(function (data) {
         renderLogs(data);
