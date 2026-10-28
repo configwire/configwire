@@ -151,13 +151,15 @@ var reqLog = logx.New("fetch")
 // projectID is the env's project record ID, appended as project=<id>
 // (IDs never contain spaces, so the k=v line stays parseable) so the
 // log viewer can show the project name; empty stays omitted.
+// envID is the resolved env record ID, stored on the env column (never
+// parsed from the message path: paths hold renameable slugs, not IDs).
 // Success lines skip the store (but keep the stderr line) when the
 // successLogs setting is off; rejections always persist.
 // The message stays a single space-separated k=v line. Never pass full
 // keys, tokens, emails, IPs, buckets, or attrs. reqLog.Request keeps
 // the same reason string. Write errors are best-effort (swallowed,
 // never retry-block the request).
-func serveWrite(re *core.RequestEvent, reason string, status int, keyPrefix, projectID string) {
+func serveWrite(re *core.RequestEvent, reason string, status int, keyPrefix, projectID, envID string) {
 	reqLog.Request(re.Request.Method, re.Request.URL.Path, reason, status)
 	if !logstore.GetConfig().SuccessLogs {
 		return
@@ -169,7 +171,10 @@ func serveWrite(re *core.RequestEvent, reason string, status int, keyPrefix, pro
 	if projectID != "" {
 		msg += " project=" + projectID
 	}
-	_ = logstore.Write(re.App, int(logx.LevelInfo), "fetch", msg)
+	_ = logstore.Write(re.App, logstore.Entry{
+		Level: int(logx.LevelInfo), Src: "fetch", Message: msg,
+		Project: projectID, Env: envID, KeyPrefix: keyPrefix, Status: status, Reason: reason,
+	})
 }
 
 func setFetchCacheHeaders(re *core.RequestEvent) {
@@ -650,7 +655,7 @@ func getConfig(re *core.RequestEvent) error {
 	re.Response.Header().Set("ETag", etag)
 	if EtagMatches(re.Request.Header.Get("If-None-Match"), etag) {
 		setFetchCacheHeaders(re)
-		serveWrite(re, "cached", http.StatusNotModified, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)), env.GetString("project"))
+		serveWrite(re, "cached", http.StatusNotModified, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)), env.GetString("project"), env.Id)
 		return re.NoContent(http.StatusNotModified)
 	}
 
@@ -682,7 +687,7 @@ func getConfig(re *core.RequestEvent) error {
 	if releases.IsLegacyTopLevel(snapBytes) {
 		markDeprecatedSnapshot(re.Response.Header())
 	}
-	serveWrite(re, "served", http.StatusOK, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)), env.GetString("project"))
+	serveWrite(re, "served", http.StatusOK, ingest.KeyPrefix(re.Request.Header.Get(ingest.HeaderKey)), env.GetString("project"), env.Id)
 	return re.JSON(http.StatusOK, evaluatedBody(
 		rel.GetInt("version"),
 		etag,
