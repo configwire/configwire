@@ -22,9 +22,9 @@ import (
 //	    returns the same shape.
 //	    Each field is optional: absent (or null) keeps the stored value
 //	    for back-compat; explicit values replace it.
-//	GET /api/v1/admin/logs?level=&src=&project=&key=&status=&reason=&limiter=&page=&perPage= ->
-//	    {items:[{id,level,message,src,created}],page,perPage,total}.
-//	    level/src/project/key/status/reason/limiter are optional filters;
+//	GET /api/v1/admin/logs?level=&src=&project=&env=&key=&status=&reason=&limiter=&page=&perPage= ->
+//	    {items:[{id,level,message,src,env,created}],page,perPage,total}.
+//	    level/src/project/env/key/status/reason/limiter are optional filters;
 //	    page defaults to 1, perPage defaults to 50 clamped to 1..200.
 func Register(se *core.ServeEvent) {
 	EnsureLoaded(se.App)
@@ -117,12 +117,27 @@ func validLogToken(s string) bool {
 	return true
 }
 
+// validLogStatus reports whether s is safe to match as a status filter
+// value: all digits, so it parses to an int for the indexed equality
+// filter on the status column.
+func validLogStatus(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // getLogs handles GET /api/v1/admin/logs (superuser-only). level/src/
-// project/key/status/reason/limiter are optional filters (absent level
-// matches any level, blank src matches any src, blank message-token
-// filters match any message); page defaults to 1, perPage defaults to
-// 50 clamped to 1..200. Message-token values are constrained to
-// [A-Za-z0-9_-] so LIKE metacharacters cannot appear.
+// project/env/key/status/reason/limiter are optional filters (absent level
+// matches any level, blank src matches any src, blank column filters
+// match any row); page defaults to 1, perPage defaults to 50 clamped to
+// 1..200. Text filter values are constrained to [A-Za-z0-9_-] and status
+// to [0-9], so no filter can inject filter syntax.
 func getLogs(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	q := re.Request.URL.Query()
@@ -136,20 +151,24 @@ func getLogs(re *core.RequestEvent) error {
 	}
 	src := strings.TrimSpace(q.Get("src"))
 	project := strings.TrimSpace(q.Get("project"))
+	env := strings.TrimSpace(q.Get("env"))
 	key := strings.TrimSpace(q.Get("key"))
 	status := strings.TrimSpace(q.Get("status"))
 	reason := strings.TrimSpace(q.Get("reason"))
 	limiter := strings.TrimSpace(q.Get("limiter"))
 	for _, val := range [][2]string{
-		{"project", project}, {"key", key}, {"status", status},
+		{"project", project}, {"env", env}, {"key", key},
 		{"reason", reason}, {"limiter", limiter},
 	} {
 		if val[1] != "" && !validLogToken(val[1]) {
 			return re.BadRequestError("invalid "+val[0]+": must be [A-Za-z0-9_-].", nil)
 		}
 	}
+	if status != "" && !validLogStatus(status) {
+		return re.BadRequestError("invalid status: must be [0-9].", nil)
+	}
 	lq := LogQuery{
-		Level: level, Src: src, Project: project, Key: key,
+		Level: level, Src: src, Project: project, Env: env, Key: key,
 		Status: status, Reason: reason, Limiter: limiter,
 	}
 	page := 1
@@ -175,13 +194,9 @@ func getLogs(re *core.RequestEvent) error {
 		return apireq.Internal(re, "logstore: failed to query logs", err)
 	}
 	var exprs []dbx.Expression
-	if level >= 0 {
-		exprs = append(exprs, dbx.HashExp{"level": level})
+	if conds, params := lq.conditions(); len(conds) > 0 {
+		exprs = append(exprs, dbx.NewExp(strings.Join(conds, " AND "), params))
 	}
-	if src != "" {
-		exprs = append(exprs, dbx.HashExp{"src": src})
-	}
-	exprs = append(exprs, lq.MessageExprs()...)
 	total, err := re.App.CountRecords(logsCollection, exprs...)
 	if err != nil {
 		return apireq.Internal(re, "logstore: failed to count logs", err)
@@ -193,6 +208,7 @@ func getLogs(re *core.RequestEvent) error {
 			"level":   r.GetInt("level"),
 			"message": r.GetString("message"),
 			"src":     r.GetString("src"),
+			"env":     r.GetString("env"),
 			"created": r.GetDateTime("created").String(),
 		})
 	}

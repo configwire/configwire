@@ -284,22 +284,36 @@ func upsertGlobalRow(app core.App, c Settings) error {
 	return app.Save(rec)
 }
 
+// Entry is one persisted log line: the greppable message plus the
+// dedicated filter columns populated alongside it (see migration
+// 1790000026). Status 0 means absent (left unset); empty strings stay
+// unset. Env/Project hold the live record IDs resolved at write time
+// (never slugs parsed from messages). Callers keep building the exact
+// same single-space k=v message string as before — the columns are a
+// second, indexed copy, never a replacement.
+type Entry struct {
+	Level                                                  int
+	Src, Message, Project, Env, KeyPrefix, Reason, Limiter string
+	Status                                                 int
+}
+
 // Write persists one reason-code line to server_logs. It no-ops (nil)
 // when the store is disabled, returns an error on empty message or
 // out-of-range level, and otherwise performs a single Save — callers must
 // treat the error as best-effort (log to stderr, never retry-block the
-// request). src defaults to "configwire" when blank. level/message/src
-// only: callers must pass reason codes, never PII.
-func Write(app core.App, level int, src, message string) error {
+// request). Src defaults to "configwire" when blank. level/message/src
+// plus the filter columns only: callers must pass reason codes, never PII.
+func Write(app core.App, e Entry) error {
 	if !GetConfig().Enabled {
 		return nil
 	}
-	if level < minLevel || level > maxLevel {
+	if e.Level < minLevel || e.Level > maxLevel {
 		return &settingsError{msg: "invalid level: must be 0..3."}
 	}
-	if strings.TrimSpace(message) == "" {
+	if strings.TrimSpace(e.Message) == "" {
 		return errors.New("logstore: message is required")
 	}
+	src := e.Src
 	if strings.TrimSpace(src) == "" {
 		src = DefaultSrc
 	}
@@ -308,9 +322,27 @@ func Write(app core.App, level int, src, message string) error {
 		return err
 	}
 	rec := core.NewRecord(collection)
-	rec.Set("level", level)
+	rec.Set("level", e.Level)
 	rec.Set("src", src)
-	rec.Set("message", message)
+	rec.Set("message", e.Message)
+	if e.Project != "" {
+		rec.Set("project", e.Project)
+	}
+	if e.Env != "" {
+		rec.Set("env", e.Env)
+	}
+	if e.KeyPrefix != "" {
+		rec.Set("key_prefix", e.KeyPrefix)
+	}
+	if e.Status != 0 {
+		rec.Set("status", e.Status)
+	}
+	if e.Reason != "" {
+		rec.Set("reason", e.Reason)
+	}
+	if e.Limiter != "" {
+		rec.Set("limiter", e.Limiter)
+	}
 	return app.Save(rec)
 }
 
@@ -374,63 +406,63 @@ func Purge(app core.App) (int, error) {
 const queryPageSize = 500
 
 // LogQuery carries the viewer filters for Query. Empty strings match
-// anything; Level < 0 matches any level. Project/Key/Status/Reason/
-// Limiter match their k=v tokens inside message (see messageTokens);
-// the API layer validates them to [A-Za-z0-9_-] so LIKE metacharacters
-// cannot appear.
+// anything; Level < 0 matches any level. Project/Env/Key/Status/Reason/
+// Limiter match the dedicated filter columns (see Entry); the API layer
+// validates the text ones to [A-Za-z0-9_-] and status to all-digits.
 type LogQuery struct {
-	Level                                      int
-	Src, Project, Key, Status, Reason, Limiter string
+	Level                                           int
+	Src, Project, Env, Key, Status, Reason, Limiter string
 }
 
-// messageTokens maps the message-embedded filters to their k=v token
-// names, in wire order. Server writers emit single-space-separated
-// tokens whose values never contain spaces, and no "k=" is a suffix of
-// another token, so one LIKE per token is an exact match.
-func (q LogQuery) messageTokens() [][2]string {
-	var out [][2]string
+// conditions builds the indexed equality conditions for the set fields,
+// shared by Query's page and the total-count query so they cannot drift.
+// Level/src equality is unchanged; the new columns filter by equality
+// only when set. Status parses to int (unparseable status can never equal
+// an int column, so it binds -1 and matches nothing); the API layer
+// already rejects non-digit status with 400, so this is a backstop for
+// direct callers. Callers join with their own conjunction: " && " for the
+// PocketBase filter syntax (FindRecordsByFilter) or " AND " for raw SQL
+// (dbx.NewExp in the count query).
+func (q LogQuery) conditions() ([]string, dbx.Params) {
+	var conds []string
+	params := dbx.Params{}
+	if q.Level >= 0 {
+		conds = append(conds, "level = {:level}")
+		params["level"] = q.Level
+	}
+	if strings.TrimSpace(q.Src) != "" {
+		conds = append(conds, "src = {:src}")
+		params["src"] = q.Src
+	}
 	if q.Project != "" {
-		out = append(out, [2]string{"project", q.Project})
+		conds = append(conds, "project = {:project}")
+		params["project"] = q.Project
+	}
+	if q.Env != "" {
+		conds = append(conds, "env = {:env}")
+		params["env"] = q.Env
 	}
 	if q.Key != "" {
-		out = append(out, [2]string{"key_prefix", q.Key})
+		conds = append(conds, "key_prefix = {:key}")
+		params["key"] = q.Key
 	}
 	if q.Status != "" {
-		out = append(out, [2]string{"status", q.Status})
+		n, err := strconv.Atoi(q.Status)
+		if err != nil {
+			n = -1
+		}
+		conds = append(conds, "status = {:status}")
+		params["status"] = n
 	}
 	if q.Reason != "" {
-		out = append(out, [2]string{"reason", q.Reason})
+		conds = append(conds, "reason = {:reason}")
+		params["reason"] = q.Reason
 	}
 	if q.Limiter != "" {
-		out = append(out, [2]string{"limiter", q.Limiter})
+		conds = append(conds, "limiter = {:limiter}")
+		params["limiter"] = q.Limiter
 	}
-	return out
-}
-
-// likeEscape escapes SQLite LIKE metacharacters for use with an
-// explicit ESCAPE '\' clause.
-func likeEscape(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `%`, `\%`)
-	s = strings.ReplaceAll(s, `_`, `\_`)
-	return s
-}
-
-// MessageExprs returns dbx LIKE expressions for the message-embedded
-// filters (used for total counts next to Query's page). Values are
-// pre-validated to [A-Za-z0-9_-] and LIKE-escaped under an explicit
-// ESCAPE clause. (dbx.Like cannot be used here: it backslash-escapes
-// the underscore inside the "key_prefix" token name without emitting
-// ESCAPE, so that token could never match in SQLite.)
-func (q LogQuery) MessageExprs() []dbx.Expression {
-	var exprs []dbx.Expression
-	for i, t := range q.messageTokens() {
-		name := "toklike" + strconv.Itoa(i)
-		exprs = append(exprs, dbx.NewExp(`"message" LIKE {:`+name+`} ESCAPE '\'`, dbx.Params{
-			name: "% " + t[0] + "=" + likeEscape(t[1]) + "%",
-		}))
-	}
-	return exprs
+	return conds, params
 }
 
 // Query lists server_logs rows newest-first for the viewer endpoint.
@@ -442,21 +474,6 @@ func Query(app core.App, q LogQuery, page, perPage int) ([]*core.Record, error) 
 	if perPage < 1 || perPage > queryPageSize {
 		perPage = 50
 	}
-	var filters []string
-	params := dbx.Params{}
-	if q.Level >= 0 {
-		filters = append(filters, "level = {:level}")
-		params["level"] = q.Level
-	}
-	if strings.TrimSpace(q.Src) != "" {
-		filters = append(filters, "src = {:src}")
-		params["src"] = q.Src
-	}
-	for i, t := range q.messageTokens() {
-		name := "tok" + strconv.Itoa(i)
-		filters = append(filters, "message ~ {:"+name+"}")
-		params[name] = " " + t[0] + "=" + t[1]
-	}
-	filter := strings.Join(filters, " && ")
-	return app.FindRecordsByFilter(logsCollection, filter, "-created", perPage, (page-1)*perPage, params)
+	conds, params := q.conditions()
+	return app.FindRecordsByFilter(logsCollection, strings.Join(conds, " && "), "-created", perPage, (page-1)*perPage, params)
 }
