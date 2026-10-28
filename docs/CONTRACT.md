@@ -661,6 +661,11 @@ After auth the handler holds SSE long-lived:
   slow/dead subscriber's queue overflows into a drop, never a block),
   so the poll fallback still bounds staleness. Ref: `:RegisterHook`,
   `configwire/stream/hub.go:Notify`.
+- Single-binary scope: fan-out is in-process only (no broker; `hub.subs`
+  lives in the serving process). With N tenant processes a subscriber
+  connected to another process misses the push and converges only via
+  the poll fallback (§10). Do not run replicas expecting instant push
+  on all nodes.
 - Keepalive: `: ping` comment frame every 20s until client disconnect
   or a 10min cap, then the server closes and the client reconnects
   with backoff. No canned `config_update` on connect (avoids
@@ -792,7 +797,9 @@ Success `200` (both verbs, same shape):
 Push is best-effort (near-instant while connected; no sub-second
 guarantee). Otherwise freshness is at most `pollInterval` (Dart
 default 15min) plus one fetch: the client poller runs in every state
-(stream healthy, down, or 401), so the bound holds on all paths.
+(stream healthy, down, or 401), so the bound holds on all paths —
+including multi-process misses (§6) and per-process nonce/rate-limit
+skews (§12b).
 Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.dart` (RealtimeUpdater), `SECURITY.md` section 7.
 ## 11. Retention
 
@@ -911,10 +918,12 @@ Errors (spec-exact `{message, status}` bodies via `re.JSON`):
 - `404 sso not enabled.` when the server runs in `standard` mode
   (secret empty): redeem exists but never issues.
 - Nonce cache is in-memory, entry TTL 60s (== ticket TTL).
-  Per-process caveat: with N tenant processes a replay hitting a
+  Single-binary scope: with N tenant processes a replay hitting a
   different process within the 60s window can pass, same trade-off
-  as the existing per-process rate-limit caveat. Replay window is
-  at most 60s worst case. Ref: `:257-269`.
+  as the existing per-process rate-limit caveat and the in-process
+  stream fan-out (§6). Replay window is at most 60s worst case.
+  Do not run replicas expecting cross-process single-use.
+  Ref: `:257-269`.
 - The ticket, secret, MAC, and nonce never appear in logs; log
   lines carry `email=` only. Ref: `:20-21,383-414`.
 

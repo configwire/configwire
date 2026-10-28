@@ -135,6 +135,15 @@ Receipt: `curl $BASE/healthz` refuses and `lsof -ti:8120` is empty.
   `package:configwire/configwire.dart`; the client sends
   `X-ConfigWire-Key`. Stale `.configwire_*-cache.json` files rebuild
   on the next fetch.
+- Cache/bucket namespacing is by SDK-key prefix (first 8 chars, e.g.
+  `cw-Ab12Cd`): each prefix gets its own cache row and stable `?b=`
+  bucket. Rotating to a key with a NEW prefix starts cold by design
+  (next `200` mints a fresh bucket, arms reshuffle). Rotating to a key
+  that reuses the SAME 8-char prefix reuses the old row and bucket —
+  no reshuffle. To force a clean cohort, mint until the prefix differs;
+  to keep the cohort stable, keep the prefix. Same rule applies to the
+  Flutter `SharedPreferencesCacheStore` (`<prefix>.<namespace>.cache` /
+  `.bucket`, `namespace` = key prefix).
 - Admin UI: first load restores the stored session from localStorage.
   An empty or missing token lands on the
   login form; a garbage token shows an error toast and stays in the

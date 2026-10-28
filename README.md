@@ -66,7 +66,7 @@ go run . serve --http 127.0.0.1:8109 --dir /tmp/cw-pbdata
 Minimal SDK check (after creating a project/env/flag + SDK key in the Admin UI):
 
 ```bash
-curl -s http://127.0.0.1:8090/api/v1/env/dev/config \
+curl -s 'http://127.0.0.1:8090/api/v1/env/dev/config?b=1234' \
   -H "X-ConfigWire-Key: <sdk-key>"
 ```
 
@@ -88,7 +88,7 @@ and the [example](https://github.com/configwire/dart/tree/main/example).
 Ports: `8090` default serve · `8108` e2e (`scripts/e2e.sh`, do not reuse).
 CI (`.github/workflows/ci.yml`) runs build/vet/test + `make lint` on push/PR.
  
-Defaults worth knowing: v0.2.0-rc.1 (released 2026-10-25) is bucket-only: `?b=` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` are accepted-but-ignored, never stored. Raw `events` 30d → rolled into `event_daily` (90d);
+Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (released 2026-10-25): `?b=0-9999` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` (any casing) are accepted-but-ignored, never stored. Raw `events` 30d → rolled into `event_daily` (90d);
 stats past 30d answer `approximate:true`. Rate limits: global 200 rps/IP +
 burst 400, fetch 100 / ingest 50 rps per key (`429` carries `Retry-After: 1`).
 Details in [`docs/CONTRACT.md`](docs/CONTRACT.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
