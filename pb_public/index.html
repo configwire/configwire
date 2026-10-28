@@ -433,6 +433,7 @@
               <p class="muted">Superuser server logs, read-only. Tune capture below.</p>
               <form id="logs-filter-form" class="inline-form" aria-label="Log filters">
                 <label for="logs-level">Level <select id="logs-level" aria-label="Level filter"><option value="">Any</option><option value="0">DEBUG</option><option value="1">INFO</option><option value="2">WARN</option><option value="3">ERROR</option></select></label>
+                <label for="logs-perpage">Per page <select id="logs-perpage" aria-label="Rows per page"><option value="10">10</option><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option></select></label>
                 <button type="submit" class="btn secondary">Filter</button>
               </form>
               <div id="logs-active-filters" class="log-active-filters" hidden></div>
@@ -445,6 +446,7 @@
               </table>
               <div class="limits-footer">
                 <button id="logs-prev" type="button" class="btn secondary">Prev</button>
+                <label class="logs-page-pick">Page <select id="logs-page" aria-label="Page"></select></label>
                 <span id="logs-page-info" role="status"></span>
                 <button id="logs-next" type="button" class="btn secondary">Next</button>
               </div>

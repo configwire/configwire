@@ -144,8 +144,13 @@
     var pg = page != null ? page : currentFilter("page", 1);
     pg = parseInt(pg, 10);
     if (!isFinite(pg) || pg < 1) pg = 1;
+    var ppEl = CW.$("logs-perpage");
+    var pp = (ppEl && ppEl.value != null && ppEl.value !== "") ? ppEl.value : currentFilter("perPage", PER_PAGE);
+    pp = parseInt(pp, 10);
+    if (!isFinite(pp) || pp < 1) pp = PER_PAGE;
+    if (pp > 200) pp = 200;
     return {
-      level: lv, src: sc, page: pg,
+      level: lv, src: sc, page: pg, perPage: pp,
       project: currentFilter("project", ""), key: currentFilter("key", ""),
       status: currentFilter("status", ""), reason: currentFilter("reason", ""),
       limiter: currentFilter("limiter", "")
@@ -153,7 +158,10 @@
   }
 
   function buildLogsPath(f) {
-    var parts = ["perPage=" + PER_PAGE, "page=" + f.page];
+    var pp = parseInt(f.perPage, 10);
+    if (!isFinite(pp) || pp < 1) pp = PER_PAGE;
+    if (pp > 200) pp = 200;
+    var parts = ["perPage=" + pp, "page=" + f.page];
     var lv = String(f.level == null ? "" : f.level).replace(/^\s+|\s+$/g, "");
     if (lv !== "") parts.push("level=" + encodeURIComponent(lv));
     var sc = String(f.src == null ? "" : f.src).replace(/^\s+|\s+$/g, "");
@@ -193,6 +201,8 @@
     if (levelEl && levelEl.value != null) levelEl.value = f.level == null ? "" : f.level;
     var srcEl = CW.$("logs-src");
     if (srcEl && srcEl.value != null) srcEl.value = f.src == null ? "" : f.src;
+    var ppEl = CW.$("logs-perpage");
+    if (ppEl && ppEl.value != null) ppEl.value = String(f.perPage == null ? PER_PAGE : f.perPage);
   }
 
   function reloadLogsFirstPage() {
@@ -264,6 +274,19 @@
         if (pill && pill.getAttribute) clearLogFilter(pill.getAttribute("data-f-clear"));
       });
       bar.__cwLogPillsWired = true;
+    }
+    var pp = CW.$("logs-perpage");
+    if (pp && !pp.__cwLogPerPageWired && pp.addEventListener) {
+      pp.addEventListener("change", function () { reloadLogsFirstPage(); });
+      pp.__cwLogPerPageWired = true;
+    }
+    var pgSel = CW.$("logs-page");
+    if (pgSel && !pgSel.__cwLogPageWired && pgSel.addEventListener) {
+      pgSel.addEventListener("change", function () {
+        var n = parseInt(pgSel.value, 10);
+        if (isFinite(n) && n >= 1) loadLogs(n).catch(function (e) { console.warn('logs: page refresh', e); });
+      });
+      pgSel.__cwLogPageWired = true;
     }
   }
 
@@ -493,22 +516,33 @@
     renderActiveLogFilters();
     wireLogFilterClicks();
     var info = CW.$("logs-page-info");
+    var total = typeof data.total === "number" ? data.total : items.length;
+    var pages = totalPagesOf(data);
     if (info) {
-      var total = typeof data.total === "number" ? data.total : items.length;
-      info.textContent = "Page " + page + " of " + totalPagesOf(data) +
-        " (" + total + " total)";
+      info.textContent = "of " + pages + (pages === 1 ? " page" : " pages") +
+        " · " + total + (total === 1 ? " log" : " logs");
+    }
+    var sel = CW.$("logs-page");
+    if (sel) {
+      var opts = "";
+      for (var pg = 1; pg <= pages; pg++) {
+        opts += '<option value="' + pg + '"' + (pg === page ? " selected" : "") + ">" + pg + "</option>";
+      }
+      sel.innerHTML = opts;
+      sel.disabled = pages <= 1;
     }
     var prev = CW.$("logs-prev");
     if (prev) prev.disabled = page <= 1;
     var next = CW.$("logs-next");
-    if (next) next.disabled = page >= totalPagesOf(data);
+    if (next) next.disabled = page >= pages;
   }
 
   function loadLogs(page, level, src) {
     var f = readFilters(page, level, src);
     CW.state.logFilters = {
       level: f.level, src: f.src, project: f.project, key: f.key,
-      status: f.status, reason: f.reason, limiter: f.limiter, page: f.page
+      status: f.status, reason: f.reason, limiter: f.limiter, page: f.page,
+      perPage: f.perPage
     };
     function fetchLogs() {
       return CW.api(buildLogsPath(f)).then(function (data) {
