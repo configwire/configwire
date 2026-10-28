@@ -3,6 +3,18 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.9 — 2026-10-28
+
+### Added
+
+- Success-lines log setting (migration `1790000025_log_settings_success` adding `log_settings.successLogs`, default true): `GET/PUT /api/v1/admin/log-settings` gains `successLogs` (absent/null keeps stored; boot env `CONFIGWIRE_LOG_STORE_SUCCESS_LOGS`). When off, fetch `served`/`cached` and ingest `accepted` lines skip `server_logs` but keep their stderr line; rejections always persist. The log settings dialog gains a Success lines switch and hides its settings body while capture itself is off.
+- Server-side message-token filters on `GET /api/v1/admin/logs` (`?project=&key=&status=&reason=&limiter=`, each constrained to `[A-Za-z0-9_-]` with malformed values answering `400`): counts and pages match the single-space `k=v` message tokens via `LIKE ... ESCAPE`. Fetch `served`/`cached` and ingest `accepted` lines now stamp `project=<id>` so the viewer can show a project pill; the viewer renders tappable filter chips/cards that set these filters.
+- Logs viewer pager: per-page selector (10-row default, kept on filter clear) and page-jump controls with clear totals, plus a header refresh button reloading the current page.
+
+### Changed
+
+- Logs message column redesigned (project pill, single-line local timestamps), table gains row numbers with a fixed column layout, log chip tooltips drop the tap-to-filter hint, and the redundant Publish sidebar entry is removed.
+
 ## v0.2.0-rc.8 — 2026-10-27
 
 ### Fixed
