@@ -462,6 +462,21 @@ func (q LogQuery) conditions() ([]string, dbx.Params) {
 		conds = append(conds, "limiter = {:limiter}")
 		params["limiter"] = q.Limiter
 	}
+	// When success capture is off, the viewer hides success lines
+	// (served/cached/accepted) even when they were stored before the
+	// setting was turned off. Rejections and reason-less rows still
+	// match; an explicit reason=served/cached/accepted filter then
+	// naturally returns nothing.
+	if !GetConfig().SuccessLogs {
+		conds = append(conds,
+			"reason != {:hideSuccess1}",
+			"reason != {:hideSuccess2}",
+			"reason != {:hideSuccess3}",
+		)
+		params["hideSuccess1"] = "served"
+		params["hideSuccess2"] = "cached"
+		params["hideSuccess3"] = "accepted"
+	}
 	return conds, params
 }
 

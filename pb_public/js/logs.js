@@ -113,7 +113,9 @@
           CW.markFormClean("log-settings-form");
         }
         closeLogSettingsDialog();
-        return loadLogSettings().catch(function (e) { console.warn('logs: save list refresh', e); });
+        return loadLogSettings().then(function () {
+          return loadLogs(1);
+        }).catch(function (e) { console.warn('logs: save list refresh', e); });
       }
       var fail = CW.apiError(out, "Save failed");
       if (resEl) resEl.textContent = fail;
