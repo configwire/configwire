@@ -992,7 +992,12 @@ func CheckIP(re *core.RequestEvent) bool {
 // client response is unchanged.
 func BlockIP(re *core.RequestEvent) error {
 	blockLog.Request(re.Request.Method, re.Request.URL.Path, "ip-blocked", http.StatusTooManyRequests)
-	_ = logstore.Write(re.App, int(logx.LevelWarn), "limits", fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, "ip-blocked", http.StatusTooManyRequests))
+	// Env stays "" — pre-auth flood path, often non-env routes, no record.
+	_ = logstore.Write(re.App, logstore.Entry{
+		Level: int(logx.LevelWarn), Src: "limits",
+		Message: fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, "ip-blocked", http.StatusTooManyRequests),
+		Status:  http.StatusTooManyRequests, Reason: "ip-blocked",
+	})
 	security.SetHeaders(re)
 	return apireq.TooMany(re, "Rate limit exceeded.")
 }
@@ -1002,7 +1007,12 @@ func BlockIP(re *core.RequestEvent) error {
 // One Request line (reason admin-denied); the client response is unchanged.
 func BlockAdmin(re *core.RequestEvent) error {
 	blockLog.Request(re.Request.Method, re.Request.URL.Path, "admin-denied", http.StatusForbidden)
-	_ = logstore.Write(re.App, int(logx.LevelWarn), "limits", fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, "admin-denied", http.StatusForbidden))
+	// Env stays "" — pre-auth admin path, no env record.
+	_ = logstore.Write(re.App, logstore.Entry{
+		Level: int(logx.LevelWarn), Src: "limits",
+		Message: fmt.Sprintf("%s %s reason=%s status=%d", re.Request.Method, re.Request.URL.Path, "admin-denied", http.StatusForbidden),
+		Status:  http.StatusForbidden, Reason: "admin-denied",
+	})
 	security.SetHeaders(re)
 	return re.JSON(http.StatusForbidden, map[string]any{
 		"message": "Admin access denied for this IP.",
