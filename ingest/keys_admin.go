@@ -3,10 +3,12 @@ package ingest
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/internal/apireq"
+	"github.com/configwire/configwire/limits"
 )
 
 // mintKeyRequest is the admin key-minting body. Only env/fetchRps/
@@ -19,11 +21,36 @@ type mintKeyRequest struct {
 	IngestRps int    `json:"ingestRps"`
 }
 
-func validRps(v int) bool { return v == 0 || (v >= 1 && v <= 10000) }
+// validRps accepts 0 (inherit the global budget) or 1..field-ceiling,
+// where the ceiling comes from the plan env (CONFIGWIRE_MAX_FETCH_RPS /
+// CONFIGWIRE_MAX_INGEST_RPS via limits, defaulting to 10000 = no
+// ceiling). Unknown fields have no ceiling beyond the absolute bound.
+func validRps(field string, v int) bool {
+	if v == 0 {
+		return true
+	}
+	if v < 1 || v > 10000 {
+		return false
+	}
+	return v <= fieldCeiling(field)
+}
+
+// fieldCeiling maps a per-key budget field to its plan ceiling.
+func fieldCeiling(field string) int {
+	switch field {
+	case limits.FetchRpsField:
+		return limits.CeilingFetchRps()
+	case limits.IngestRpsField:
+		return limits.CeilingIngestRps()
+	default:
+		return 10000
+	}
+}
 
 // mintInputError validates mint parameters, returning an HTTP status
 // and message (ok=true when valid). Missing/unknown env → 404;
-// out-of-range budgets → 400.
+// out-of-range budgets → 400; above-ceiling budgets → 400 naming the
+// ceiling.
 func mintInputError(app core.App, env string, fetchRps, ingestRps int) (status int, msg string, ok bool) {
 	if env == "" {
 		return http.StatusNotFound, "Unknown env.", false
@@ -31,11 +58,22 @@ func mintInputError(app core.App, env string, fetchRps, ingestRps int) (status i
 	if _, err := app.FindRecordById("environments", env); err != nil {
 		return http.StatusNotFound, "Unknown env.", false
 	}
-	if !validRps(fetchRps) || !validRps(ingestRps) {
+	if !validAbsoluteRps(fetchRps) || !validAbsoluteRps(ingestRps) {
 		return http.StatusBadRequest, "fetchRps/ingestRps must be empty or 1..10000.", false
+	}
+	if !validRps(limits.FetchRpsField, fetchRps) {
+		return http.StatusBadRequest, "invalid fetchRps: must be 1.." + strconv.Itoa(fieldCeiling(limits.FetchRpsField)) + " (plan ceiling).", false
+	}
+	if !validRps(limits.IngestRpsField, ingestRps) {
+		return http.StatusBadRequest, "invalid ingestRps: must be 1.." + strconv.Itoa(fieldCeiling(limits.IngestRpsField)) + " (plan ceiling).", false
 	}
 	return 0, "", true
 }
+
+// validAbsoluteRps accepts 0 (inherit the global budget) or the absolute
+// 1..10000 range, ignoring plan ceilings (the ceiling check owns its own
+// message).
+func validAbsoluteRps(v int) bool { return v == 0 || (v >= 1 && v <= 10000) }
 
 // mintKey creates a v2 sdk_keys row with server-generated material.
 // The DB row stores ONLY the bcrypt verifier (hash=""); the full key

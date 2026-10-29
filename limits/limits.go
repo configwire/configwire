@@ -566,26 +566,95 @@ func loadDefaultsFromEnv() Config {
 	c.AdminAllowedIPs = loadAdminAllowedIPsFromEnv()
 	c.IPHeaders = loadIPHeadersFromEnv()
 	c.CountryHeaders = loadCountryHeadersFromEnv()
+	warnCeilings()
 	return c
 }
 
-// ValidateConfig enforces 1..10000 on every numeric tunable, checked in
-// struct order so multi-field failures always report the same field first,
-// then the admin allowlist (empty means allow all) and the header orders
-// (empty means code defaults and is valid).
-func ValidateConfig(c Config) error {
-	fields := []struct {
+// Plan-ceiling env knobs (tenant tier enforcement, injected by the
+// orchestrator fragment per tier). Each caps the corresponding tunable:
+// PUT values above the ceiling fail 400, env/DB loads clamp down to it,
+// and per-key overrides cap at it. Unset/empty/malformed env means "no
+// ceiling" (falls back to MaxRps, standalone behavior unchanged).
+const (
+	maxGlobalRpsEnvName = "CONFIGWIRE_MAX_GLOBAL_RPS"
+	maxBurstEnvName     = "CONFIGWIRE_MAX_BURST"
+	maxFetchRpsEnvName  = "CONFIGWIRE_MAX_FETCH_RPS"
+	maxIngestRpsEnvName = "CONFIGWIRE_MAX_INGEST_RPS"
+)
+
+// parseCeilingEnv reads one plan-ceiling env var: empty/malformed yields
+// MaxRps (no ceiling). A parsed value below MinRps still enforces — every
+// value above it is rejected — which only happens on misconfig (the
+// fragment tier env always sets sane ceilings), so the load path warns.
+func parseCeilingEnv(name string) int {
+	v := strings.TrimSpace(os.Getenv(name))
+	if v == "" {
+		return MaxRps
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return MaxRps
+	}
+	return n
+}
+
+// CeilingGlobalRps caps Config.GlobalRps (CONFIGWIRE_MAX_GLOBAL_RPS).
+func CeilingGlobalRps() int { return parseCeilingEnv(maxGlobalRpsEnvName) }
+
+// CeilingBurst caps Config.Burst (CONFIGWIRE_MAX_BURST).
+func CeilingBurst() int { return parseCeilingEnv(maxBurstEnvName) }
+
+// CeilingFetchRps caps Config.FetchRps and per-key fetchRps overrides
+// (CONFIGWIRE_MAX_FETCH_RPS).
+func CeilingFetchRps() int { return parseCeilingEnv(maxFetchRpsEnvName) }
+
+// CeilingIngestRps caps Config.IngestRps and per-key ingestRps overrides
+// (CONFIGWIRE_MAX_INGEST_RPS).
+func CeilingIngestRps() int { return parseCeilingEnv(maxIngestRpsEnvName) }
+
+// warnCeilings logs once per load when a plan ceiling sits below MinRps
+// (misconfig: every value above it will be rejected). Called from the
+// env-load path, never from per-request paths.
+func warnCeilings() {
+	for _, ce := range []struct {
 		name string
 		v    int
 	}{
-		{"globalRps", c.GlobalRps},
-		{"burst", c.Burst},
-		{"fetchRps", c.FetchRps},
-		{"ingestRps", c.IngestRps},
+		{maxGlobalRpsEnvName, CeilingGlobalRps()},
+		{maxBurstEnvName, CeilingBurst()},
+		{maxFetchRpsEnvName, CeilingFetchRps()},
+		{maxIngestRpsEnvName, CeilingIngestRps()},
+	} {
+		if ce.v < MinRps {
+			log.Printf("limits: %s=%d below minimum %d — values above it will be rejected", ce.name, ce.v, MinRps)
+		}
+	}
+}
+
+// ValidateConfig enforces 1..10000 on every numeric tunable narrowed by
+// its plan ceiling (1..ceiling), checked in struct order so multi-field
+// failures always report the same field first, then the admin allowlist
+// (empty means allow all) and the header orders (empty means code
+// defaults and is valid). Above-ceiling values name the ceiling, e.g.
+// "invalid fetchRps: must be 1..100 (plan ceiling)."; without a ceiling
+// env the bound is 1..10000 exactly as before.
+func ValidateConfig(c Config) error {
+	fields := []struct {
+		name    string
+		v       int
+		ceiling int
+	}{
+		{"globalRps", c.GlobalRps, CeilingGlobalRps()},
+		{"burst", c.Burst, CeilingBurst()},
+		{"fetchRps", c.FetchRps, CeilingFetchRps()},
+		{"ingestRps", c.IngestRps, CeilingIngestRps()},
 	}
 	for _, f := range fields {
 		if f.v < MinRps || f.v > MaxRps {
 			return &configError{msg: "invalid " + f.name + ": must be 1..10000."}
+		}
+		if f.v > f.ceiling {
+			return &configError{msg: "invalid " + f.name + ": must be 1.." + strconv.Itoa(f.ceiling) + " (plan ceiling)."}
 		}
 	}
 	if err := ValidateAdminAllowedIPs(c.AdminAllowedIPs); err != nil {
@@ -604,24 +673,33 @@ type configError struct{ msg string }
 
 func (e *configError) Error() string { return e.msg }
 
-// clampConfig forces every numeric field into 1..10000 (used when loading
-// env/DB values that bypass admin validation), canonicalizes the admin
-// allowlist (empty stays allow-all, invalid entries are dropped with a
-// warning while valid entries stay enforced) and
+// clampConfig forces every numeric field into MinRps..ceiling (used when
+// loading env/DB values that bypass admin validation), falling back to
+// the code default per knob on out-of-range absolute values, then pulls
+// above-ceiling values down to the ceiling itself; it canonicalizes the
+// admin allowlist (empty stays allow-all, invalid entries are dropped
+// with a warning while valid entries stay enforced) and
 // normalizes the header orders to the storable form (empty/invalid becomes
-// the code defaults).
+// the code defaults). Without a ceiling env the ceiling is MaxRps, so the
+// standalone behavior is unchanged.
 func clampConfig(c Config) Config {
-	clamp := func(v, def int) int {
+	clamp := func(v, def, ceiling int) int {
 		if v < MinRps || v > MaxRps {
 			return def
+		}
+		if v > ceiling {
+			if ceiling < MinRps {
+				return def
+			}
+			return ceiling
 		}
 		return v
 	}
 	d := Defaults()
-	c.GlobalRps = clamp(c.GlobalRps, d.GlobalRps)
-	c.Burst = clamp(c.Burst, d.Burst)
-	c.FetchRps = clamp(c.FetchRps, d.FetchRps)
-	c.IngestRps = clamp(c.IngestRps, d.IngestRps)
+	c.GlobalRps = clamp(c.GlobalRps, d.GlobalRps, CeilingGlobalRps())
+	c.Burst = clamp(c.Burst, d.Burst, CeilingBurst())
+	c.FetchRps = clamp(c.FetchRps, d.FetchRps, CeilingFetchRps())
+	c.IngestRps = clamp(c.IngestRps, d.IngestRps, CeilingIngestRps())
 	c.AdminAllowedIPs = canonicalAdminAllowedIPs(c.AdminAllowedIPs)
 	c.IPHeaders = canonicalIPHeaders(c.IPHeaders)
 	c.CountryHeaders = canonicalCountryHeaders(c.CountryHeaders)
@@ -818,15 +896,33 @@ const (
 )
 
 // effectiveRps resolves a per-key override: a value inside 1..MaxRps wins,
-// anything else (missing, zero, negative, over-max — never trust the DB
-// blindly) falls back to the global default.
+// capped at the field's plan ceiling (an override above the ceiling
+// yields the ceiling, not the global fallback); anything else (missing,
+// zero, negative, over-max — never trust the DB blindly) falls back to
+// the global default.
 func effectiveRps(key *core.Record, field string, global int) int {
 	if key != nil {
 		if v := key.GetInt(field); v >= MinRps && v <= MaxRps {
+			if ceiling := ceilingForField(field); v > ceiling {
+				return ceiling
+			}
 			return v
 		}
 	}
 	return global
+}
+
+// ceilingForField maps a per-key override field to its plan ceiling
+// (unknown fields have no ceiling).
+func ceilingForField(field string) int {
+	switch field {
+	case FetchRpsField:
+		return CeilingFetchRps()
+	case IngestRpsField:
+		return CeilingIngestRps()
+	default:
+		return MaxRps
+	}
 }
 
 // EffectiveFetchRps returns the per-second fetch budget for key: its

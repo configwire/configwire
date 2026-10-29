@@ -112,15 +112,50 @@ func loadDefaultsFromEnv() Settings {
 	c.Enabled = parseEnvBool("CONFIGWIRE_LOG_STORE_ENABLED", c.Enabled)
 	c.MaxDays = parseEnvInt("CONFIGWIRE_LOG_STORE_MAX_DAYS", c.MaxDays)
 	c.SuccessLogs = parseEnvBool("CONFIGWIRE_LOG_STORE_SUCCESS_LOGS", c.SuccessLogs)
+	warnCeiling()
 	return c
 }
 
-// ValidateSettings enforces 1..1825 on maxDays (enabled/successLogs are
-// plain bools, always valid). Violations are 400-style settingsErrors
-// for the future admin PUT path.
+// maxLogDaysEnvName is the plan-ceiling knob (tenant tier enforcement,
+// injected by the orchestrator fragment): PUT values and env/DB loads
+// above it are rejected/clamped. Unset/empty/malformed env means "no
+// ceiling" (falls back to MaxDays, standalone unchanged).
+const maxLogDaysEnvName = "CONFIGWIRE_MAX_LOG_DAYS"
+
+// CeilingDays caps Settings.MaxDays (CONFIGWIRE_MAX_LOG_DAYS).
+func CeilingDays() int {
+	v := strings.TrimSpace(os.Getenv(maxLogDaysEnvName))
+	if v == "" {
+		return MaxDays
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return MaxDays
+	}
+	return n
+}
+
+// warnCeiling logs when the plan ceiling sits below MinDays (misconfig:
+// every value above it will be rejected). Called from the env-load path,
+// never from per-request paths.
+func warnCeiling() {
+	if c := CeilingDays(); c < MinDays {
+		log.Printf("logstore: %s=%d below minimum %d — values above it will be rejected", maxLogDaysEnvName, c, MinDays)
+	}
+}
+
+// ValidateSettings enforces 1..1825 on maxDays narrowed by the plan
+// ceiling (1..ceiling); enabled/successLogs are plain bools, always
+// valid. Above-ceiling values name the ceiling, e.g. "invalid maxDays:
+// must be 1..7 (plan ceiling)."; without a ceiling env the bound is
+// 1..1825 exactly as before. Violations are 400-style settingsErrors
+// for the admin PUT path.
 func ValidateSettings(c Settings) error {
 	if c.MaxDays < MinDays || c.MaxDays > MaxDays {
 		return &settingsError{msg: "invalid maxDays: must be 1..1825."}
+	}
+	if c.MaxDays > CeilingDays() {
+		return &settingsError{msg: "invalid maxDays: must be 1.." + strconv.Itoa(CeilingDays()) + " (plan ceiling)."}
 	}
 	return nil
 }
@@ -129,12 +164,23 @@ type settingsError struct{ msg string }
 
 func (e *settingsError) Error() string { return e.msg }
 
-// clampSettings forces maxDays into 1..1825 (used when loading env/DB
-// values that bypass admin validation), falling back to the code default.
+// clampSettings forces maxDays into MinDays..ceiling (used when loading
+// env/DB values that bypass admin validation), falling back to the code
+// default on out-of-range absolute values, then pulling above-ceiling
+// values down to the ceiling itself. Without a ceiling env the ceiling
+// is MaxDays, so the standalone behavior is unchanged.
 func clampSettings(c Settings) Settings {
 	d := Defaults()
 	if c.MaxDays < MinDays || c.MaxDays > MaxDays {
 		c.MaxDays = d.MaxDays
+		return c
+	}
+	if ceiling := CeilingDays(); c.MaxDays > ceiling {
+		if ceiling < MinDays {
+			c.MaxDays = d.MaxDays
+			return c
+		}
+		c.MaxDays = ceiling
 	}
 	return c
 }

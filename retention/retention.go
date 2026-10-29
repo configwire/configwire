@@ -73,19 +73,58 @@ func loadDefaultsFromEnv() Config {
 	c := Defaults()
 	c.RawDays = parseEnvInt("CONFIGWIRE_RAW_RETENTION_DAYS", c.RawDays)
 	c.RollupDays = parseEnvInt("CONFIGWIRE_ROLLUP_RETENTION_DAYS", c.RollupDays)
+	warnCeiling()
 	return c
 }
 
-// ValidateConfig enforces 1..1825 on each knob plus the rollup >= raw
-// invariant (checked in struct order so multi-field failures always
-// report rawDays first). Violations are 400-style configErrors for the
-// future admin PUT path.
+// maxRetentionDaysEnvName is the plan-ceiling knob (tenant tier
+// enforcement, injected by the orchestrator fragment): PUT values and
+// env/DB loads above it are rejected/clamped. Unset/empty/malformed env
+// means "no ceiling" (falls back to MaxDays, standalone unchanged).
+const maxRetentionDaysEnvName = "CONFIGWIRE_MAX_RETENTION_DAYS"
+
+// CeilingDays caps RawDays and RollupDays (CONFIGWIRE_MAX_RETENTION_DAYS).
+func CeilingDays() int {
+	v := strings.TrimSpace(os.Getenv(maxRetentionDaysEnvName))
+	if v == "" {
+		return MaxDays
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return MaxDays
+	}
+	return n
+}
+
+// warnCeiling logs when the plan ceiling sits below MinDays (misconfig:
+// every value above it will be rejected). Called from the env-load path,
+// never from per-request paths.
+func warnCeiling() {
+	if c := CeilingDays(); c < MinDays {
+		log.Printf("retention: %s=%d below minimum %d — values above it will be rejected", maxRetentionDaysEnvName, c, MinDays)
+	}
+}
+
+// ValidateConfig enforces 1..1825 on each knob narrowed by the plan
+// ceiling (1..ceiling) plus the rollup >= raw invariant (checked in
+// struct order so multi-field failures always report rawDays first).
+// Above-ceiling values name the ceiling, e.g. "invalid rawDays: must be
+// 1..7 (plan ceiling)."; without a ceiling env the bound is 1..1825
+// exactly as before. Violations are 400-style configErrors for the
+// admin PUT path.
 func ValidateConfig(c Config) error {
+	ceiling := CeilingDays()
 	if c.RawDays < MinDays || c.RawDays > MaxDays {
 		return &configError{msg: "invalid rawDays: must be 1..1825."}
 	}
+	if c.RawDays > ceiling {
+		return &configError{msg: "invalid rawDays: must be 1.." + strconv.Itoa(ceiling) + " (plan ceiling)."}
+	}
 	if c.RollupDays < MinDays || c.RollupDays > MaxDays {
 		return &configError{msg: "invalid rollupDays: must be 1..1825."}
+	}
+	if c.RollupDays > ceiling {
+		return &configError{msg: "invalid rollupDays: must be 1.." + strconv.Itoa(ceiling) + " (plan ceiling)."}
 	}
 	if c.RollupDays < c.RawDays {
 		return &configError{msg: "invalid rollupDays: must be >= rawDays."}
@@ -97,18 +136,30 @@ type configError struct{ msg string }
 
 func (e *configError) Error() string { return e.msg }
 
-// clampConfig forces each knob into 1..1825 (used when loading env/DB
-// values that bypass admin validation), falling back to the code default
-// per knob, then repairs the invariant by raising rollupDays up to
-// rawDays (rollups must outlive the raw rows they aggregate).
+// clampConfig forces each knob into MinDays..ceiling (used when loading
+// env/DB values that bypass admin validation), falling back to the code
+// default per knob on out-of-range absolute values, then pulling
+// above-ceiling values down to the ceiling itself, then repairs the
+// invariant by raising rollupDays up to rawDays (rollups must outlive the
+// raw rows they aggregate). Without a ceiling env the ceiling is MaxDays,
+// so the standalone behavior is unchanged.
 func clampConfig(c Config) Config {
 	d := Defaults()
-	if c.RawDays < MinDays || c.RawDays > MaxDays {
-		c.RawDays = d.RawDays
+	ceiling := CeilingDays()
+	clamp := func(v, def int) int {
+		if v < MinDays || v > MaxDays {
+			return def
+		}
+		if v > ceiling {
+			if ceiling < MinDays {
+				return def
+			}
+			return ceiling
+		}
+		return v
 	}
-	if c.RollupDays < MinDays || c.RollupDays > MaxDays {
-		c.RollupDays = d.RollupDays
-	}
+	c.RawDays = clamp(c.RawDays, d.RawDays)
+	c.RollupDays = clamp(c.RollupDays, d.RollupDays)
 	if c.RollupDays < c.RawDays {
 		c.RollupDays = c.RawDays
 	}
