@@ -3,8 +3,11 @@ package ingest
 import (
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/configwire/configwire/internal/apireq"
@@ -70,6 +73,60 @@ func mintInputError(app core.App, env string, fetchRps, ingestRps int) (status i
 	return 0, "", true
 }
 
+// maxKeysPerEnv reads CONFIGWIRE_MAX_KEYS_PER_ENV (injected per tier by
+// the orchestrator: starter 3, pro 10, scale unset). Empty, malformed, or
+// negative yields 0 = unlimited (standalone behavior unchanged); a positive
+// int is the per-env cap on active SDK keys. Each key carries its own RPS
+// bucket, so unbounded keys multiply tier throughput — the cap bounds that
+// multiplier per env.
+func maxKeysPerEnv() int {
+	v := strings.TrimSpace(os.Getenv("CONFIGWIRE_MAX_KEYS_PER_ENV"))
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// activeKeyCount counts sdk_keys rows bound to env that are not revoked.
+// Revocation rides on GetBool, so legacy rows missing the revoked field
+// read as false = active. The DB filters by env; revoked is checked in Go
+// so a missing field can never slip out of the count.
+func activeKeyCount(app core.App, env string) (int, error) {
+	recs, err := app.FindRecordsByFilter("sdk_keys", "env = {:env}", "", 0, 0, dbx.Params{"env": env})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, r := range recs {
+		if !r.GetBool("revoked") {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// keyCapError returns a 400 message when env already holds maxKeysPerEnv()
+// active keys ("" when under the cap or uncapped). Revoked keys never
+// count.
+func keyCapError(app core.App, env string) (string, error) {
+	cap := maxKeysPerEnv()
+	if cap <= 0 {
+		return "", nil
+	}
+	n, err := activeKeyCount(app, env)
+	if err != nil {
+		return "", err
+	}
+	if n >= cap {
+		return "key limit reached for this env (max " + strconv.Itoa(cap) + " active keys). Revoke an unused key to make room.", nil
+	}
+	return "", nil
+}
+
 // validAbsoluteRps accepts 0 (inherit the global budget) or the absolute
 // 1..10000 range, ignoring plan ceilings (the ceiling check owns its own
 // message).
@@ -123,6 +180,11 @@ func postMintKey(re *core.RequestEvent) error {
 		if status == http.StatusNotFound {
 			return re.JSON(http.StatusNotFound, map[string]any{"message": msg, "status": 404})
 		}
+		return re.BadRequestError(msg, nil)
+	}
+	if msg, err := keyCapError(re.App, req.Env); err != nil {
+		return apireq.Internal(re, "ingest: failed to count keys", err)
+	} else if msg != "" {
 		return re.BadRequestError(msg, nil)
 	}
 	rec, full, err := mintKey(re.App, req.Env, req.FetchRps, req.IngestRps)
