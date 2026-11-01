@@ -148,21 +148,38 @@ to restore. See `SECURITY.md` section 10 before any `migrate down`.
 
 Skip it and the first bad migration or disk event is unrecoverable.
 
-## 7. Multi-node: keep the purge ticker on exactly one node
+## 7. Multi-node: MUST keep the purge ticker on exactly one node
 
 ```bash
-# all but one node:
+# exactly one node keeps the default (enabled); all other nodes:
 export CONFIGWIRE_PURGE=off
 ```
 
-The daily purge ticker (`configwire/purge/purge.go:753-769` (`purgeEnabled`, `Register`))
-scrubs identities, rolls up events, and prunes salts per process.
-Two nodes ticking on the same DB double the work and race the
-rollup. Disable on all but one; the manual
-`POST /api/v1/admin/maintenance/purge` route stays mounted
-everywhere.
+MUST: exactly 1 process runs with `CONFIGWIRE_PURGE` enabled, every
+other process sets it to `off` (or `0`/`false`). The daily purge
+ticker (`configwire/purge/purge.go:699-706` (`purgeEnabled`), `708-721` (`Register`))
+scrubs identities, rolls up raw events into `event_daily`, and prunes
+salts per process. Two tickers on the same DB roll up the same raw
+rows twice, double-counting `event_daily` fetches/exposures and racing
+the delete. The manual `POST /api/v1/admin/maintenance/purge` route
+stays mounted everywhere regardless.
 
-Skip it and nodes fight over the same retention job on every tick.
+Skip it and nodes double-count rollups on every tick.
+
+## 8. SSO redeem: MUST run single-replica or sticky
+
+MUST: in SSO mode behind more than one process, run a single redeem
+replica or pin `POST /api/v1/admin/sso/redeem` to one process with
+sticky sessions. The single-use nonce store (`configwire/sso/sso.go:265-277`
+(`NonceCache`), 60s ticket TTL) and the redeem per-IP buckets
+(`configwire/sso/sso.go:308-315` (`RedeemPerIPLimit`, `RedeemPerIPWindow`),
+`317-323` (`redeemBucket` per-process memory)) are per-process memory,
+not shared state. A replay or burst split across replicas within the
+60s window passes the `409` replay check and the 10/min/IP limit on
+each process independently.
+
+Skip it and a replayed ticket redeemed on a second replica passes
+inside the window, and per-IP rate limiting can be bypassed N-fold.
 
 ## Known trade-offs (documented, not changing)
 
