@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -67,16 +69,54 @@ func appVersion() string {
 	return v
 }
 
+// resolvePublicDir locates pb_public independent of cwd. It tries the
+// directory next to the running binary first (single-binary installs),
+// then ./pb_public (cwd=configwire dev path), preferring whichever
+// contains index.html. The result is absolute so both staticDigest and
+// the Static() mount serve the same files. When neither contains
+// index.html it logs once and returns the exe-side path so boot stays
+// fail-soft (current 404 statics) instead of exiting.
+var (
+	publicDirOnce sync.Once
+	publicDirMemo string
+)
+
+func resolvePublicDir() string {
+	publicDirOnce.Do(func() {
+		candidates := []string{}
+		if exe, err := os.Executable(); err == nil {
+			if dir := filepath.Dir(exe); dir != "" {
+				candidates = append(candidates, filepath.Join(dir, "pb_public"))
+			}
+		}
+		if abs, err := filepath.Abs("./pb_public"); err == nil {
+			candidates = append(candidates, abs)
+		} else {
+			candidates = append(candidates, "./pb_public")
+		}
+		for _, c := range candidates {
+			if st, err := os.Stat(filepath.Join(c, "index.html")); err == nil && !st.IsDir() {
+				publicDirMemo = c
+				return
+			}
+		}
+		bootLog.Error("pb_public/index.html missing in <%s>; serve must run from configwire/ or install pb_public next to binary", strings.Join(candidates, ">, <"))
+		publicDirMemo = candidates[0]
+	})
+	return publicDirMemo
+}
+
 // staticDigest fingerprints the Admin UI shell (index.html, styles.css,
 // js/*.js) so the browser can detect a redeploy without a VERSION bump.
 // Computed once at serve start; "" when pb_public is unreachable
-// (e.g. wrong cwd — the client then skips the asset comparison).
+// (the client then skips the asset comparison).
 func staticDigest() string {
-	files := []string{"./pb_public/index.html", "./pb_public/styles.css"}
-	if entries, err := os.ReadDir("./pb_public/js"); err == nil {
+	publicDir := resolvePublicDir()
+	files := []string{filepath.Join(publicDir, "index.html"), filepath.Join(publicDir, "styles.css")}
+	if entries, err := os.ReadDir(filepath.Join(publicDir, "js")); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
-				files = append(files, "./pb_public/js/"+e.Name())
+				files = append(files, filepath.Join(publicDir, "js", e.Name()))
 			}
 		}
 	}
@@ -89,7 +129,11 @@ func staticDigest() string {
 			continue
 		}
 		ok = true
-		h.Write([]byte(f))
+		if rel, err := filepath.Rel(publicDir, f); err == nil {
+			h.Write([]byte(rel))
+		} else {
+			h.Write([]byte(f))
+		}
 		h.Write([]byte{0})
 		h.Write(b)
 		h.Write([]byte{0})
@@ -113,6 +157,33 @@ func parseHSTSMaxAge(raw string) int {
 		return 0
 	}
 	return n
+}
+
+// isPublicBind reports whether the serve listener address is reachable
+// beyond loopback. Empty defaults to loopback (printStartBanner falls back
+// to 127.0.0.1:8090 on empty, same contract); "localhost" and loopback IPs
+// (127.0.0.0/8, ::1) are loopback; everything else — including wildcard
+// binds (0.0.0.0, ::) and LAN hostnames — counts as public, since the port
+// answers off-box traffic on those binds.
+func isPublicBind(addr string) bool {
+	host := strings.TrimSpace(addr)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = strings.TrimSpace(h)
+	}
+	host = strings.Trim(host, "[]")
+	if i := strings.LastIndex(host, "%"); i != -1 {
+		host = host[:i]
+	}
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return !ip.IsLoopback()
+	}
+	return true
 }
 
 // applyHSTSConfig applies the opt-in CONFIGWIRE_HSTS boot knob once (never
@@ -464,6 +535,13 @@ func main() {
 
 		if os.Getenv("CONFIGWIRE_CORS_ORIGIN") == "" {
 			bootLog.Boot("CONFIGWIRE_CORS_ORIGIN is unset, fetch CORS defaults to \"*\"; set CONFIGWIRE_CORS_ORIGIN=https://app.example.com in production")
+			// Fail-soft hardening: a wildcard CORS origin on a
+			// non-loopback bind exposes env config to any website a
+			// visitor opens, so escalate to Error with the checklist
+			// link (loopback keeps the Boot line only). Never exits.
+			if isPublicBind(se.Server.Addr) {
+				bootLog.Error("CONFIGWIRE_CORS_ORIGIN is unset and serve bind is non-loopback: fetch CORS is open (\"*\"); set CONFIGWIRE_CORS_ORIGIN=https://app.example.com before exposing publicly — see configwire/docs/PRODUCTION.md")
+			}
 		}
 		applyHSTSConfig(os.Getenv("CONFIGWIRE_HSTS"))
 		// Global security headers for every response.
@@ -495,6 +573,16 @@ func main() {
 		})
 
 		limits.Register(se)
+
+		// Fail-soft hardening: an empty admin allowlist (allow-all) on a
+		// non-loopback bind leaves the superuser surface gated by password
+		// strength alone, so escalate to Error with the checklist link
+		// (loopback stays silent). Read after limits.Register so the
+		// rate_settings row overrides env defaults. Never exits; empty
+		// still means allow-all, only the log level changes.
+		if isPublicBind(se.Server.Addr) && len(limits.GetConfig().AdminAllowedIPs) == 0 {
+			bootLog.Error("admin allowlist is empty (CONFIGWIRE_ADMIN_ALLOWED_IPS unset) and serve bind is non-loopback: admin APIs answer any IP; set CONFIGWIRE_ADMIN_ALLOWED_IPS before exposing publicly — see configwire/docs/PRODUCTION.md")
+		}
 
 		retention.Register(se)
 
@@ -644,9 +732,10 @@ func main() {
 		// fetch calls from pb_public/js/*.js. Mounted LAST on /{path...}
 		// with indexFallback so /api/* (registered above) keeps
 		// precedence: unknown /api/* paths still answer 404 JSON, while
-		// unknown non-API paths fall back to index.html. Serve runs from
-		// configwire/ so ./pb_public resolves (cwd=configwire required).
-		se.Router.GET("/{path...}", apis.Static(os.DirFS("./pb_public"), true))
+		// unknown non-API paths fall back to index.html. The dir is
+		// resolved via resolvePublicDir (exe-side first, ./pb_public
+		// fallback) so serving works independent of cwd.
+		se.Router.GET("/{path...}", apis.Static(os.DirFS(resolvePublicDir()), true))
 
 		if err := se.Next(); err != nil {
 			return err
