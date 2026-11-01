@@ -556,6 +556,8 @@ func main() {
 			}
 			return re.Next()
 		})
+		// Opt-in admin-request audit trail (log settings switch).
+		se.Router.BindFunc(logAdminRequests)
 
 		// Content fingerprint of the Admin UI shell, captured once per
 		// process start. The client compares it on a timer to show a

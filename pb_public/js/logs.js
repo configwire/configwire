@@ -30,6 +30,21 @@
     if (sw && sw.setAttribute) sw.setAttribute("aria-checked", on ? "true" : "false");
   }
 
+  function setLogAdminRequestsSwitch(on) {
+    var sw = CW.$("log-admin-requests");
+    if (sw && sw.setAttribute) sw.setAttribute("aria-checked", on ? "true" : "false");
+  }
+
+  function setLogAdminSuccessSwitch(on) {
+    var sw = CW.$("log-admin-success");
+    if (sw && sw.setAttribute) sw.setAttribute("aria-checked", on ? "true" : "false");
+  }
+
+  function setLogAdminHealthSwitch(on) {
+    var sw = CW.$("log-admin-health");
+    if (sw && sw.setAttribute) sw.setAttribute("aria-checked", on ? "true" : "false");
+  }
+
   function isLogEnabledSwitchOn() {
     var sw = CW.$("log-enabled");
     if (sw && sw.getAttribute) return sw.getAttribute("aria-checked") === "true";
@@ -40,6 +55,24 @@
     var sw = CW.$("log-success");
     if (sw && sw.getAttribute) return sw.getAttribute("aria-checked") === "true";
     return currentVal("successLogs", true);
+  }
+
+  function isLogAdminRequestsSwitchOn() {
+    var sw = CW.$("log-admin-requests");
+    if (sw && sw.getAttribute) return sw.getAttribute("aria-checked") === "true";
+    return currentAdminVal("enabled", false);
+  }
+
+  function isLogAdminSuccessSwitchOn() {
+    var sw = CW.$("log-admin-success");
+    if (sw && sw.getAttribute) return sw.getAttribute("aria-checked") === "true";
+    return currentAdminVal("successLines", true);
+  }
+
+  function isLogAdminHealthSwitchOn() {
+    var sw = CW.$("log-admin-health");
+    if (sw && sw.getAttribute) return sw.getAttribute("aria-checked") === "true";
+    return currentAdminVal("healthChecks", false);
   }
 
   function onLogEnabledSwitch() {
@@ -55,21 +88,50 @@
     else if (CW.refreshFormSubmit) CW.refreshFormSubmit("log-settings-form");
   }
 
+  function onLogAdminRequestsSwitch() {
+    setLogAdminRequestsSwitch(!isLogAdminRequestsSwitchOn());
+    syncAdminSettingsBody();
+    if (CW.markFormDirty) CW.markFormDirty("log-settings-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("log-settings-form");
+  }
+
+  function onLogAdminSuccessSwitch() {
+    setLogAdminSuccessSwitch(!isLogAdminSuccessSwitchOn());
+    if (CW.markFormDirty) CW.markFormDirty("log-settings-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("log-settings-form");
+  }
+
+  function onLogAdminHealthSwitch() {
+    setLogAdminHealthSwitch(!isLogAdminHealthSwitchOn());
+    if (CW.markFormDirty) CW.markFormDirty("log-settings-form");
+    else if (CW.refreshFormSubmit) CW.refreshFormSubmit("log-settings-form");
+  }
+
   function setSettingsInputs(d) {
     if (!d) return;
     if (d.enabled != null) setLogEnabledSwitch(!!d.enabled);
     if (d.successLogs != null) setLogSuccessSwitch(!!d.successLogs);
+    if (d.adminLogs != null) {
+      if (d.adminLogs.enabled != null) setLogAdminRequestsSwitch(!!d.adminLogs.enabled);
+      if (d.adminLogs.successLines != null) setLogAdminSuccessSwitch(!!d.adminLogs.successLines);
+      if (d.adminLogs.healthChecks != null) setLogAdminHealthSwitch(!!d.adminLogs.healthChecks);
+    }
     var daysEl = CW.$("log-maxdays");
     if (daysEl && d.maxDays != null) daysEl.value = d.maxDays;
     syncLogSettingsBody();
+    syncAdminSettingsBody();
+  }
+
+  function syncAdminSettingsBody() {
+    var body = CW.$("log-admin-settings-body");
+    if (!body || !body.classList) return;
+    body.classList.toggle("is-collapsed", !isLogAdminRequestsSwitchOn());
   }
 
   function syncLogSettingsBody() {
-    var card = CW.$("log-settings-card");
-    if (!card) return;
-    var hide = !isLogEnabledSwitchOn();
-    if (card.hidden != null) card.hidden = hide;
-    else if (card.style) card.style.display = hide ? "none" : "";
+    var wrap = CW.$("log-settings-cards");
+    if (!wrap || !wrap.classList) return;
+    wrap.classList.toggle("is-collapsed", !isLogEnabledSwitchOn());
   }
 
   function renderLogSettings(data) {
@@ -102,6 +164,12 @@
     return fallback;
   }
 
+  function currentAdminVal(key, fallback) {
+    if (CW.state.logSettings && CW.state.logSettings.adminLogs != null &&
+        CW.state.logSettings.adminLogs[key] != null) return CW.state.logSettings.adminLogs[key];
+    return fallback;
+  }
+
   function putLogSettings(body, resElId) {
     return CW.apiMut("PUT", "/api/v1/admin/log-settings", body).then(function (out) {
       var resEl = CW.$(resElId || "log-settings-result");
@@ -130,6 +198,11 @@
     var body = {
       enabled: enabled,
       successLogs: isLogSuccessSwitchOn(),
+      adminLogs: {
+        enabled: isLogAdminRequestsSwitchOn(),
+        successLines: isLogAdminSuccessSwitchOn(),
+        healthChecks: isLogAdminHealthSwitchOn()
+      },
       maxDays: numOr("log-maxdays", currentVal("maxDays", NaN))
     };
     var msg = validateLogSettings(body.maxDays);
@@ -663,8 +736,14 @@
   CW.renderLogSettings = renderLogSettings;
   CW.setLogEnabledSwitch = setLogEnabledSwitch;
   CW.setLogSuccessSwitch = setLogSuccessSwitch;
+  CW.setLogAdminRequestsSwitch = setLogAdminRequestsSwitch;
+  CW.setLogAdminSuccessSwitch = setLogAdminSuccessSwitch;
+  CW.setLogAdminHealthSwitch = setLogAdminHealthSwitch;
   CW.onLogEnabledSwitch = onLogEnabledSwitch;
   CW.onLogSuccessSwitch = onLogSuccessSwitch;
+  CW.onLogAdminRequestsSwitch = onLogAdminRequestsSwitch;
+  CW.onLogAdminSuccessSwitch = onLogAdminSuccessSwitch;
+  CW.onLogAdminHealthSwitch = onLogAdminHealthSwitch;
   CW.loadLogSettings = loadLogSettings;
   CW.saveLogSettings = saveLogSettings;
   CW.openLogSettingsDialog = openLogSettingsDialog;

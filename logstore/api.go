@@ -16,7 +16,8 @@ import (
 // Register loads persisted tunables (seeding the singleton row when
 // absent) and mounts the superuser-only admin endpoints:
 //
-//	GET /api/v1/admin/log-settings -> {enabled,maxDays,successLogs}
+//	GET /api/v1/admin/log-settings -> {enabled,maxDays,successLogs,
+//	adminLogs:{enabled,successLines,healthChecks}}
 //	PUT /api/v1/admin/log-settings -> validates maxDays 1..1825,
 //	    updates memory + upserts the log_settings row,
 //	    returns the same shape.
@@ -33,12 +34,22 @@ func Register(se *core.ServeEvent) {
 	se.Router.GET("/api/v1/admin/logs", getLogs).Bind(apis.RequireSuperuserAuth())
 }
 
+// adminLogsBody is the admin-log area shape: a nested object so the
+// area reads as one unit. Absent/null keeps the whole stored area;
+// present merges per-field the same way.
+type adminLogsBody struct {
+	Enabled      *bool `json:"enabled"`
+	SuccessLines *bool `json:"successLines"`
+	HealthChecks *bool `json:"healthChecks"`
+}
+
 // logSettingsBody is the wire shape for GET responses and PUT requests.
 // Pointers keep absent/null (keep stored) distinct from explicit values.
 type logSettingsBody struct {
-	Enabled     *bool `json:"enabled"`
-	MaxDays     *int  `json:"maxDays"`
-	SuccessLogs *bool `json:"successLogs"`
+	Enabled     *bool          `json:"enabled"`
+	MaxDays     *int           `json:"maxDays"`
+	SuccessLogs *bool          `json:"successLogs"`
+	AdminLogs   *adminLogsBody `json:"adminLogs"`
 }
 
 func toSettingsBody(c Settings) map[string]any {
@@ -46,6 +57,11 @@ func toSettingsBody(c Settings) map[string]any {
 		"enabled":     c.Enabled,
 		"maxDays":     c.MaxDays,
 		"successLogs": c.SuccessLogs,
+		"adminLogs": map[string]any{
+			"enabled":      c.AdminLogs.Enabled,
+			"successLines": c.AdminLogs.SuccessLines,
+			"healthChecks": c.AdminLogs.HealthChecks,
+		},
 	}
 }
 
@@ -70,6 +86,7 @@ func putLogSettings(re *core.RequestEvent) error {
 		Enabled:     resolvePUTBool(stored.Enabled, req.Enabled),
 		MaxDays:     resolvePUTInt(stored.MaxDays, req.MaxDays),
 		SuccessLogs: resolvePUTBool(stored.SuccessLogs, req.SuccessLogs),
+		AdminLogs:   resolvePUTAdminLogs(stored.AdminLogs, req.AdminLogs),
 	}
 	if err := ValidateSettings(next); err != nil {
 		return re.BadRequestError(err.Error(), nil)
@@ -78,6 +95,20 @@ func putLogSettings(re *core.RequestEvent) error {
 		return apireq.Internal(re, "logstore: failed to persist log settings", err)
 	}
 	return re.JSON(http.StatusOK, toSettingsBody(next))
+}
+
+// resolvePUTAdminLogs maps the PUT adminLogs object onto the stored
+// area: nil (absent/null) keeps the whole stored area, otherwise each
+// present knob replaces its stored value.
+func resolvePUTAdminLogs(stored AdminLogSettings, req *adminLogsBody) AdminLogSettings {
+	if req == nil {
+		return stored
+	}
+	return AdminLogSettings{
+		Enabled:      resolvePUTBool(stored.Enabled, req.Enabled),
+		SuccessLines: resolvePUTBool(stored.SuccessLines, req.SuccessLines),
+		HealthChecks: resolvePUTBool(stored.HealthChecks, req.HealthChecks),
+	}
 }
 
 // resolvePUTBool maps one PUT knob onto the stored value: nil

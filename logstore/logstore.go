@@ -61,11 +61,33 @@ const (
 	maxLevel = 3
 )
 
+// AdminLogSettings is the admin-request audit area: its own enable
+// switch plus success-lines and health-check knobs. It still respects
+// the master Enabled switch (Write no-ops when the store is off).
+type AdminLogSettings struct {
+	Enabled      bool `json:"enabled"`
+	SuccessLines bool `json:"successLines"`
+	HealthChecks bool `json:"healthChecks"`
+}
+
+// DefaultAdminLogs is the opt-in admin-request audit trail. Off by
+// default: the admin UI polls frequently and load balancers hit /healthz
+// constantly, so this is high-volume when enabled. SuccessLines defaults
+// on (record every admin request while the area is enabled);
+// HealthChecks defaults off (/healthz stays unlogged unless explicitly
+// included).
+var DefaultAdminLogs = AdminLogSettings{
+	Enabled:      false,
+	SuccessLines: true,
+	HealthChecks: false,
+}
+
 // Settings carries the tunable log-store policy.
 type Settings struct {
-	Enabled     bool `json:"enabled"`
-	MaxDays     int  `json:"maxDays"`
-	SuccessLogs bool `json:"successLogs"`
+	Enabled     bool             `json:"enabled"`
+	MaxDays     int              `json:"maxDays"`
+	SuccessLogs bool             `json:"successLogs"`
+	AdminLogs   AdminLogSettings `json:"adminLogs"`
 }
 
 // Defaults returns the code defaults (before env/DB overrides).
@@ -74,6 +96,7 @@ func Defaults() Settings {
 		Enabled:     DefaultEnabled,
 		MaxDays:     DefaultMaxDays,
 		SuccessLogs: DefaultSuccessLogs,
+		AdminLogs:   DefaultAdminLogs,
 	}
 }
 
@@ -112,6 +135,9 @@ func loadDefaultsFromEnv() Settings {
 	c.Enabled = parseEnvBool("CONFIGWIRE_LOG_STORE_ENABLED", c.Enabled)
 	c.MaxDays = parseEnvInt("CONFIGWIRE_LOG_STORE_MAX_DAYS", c.MaxDays)
 	c.SuccessLogs = parseEnvBool("CONFIGWIRE_LOG_STORE_SUCCESS_LOGS", c.SuccessLogs)
+	c.AdminLogs.Enabled = parseEnvBool("CONFIGWIRE_LOG_STORE_ADMIN_LOGS_ENABLED", c.AdminLogs.Enabled)
+	c.AdminLogs.SuccessLines = parseEnvBool("CONFIGWIRE_LOG_STORE_ADMIN_LOGS_SUCCESS_LINES", c.AdminLogs.SuccessLines)
+	c.AdminLogs.HealthChecks = parseEnvBool("CONFIGWIRE_LOG_STORE_ADMIN_LOGS_HEALTH_CHECKS", c.AdminLogs.HealthChecks)
 	warnCeiling()
 	return c
 }
@@ -267,6 +293,9 @@ func EnsureLoaded(app core.App) {
 		rec.Set("enabled", c.Enabled)
 		rec.Set("maxDays", c.MaxDays)
 		rec.Set("successLogs", c.SuccessLogs)
+		rec.Set("adminLogsEnabled", c.AdminLogs.Enabled)
+		rec.Set("adminLogsSuccessLines", c.AdminLogs.SuccessLines)
+		rec.Set("adminLogsHealthChecks", c.AdminLogs.HealthChecks)
 		if err := app.Save(rec); err != nil {
 			log.Printf("logstore: failed to seed log_settings: %v", err)
 		}
@@ -285,6 +314,18 @@ func EnsureLoaded(app core.App) {
 	// migration backfills the row, making this a stale-schema guard.
 	if collection.Fields.GetByName("successLogs") != nil {
 		c.SuccessLogs = rec.GetBool("successLogs")
+	}
+	// Same stale-schema guard for the admin-log area (pre-migration rows
+	// predate the fields and keep the defaults: off, success lines on,
+	// health checks off).
+	if collection.Fields.GetByName("adminLogsEnabled") != nil {
+		c.AdminLogs.Enabled = rec.GetBool("adminLogsEnabled")
+	}
+	if collection.Fields.GetByName("adminLogsSuccessLines") != nil {
+		c.AdminLogs.SuccessLines = rec.GetBool("adminLogsSuccessLines")
+	}
+	if collection.Fields.GetByName("adminLogsHealthChecks") != nil {
+		c.AdminLogs.HealthChecks = rec.GetBool("adminLogsHealthChecks")
 	}
 	cfgMu.Lock()
 	current = clampSettings(c)
@@ -327,6 +368,9 @@ func upsertGlobalRow(app core.App, c Settings) error {
 	rec.Set("enabled", c.Enabled)
 	rec.Set("maxDays", c.MaxDays)
 	rec.Set("successLogs", c.SuccessLogs)
+	rec.Set("adminLogsEnabled", c.AdminLogs.Enabled)
+	rec.Set("adminLogsSuccessLines", c.AdminLogs.SuccessLines)
+	rec.Set("adminLogsHealthChecks", c.AdminLogs.HealthChecks)
 	return app.Save(rec)
 }
 

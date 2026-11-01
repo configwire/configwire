@@ -633,15 +633,33 @@
           </div>
           <form id="log-settings-form" aria-label="Log settings">
             <p class="muted">When off, the server stops recording new entries.</p>
+            <div id="log-settings-cards">
+            <div class="log-settings-card" id="log-admin-settings-card">
+              <div class="log-switch-row"><span>Log admin requests</span><button type="button" id="log-admin-requests" class="log-switch" role="switch" aria-checked="false" aria-label="Log admin requests" title="Toggle admin-request audit capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+              <p class="muted">When on, every admin API request is recorded.</p>
+              <div id="log-admin-settings-body">
+                <div class="log-settings-group">
+                  <div class="log-switch-row"><span>Success lines</span><button type="button" id="log-admin-success" class="log-switch" role="switch" aria-checked="true" aria-label="Admin success lines" title="Toggle admin success-line capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+                  <p class="muted">When off, only failed admin requests are recorded.</p>
+                  <div class="log-switch-row"><span>Health checks</span><button type="button" id="log-admin-health" class="log-switch" role="switch" aria-checked="false" aria-label="Health checks" title="Toggle health-check capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+                  <p class="muted">When on, /healthz hits are recorded too.</p>
+                </div>
+              </div>
+            </div>
             <div class="log-settings-card" id="log-settings-card">
+              <h4>General settings</h4>
               <div class="log-settings-group">
                 <div class="log-switch-row"><span>Success lines</span><button type="button" id="log-success" class="log-switch" role="switch" aria-checked="true" aria-label="Success lines" title="Toggle success-line capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
                 <p class="muted">When off, only rejections are recorded.</p>
               </div>
+            </div>
+            <div class="log-settings-card" id="log-retention-card">
+              <h4>Retention</h4>
               <div class="log-settings-group">
                 <label>Days kept <input id="log-maxdays" type="number" min="1" max="1825"></label>
-                <p class="muted">Log retention in days (1–1825).</p>
+                <p class="muted">Log retention in days (1–1825). Applies to both admin and general logs.</p>
               </div>
+            </div>
             </div>
             <div class="form-actions">
               <button type="submit" class="btn primary">Save</button>

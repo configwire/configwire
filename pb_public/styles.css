@@ -1383,8 +1383,9 @@ main {
 /* ---- Log settings dialog (index.html #log-settings-dialog): flag /
  * key-limits dialog idiom — compact labeled rows + right-aligned
  * footer, no page-card limit-grid boxes. Renderer contract: every id
- * below is stable (log-settings-form/log-enabled/log-success/
- * log-settings-card/log-maxdays/log-settings-cancel/log-settings-result). */
+ * below is stable (log-settings-form/log-enabled/log-success/log-admin-requests/
+ * log-admin-success/log-admin-health/log-admin-settings-card/log-admin-settings-body/
+ * log-settings-cards/log-settings-card/log-retention-card/log-maxdays/log-settings-cancel/log-settings-result). */
 #log-settings-form {
   flex-direction: column;
   align-items: stretch;
@@ -1420,6 +1421,56 @@ main {
 
 .log-settings-card[hidden] {
   display: none;
+}
+
+#log-admin-settings-body {
+  max-height: 480px;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition: max-height 180ms ease, opacity 160ms ease, visibility 0s;
+}
+
+#log-admin-settings-body.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: max-height 180ms ease, opacity 160ms ease, visibility 0s linear 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #log-admin-settings-body {
+    transition: none;
+  }
+}
+
+#log-settings-cards {
+  max-height: 1600px;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transition: max-height 200ms ease, opacity 160ms ease, visibility 0s;
+}
+
+#log-settings-cards > .log-settings-card + .log-settings-card {
+  margin-top: var(--space-4);
+}
+
+#log-settings-cards.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: max-height 200ms ease, opacity 160ms ease, visibility 0s linear 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #log-settings-cards {
+    transition: none;
+  }
+}
+
+.log-settings-card>h4:first-child {
+  margin-top: 0;
 }
 
 .log-settings-group {
