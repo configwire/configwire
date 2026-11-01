@@ -52,7 +52,7 @@
   function syncSidebar() {
     var ts = CW.$("sidebar-scope");
     if (ts) {
-      ts.hidden = !CW.state.token;
+      ts.hidden = !(CW.isAuthed && CW.isAuthed());
     }
     var nav = CW.$("sidebar-nav");
     if (!nav) return;
@@ -61,7 +61,7 @@
     var settingsLink = CW.$("settings-nav-link");
     var logsLink = CW.$("logs-nav-link");
     var logoutBtn = CW.$("logout-btn");
-    if (!CW.state.token) {
+    if (!(CW.isAuthed && CW.isAuthed())) {
       nav.setAttribute("aria-hidden", "true");
       for (var k = 0; k < links.length; k++) {
         links[k].setAttribute("tabindex", "-1");
@@ -529,7 +529,7 @@
       var sel = CW.$("home-since");
       if (sel) sel.value = getHomeSince();
     } catch (e) { /* test harness without the select */ }
-    if (CW.state.token) loadHomeStats().catch(function (e) { console.warn('router: home stats', e); });
+    if (CW.isAuthed && CW.isAuthed()) loadHomeStats().catch(function (e) { console.warn('router: home stats', e); });
   }
 
   function scrollBelowSticky(card) {
@@ -629,7 +629,7 @@
   }
 
   function route() {
-    if (!CW.state.token) return;
+    if (!(CW.isAuthed && CW.isAuthed())) return;
     var r = parseHash();
     if (r.view === "settings") {
       showSettings();

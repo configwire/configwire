@@ -12,7 +12,8 @@
   var LS_HOME_SINCE = "cw_home_since";
 
   var state = {
-    token: null, // memory-first copy
+    token: null, // memory-only (never persisted; HttpOnly cookie carries reloads)
+    session: false, // cookie-session flag (HttpOnly, JS-invisible): true once login/probe succeeds
     projects: [],
     envs: [],
     projectId: null,
@@ -64,9 +65,9 @@
     var el = $("toast");
     if (!el) return;
     if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
-    // After auto-logout there is no session: never leave a stale API error
-    // (e.g. "request failed (403)") visible on the login screen.
-    if (!state.token && ok !== true) { el.textContent = ""; el.hidden = true; return; }
+  // After auto-logout there is no session: never leave a stale API error
+  // (e.g. "request failed (403)") visible on the login screen.
+  if (!isAuthed() && ok !== true) { el.textContent = ""; el.hidden = true; return; }
     el.textContent = msg;
     el.hidden = !msg;
     // Success (ok===true) renders green via #toast.ok; everything else
@@ -135,6 +136,9 @@
   }
 
   function setLoggedIn(on) {
+    // Cookie-cutover gate: the HttpOnly cookie is JS-invisible, so track
+    // the validated session explicitly for the isAuthed() gates.
+    state.session = !!on;
     // Cloud SSO bridge: in sso mode there is no login dialog and no
     // password/account UI whatsoever — entry goes through the Cloud
     // dashboard. The logout control mirrors standard (visible when logged
@@ -213,6 +217,12 @@
         nav.style.display = "";
       }
     }
+  }
+
+  // Cookie-cutover gate: true with a memory token OR a validated
+  // HttpOnly-cookie session (state.session, set by setLoggedIn).
+  function isAuthed() {
+    return !!(state.token || state.session);
   }
 
   function selectedEnv() {
@@ -309,28 +319,42 @@
     return Promise.resolve(ok);
   }
 
-  // J5: single token-storage helper (auth.js x3, account.js sso-redeem,
-  // boot.js boot-restore, core.js logoutFallback). Memory-first + guarded
-  // localStorage copy, exactly like the inline lines they replace.
+  // J5: single token-storage helper (auth.js login, account.js sso-redeem,
+  // boot.js boot-restore, core.js logoutFallback). Memory-only: the
+  // HttpOnly session cookie (JS-invisible) carries reloads, so a token is
+  // never written to localStorage; a legacy LS_KEY copy (pre-cookie
+  // builds) is removed once as a migration and then never touched.
   function saveToken(tok) {
-    state.token = tok;
-    try { localStorage.setItem(LS_KEY, tok); } catch (e) { /* private mode */ }
-    return tok;
+    state.token = (tok == null ? null : tok);
+    try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
+    return state.token;
   }
 
   function loadToken() {
-    try { state.token = localStorage.getItem(LS_KEY); }
-    catch (e) { state.token = null; }
+    // One-time migration: adopt a legacy localStorage copy into memory,
+    // then drop it so no token persists in localStorage afterwards.
+    if (!state.token) {
+      try {
+        var legacy = localStorage.getItem(LS_KEY);
+        if (legacy) state.token = legacy;
+      } catch (e) { state.token = null; }
+    }
+    try { localStorage.removeItem(LS_KEY); } catch (e2) { /* private mode */ }
     return state.token;
   }
 
   function clearToken() {
     state.token = null;
+    // Fail-closed: a token clear must never leave a stale cookie-session
+    // flag behind (login-failure calls clearToken without setLoggedIn).
+    state.session = false;
     try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
   }
 
   function api(path) {
-    return fetch(path, { headers: authHeaders() }).then(function (res) {
+    // Cookie-first: same-origin include carries the HttpOnly session; the
+    // memory Authorization header stays as a fallback for the middleware.
+    return fetch(path, { credentials: "same-origin", headers: authHeaders() }).then(function (res) {
       if (res.status === 401 || res.status === 403) { logoutRef(); throw new Error("session expired — please log in"); }
       if (!res.ok) {
         return res.json().then(function (data) {
@@ -446,6 +470,7 @@
   function apiMut(method, path, body) {
     return fetch(path, {
       method: method,
+      credentials: "same-origin",
       headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
       body: body === undefined ? undefined : JSON.stringify(body),
     }).then(function (res) {
@@ -474,6 +499,7 @@
   CW.showLoginError = showLoginError;
   CW.setLoggedIn = setLoggedIn;
   CW.isSsoMode = isSsoMode;
+  CW.isAuthed = isAuthed;
   CW.applySsoUiGating = applySsoUiGating;
   CW.ssoLogoutHome = ssoLogoutHome;
   CW.selectedEnv = selectedEnv;

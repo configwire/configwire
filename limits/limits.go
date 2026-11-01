@@ -937,6 +937,14 @@ func EffectiveIngestRps(key *core.Record) int {
 	return effectiveRps(key, IngestRpsField, GetConfig().IngestRps)
 }
 
+// IsTrustedProxyPeer reports whether remoteAddr (the direct TCP peer)
+// is a local proxy whose forwarded headers may be trusted: loopback,
+// private ranges, and link-local unicast. Exported for session-cookie
+// Secure decisions, which must use the same trust boundary as ClientIP.
+func IsTrustedProxyPeer(remoteAddr string) bool {
+	return isTrustedProxyRemote(remoteAddr)
+}
+
 // isTrustedProxyRemote reports whether remoteAddr (the direct TCP peer)
 // is a local proxy whose forwarded headers may be trusted: loopback
 // (127.0.0.0/8, ::1), private ranges (10/8, 172.16/12, 192.168/16 via

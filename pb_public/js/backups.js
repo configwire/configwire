@@ -310,7 +310,7 @@
     var fd;
     try { fd = new FormData(); fd.append("file", f, f.name || "backup.zip"); }
     catch (e) { backupUploadStatus((e && e.message) || "Upload failed"); return Promise.resolve({ status: 0, data: null }); }
-    return fetch("/api/backups/upload", { method: "POST", headers: CW.authHeaders(), body: fd }).then(function (res) {
+    return fetch("/api/backups/upload", { method: "POST", credentials: "same-origin", headers: CW.authHeaders(), body: fd }).then(function (res) {
       return res.json().then(function (data) { return { status: res.status, data: data }; }, function () { return { status: res.status, data: { message: "HTTP " + res.status } }; });
     }, function (err) {
       backupUploadStatus((err && err.message) || "Upload failed");

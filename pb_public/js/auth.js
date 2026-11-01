@@ -6,10 +6,14 @@
 
   function login(email, password) {
     CW.showLoginError("");
-    return fetch("/api/collections/_superusers/auth-with-password", {
+    // Cookie-first session: the server sets an HttpOnly cookie on success.
+    // A token in the body (if any) is kept memory-only as an Authorization
+    // fallback; nothing is ever persisted.
+    return fetch("/api/v1/admin/session", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identity: email, password: password }),
+      body: JSON.stringify({ email: email, password: password }),
     }).then(function (res) {
       if (!res.ok) {
         CW.clearToken();
@@ -17,7 +21,8 @@
       }
       return res.json();
     }).then(function (data) {
-      CW.saveToken(data.token); // bare token, memory-first
+      if (data && data.token) CW.saveToken(data.token); // memory-only fallback
+      else CW.clearToken();
       CW.setLoggedIn(true);
       CW.refreshAll();
       return data;
@@ -38,6 +43,12 @@
   // the same lines. Mode-fetch failure stays standard (login) by
   // construction — the documented residual case.
   function doLogout() {
+    // Fire-and-forget: the cookie is HttpOnly so only the server can clear
+    // it; never block the UI flip on this call.
+    try {
+      fetch("/api/v1/admin/session", { method: "DELETE", credentials: "same-origin" })
+        .then(function () {}, function () {});
+    } catch (e) { /* sync stub throw — the UI flip below still runs */ }
     CW.clearToken();
     CW.setLoggedIn(false);
     if (CW.syncSidebar) CW.syncSidebar();

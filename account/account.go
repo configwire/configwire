@@ -145,6 +145,8 @@ func noteSetupTokenDenied() {
 // routes (missing/invalid auth -> 401 via RequireSuperuserAuth).
 func Register(se *core.ServeEvent) {
 	setupToken = loadSetupToken()
+	se.Router.Bind(CookieAuthMiddleware())
+	registerSession(se)
 	se.Router.GET("/api/v1/admin/setup/status", getSetupStatus)
 	se.Router.POST("/api/v1/admin/setup", postSetup)
 	se.Router.GET("/api/v1/admin/account/list", listAccounts).Bind(apis.RequireSuperuserAuth())

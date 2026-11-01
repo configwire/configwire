@@ -29,7 +29,7 @@
         return Promise.resolve({ needsSetup: false });
       }
     } catch (e) { /* fall through to today's behavior */ }
-    if (CW.state.token) return Promise.resolve({ needsSetup: false });
+    if (CW.isAuthed && CW.isAuthed()) return Promise.resolve({ needsSetup: false });
     return CW.api("/api/v1/admin/setup/status").then(function (data) {
       var needs = !!(data && data.needsSetup);
       var setup = CW.$("setup-section");
@@ -232,12 +232,16 @@
   }
 
   // redeemSsoTicket redeems a ticket same-origin and stores the token
-  // exactly like CW.login success: bare token memory-first + localStorage
-  // + shell flip + refresh. On success it strips ?sso= via replaceState.
+  // exactly like CW.login success: bare token memory-only + shell flip +
+  // refresh, then adopts the token into the HttpOnly cw_admin cookie via
+  // the token-mode session endpoint so the session survives reloads
+  // (memory-only alone would drop on reload). On success it strips
+  // ?sso= via replaceState.
   function redeemSsoTicket(ticket) {
     CW.showLoginError("");
     return fetch("/api/v1/admin/sso/redeem", {
       method: "POST",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ticket: ticket }),
     }).then(function (res) {
@@ -245,7 +249,17 @@
       return res.json();
     }).then(function (data) {
       if (!data || !data.token) throw new Error("sso redeem failed: no token");
-      CW.saveToken(data.token); // bare token, memory-first
+      CW.saveToken(data.token); // bare token, memory-only
+      return fetch("/api/v1/admin/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: data.token }),
+      }).then(function (sr) {
+        if (!sr.ok) throw new Error("sso session failed: HTTP " + sr.status);
+        return data;
+      });
+    }).then(function (data) {
       var sso = CW.$("sso-section");
       if (sso) sso.hidden = true;
       CW.setLoggedIn(true);

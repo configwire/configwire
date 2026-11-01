@@ -36,29 +36,29 @@ function $(ctx, id) {
   return ctx.document.getElementById(id);
 }
 
-var AUTH_URL = "/api/collections/_superusers/auth-with-password";
+var SESSION_URL = "/api/v1/admin/session";
 
-// --- login success (auth.js:7-30) ---
+// --- login success (auth.js: login via session cookie) ---
 
-test("login success stores exact token, clears error, flips shell, refreshes", async function () {
+test("login success sets cookie session, clears error, flips shell, refreshes", async function () {
   var seenOpts;
   var ctx = fresh({
     fetchImpl: function (url, opts) {
-      assert.equal(url, AUTH_URL);
+      assert.equal(url, SESSION_URL);
       seenOpts = plain(opts);
-      return Promise.resolve(jsonRes(200, { token: "tok-abc-123" }));
+      return Promise.resolve(jsonRes(200, { ok: true }));
     },
   });
   var data = await ctx.CW.login("admin@example.com", "password123");
-  assert.deepEqual(plain(data), { token: "tok-abc-123" });
-  // Request shape (auth.js:9-12): POST JSON identity/password.
+  assert.deepEqual(plain(data), { ok: true });
+  // Request shape (auth.js): POST JSON email/password, same-origin cookie.
   assert.equal(seenOpts.method, "POST");
-  assert.deepEqual(plain(JSON.parse(seenOpts.body)), { identity: "admin@example.com", password: "password123" });
-  // Bare token stored under CW.LS_KEY (auth.js:21-22).
-  assert.equal(ctx.CW.LS_KEY, "cw_admin_token");
-  assert.equal(ctx.CW.state.token, "tok-abc-123");
-  assert.equal(ctx.store["cw_admin_token"], "tok-abc-123");
-  // Login error cleared (auth.js:8) and shell flipped (auth.js:23-24).
+  assert.deepEqual(plain(JSON.parse(seenOpts.body)), { email: "admin@example.com", password: "password123" });
+  // No token in body: memory stays empty, nothing persisted (cookie carries reloads).
+  assert.equal(ctx.CW.state.token, null);
+  assert.equal(ctx.store["cw_admin_token"], undefined);
+  assert.equal(ctx.CW.state.session, true);
+  // Login error cleared and shell flipped.
   assert.equal($(ctx, "login-error").textContent, "");
   assert.equal($(ctx, "login-error").hidden, true);
   assert.equal($(ctx, "login-section").hidden, true);
@@ -195,7 +195,7 @@ test("createSetup rejects mismatched confirmation without fetching", async funct
   assert.equal(ctx.fetchCalls.length, 0);
 });
 
-test("createSetup posts setup then auto-logs-in, storing the token", async function () {
+test("createSetup posts setup then auto-logs-in via session cookie", async function () {
   var urls = [];
   var ctx = fresh({
     fetchImpl: function (url, opts) {
@@ -205,18 +205,18 @@ test("createSetup posts setup then auto-logs-in, storing the token", async funct
         assert.deepEqual(plain(JSON.parse(opts.body)), { email: "a@b.c", password: "password123" });
         return Promise.resolve(jsonRes(201, { email: "a@b.c" }));
       }
-      assert.equal(url, AUTH_URL);
-      return Promise.resolve(jsonRes(200, { token: "fresh-setup-token" }));
+      assert.equal(url, SESSION_URL);
+      return Promise.resolve(jsonRes(200, { ok: true }));
     },
   });
   $(ctx, "setup-email").value = "a@b.c";
   $(ctx, "setup-password").value = "password123";
   $(ctx, "setup-password-confirm").value = "password123";
   var data = await ctx.CW.createSetup();
-  assert.deepEqual(urls, ["/api/v1/admin/setup", AUTH_URL]);
-  assert.deepEqual(plain(data), { token: "fresh-setup-token" });
-  assert.equal(ctx.CW.state.token, "fresh-setup-token");
-  assert.equal(ctx.store["cw_admin_token"], "fresh-setup-token");
+  assert.deepEqual(urls, ["/api/v1/admin/setup", SESSION_URL]);
+  assert.deepEqual(plain(data), { ok: true });
+  assert.equal(ctx.CW.state.token, null);
+  assert.equal(ctx.store["cw_admin_token"], undefined);
   assert.equal($(ctx, "setup-error").textContent, "");
   assert.equal(ctx.refreshCalls.length, 1, "auto-login refreshes");
 });

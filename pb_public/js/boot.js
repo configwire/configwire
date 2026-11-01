@@ -44,33 +44,57 @@
   // ---- wiring ----
 
   document.addEventListener("DOMContentLoaded", function () {
-    // Restore session (localStorage copy; memory-first once loaded).
+    // Restore session (memory-only token; HttpOnly cookie carries reloads).
     function bootWithoutTicket() {
       // Standard-path invariant: the SSO notice never shows here (the
       // markup already hides it; this keeps it hidden if a prior SSO
       // attempt revealed it before falling back).
       try { var sn = CW.$("sso-section"); if (sn) sn.hidden = true; } catch (e) { /* best-effort */ }
-      // Restore session (localStorage copy; memory-first once loaded).
+      // Cookie-first restore: a legacy localStorage copy migrates to
+      // memory via loadToken (then is dropped); otherwise the HttpOnly
+      // cookie is probed — it survives reloads while memory does not.
       CW.loadToken();
       CW.loadPersistedScope();
       if (CW.state.token) {
-        CW.setLoggedIn(true);
-        CW.refreshAll();
-        // Reload-with-token in sso mode: the cached mode may be unknown on
-        // a fresh page load (mode resolves via fetch), so revalidate in the
-        // background and re-apply the sso gating if the server says sso.
-        // Standard mode is unaffected: the shell already flipped above and
-        // the gating no-ops when the mode is not sso.
-        try {
-          if (CW.getAuthMode) {
-            CW.getAuthMode().then(function (m) {
-              if (m === "sso" && CW.applySsoUiGating) CW.applySsoUiGating();
-            }, function () {});
-          }
-        } catch (e2) { /* today's behavior already applied */ }
+        bootAuthed();
         return;
       }
-      // No token: resolve the auth mode, then gate. standard (or any mode
+      // No memory token: probe the cookie session (raw fetch, so a 401
+      // here never fans out into the logout flow) before falling back to
+      // the login/setup surface.
+      var probed = false;
+      try {
+        if (typeof fetch === "function") {
+          probed = true;
+          fetch("/api/v1/admin/account/list", { credentials: "same-origin", headers: CW.authHeaders() })
+            .then(function (res) {
+              if (res && res.ok) bootAuthed();
+              else bootLoggedOut();
+            }, function () { bootLoggedOut(); });
+        }
+      } catch (e3) { probed = false; }
+      if (!probed) bootLoggedOut();
+    }
+
+    function bootAuthed() {
+      CW.setLoggedIn(true);
+      CW.refreshAll();
+      // Reload-with-cookie in sso mode: the cached mode may be unknown on
+      // a fresh page load (mode resolves via fetch), so revalidate in the
+      // background and re-apply the sso gating if the server says sso.
+      // Standard mode is unaffected: the shell already flipped above and
+      // the gating no-ops when the mode is not sso.
+      try {
+        if (CW.getAuthMode) {
+          CW.getAuthMode().then(function (m) {
+            if (m === "sso" && CW.applySsoUiGating) CW.applySsoUiGating();
+          }, function () {});
+        }
+      } catch (e2) { /* today's behavior already applied */ }
+    }
+
+    function bootLoggedOut() {
+      // No session: resolve the auth mode, then gate. standard (or any mode
       // lookup failure) keeps today's login/setup behavior verbatim; sso
       // hides both forms behind the managed-by-cloud notice.
       var modeP = null;
@@ -185,7 +209,7 @@
       CW.showHome();
     });
     CW.on("brand-home-btn", "click", function (ev) {
-      if (!CW.state.token) { if (ev) ev.preventDefault(); return; }
+      if (CW.isAuthed && !CW.isAuthed()) { if (ev) ev.preventDefault(); return; }
       CW.state.projectId = null;
       CW.state.envId = null;
       CW.state.envs = [];
@@ -701,6 +725,9 @@
     });
     CW.on("log-enabled", "click", function () { if (CW.onLogEnabledSwitch) CW.onLogEnabledSwitch(); });
     CW.on("log-success", "click", function () { if (CW.onLogSuccessSwitch) CW.onLogSuccessSwitch(); });
+    CW.on("log-admin-requests", "click", function () { if (CW.onLogAdminRequestsSwitch) CW.onLogAdminRequestsSwitch(); });
+    CW.on("log-admin-success", "click", function () { if (CW.onLogAdminSuccessSwitch) CW.onLogAdminSuccessSwitch(); });
+    CW.on("log-admin-health", "click", function () { if (CW.onLogAdminHealthSwitch) CW.onLogAdminHealthSwitch(); });
     CW.on("logs-filter-form", "submit", function (ev) {
       if (CW.filterLogs) return CW.filterLogs(ev);
       ev.preventDefault();

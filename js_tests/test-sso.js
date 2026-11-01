@@ -113,13 +113,19 @@ test("getAuthMode: fetch failure falls back to standard (contract predates)", as
 
 // --- redeemSsoTicket (account.js) ---
 
-test("redeemSsoTicket success stores token like login and strips ?sso=", async function () {
-  var seen = null;
+test("redeemSsoTicket success adopts cookie session and strips ?sso=", async function () {
+  var urls = [];
   var ctx = freshUnit({
     fetchImpl: function (url, opts) {
-      assert.equal(url, "/api/v1/admin/sso/redeem");
-      seen = plain(opts);
-      return Promise.resolve(jsonRes(200, { token: "sso-tok-1" }));
+      urls.push(String(url));
+      if (String(url) === "/api/v1/admin/sso/redeem") {
+        assert.equal(opts.method, "POST");
+        assert.deepEqual(plain(JSON.parse(opts.body)), { ticket: "TICKET123" });
+        return Promise.resolve(jsonRes(200, { token: "sso-tok-1" }));
+      }
+      assert.equal(url, "/api/v1/admin/session");
+      assert.deepEqual(plain(JSON.parse(opts.body)), { token: "sso-tok-1" });
+      return Promise.resolve(jsonRes(200, { ok: true }));
     },
   });
   ctx.context.location.href = "http://127.0.0.1:8090/?sso=TICKET123";
@@ -128,12 +134,12 @@ test("redeemSsoTicket success stores token like login and strips ?sso=", async f
     replaceState: function (a, b, url) { replaced.push(String(url)); },
   };
   var data = await ctx.CW.redeemSsoTicket("TICKET123");
+  assert.deepEqual(urls, ["/api/v1/admin/sso/redeem", "/api/v1/admin/session"]);
   assert.deepEqual(plain(data), { token: "sso-tok-1" });
-  assert.equal(seen.method, "POST");
-  assert.deepEqual(plain(JSON.parse(seen.body)), { ticket: "TICKET123" });
-  // Exactly like CW.login success: bare token memory-first + localStorage.
+  // Memory-only token like CW.login success, cookie adopted for reloads.
   assert.equal(ctx.CW.state.token, "sso-tok-1");
-  assert.equal(ctx.store["cw_admin_token"], "sso-tok-1");
+  assert.equal(ctx.CW.state.session, true);
+  assert.ok(!Object.prototype.hasOwnProperty.call(ctx.store, "cw_admin_token"));
   assert.equal($(ctx, "login-section").hidden, true);
   assert.equal($(ctx, "admin-section").hidden, false);
   assert.equal(ctx.refreshCalls.length, 1);
@@ -605,13 +611,17 @@ test("boot sso mode with no token hides login+setup, shows notice", async functi
   assert.ok(urls.indexOf("/api/v1/admin/setup/status") === -1, "setup not probed in sso mode");
 });
 
-test("boot ?sso= auto-redeems, stores token, strips param", async function () {
+test("boot ?sso= auto-redeems, adopts cookie session, strips param", async function () {
   var posts = [];
   var ctx = h.load(undefined, {
     fetchImpl: function (url, opts) {
       if (String(url) === "/api/v1/admin/sso/redeem") {
         posts.push(plain(JSON.parse(opts.body)));
         return Promise.resolve(jsonRes(200, { token: "boot-sso-tok" }));
+      }
+      if (String(url) === "/api/v1/admin/session") {
+        posts.push({ sessionAdopt: plain(JSON.parse(opts.body)) });
+        return Promise.resolve(jsonRes(200, { ok: true }));
       }
       if (String(url) === "/api/v1/meta") return Promise.resolve(jsonRes(200, { version: "v0.0.0", assets: "a" }));
       return Promise.reject(new Error("harness fetch denied: " + url));
@@ -624,9 +634,9 @@ test("boot ?sso= auto-redeems, stores token, strips param", async function () {
   };
   ctx.dispatch("DOMContentLoaded");
   await flush(10);
-  assert.deepEqual(posts, [{ ticket: "BOOT.tik" }], "same-origin redeem posted");
+  assert.deepEqual(posts, [{ ticket: "BOOT.tik" }, { sessionAdopt: { token: "boot-sso-tok" } }], "redeem posted then cookie adopted");
   assert.equal(ctx.CW.state.token, "boot-sso-tok");
-  assert.equal(ctx.store["cw_admin_token"], "boot-sso-tok");
+  assert.ok(!Object.prototype.hasOwnProperty.call(ctx.store, "cw_admin_token"));
   assert.deepEqual(replaced, ["http://127.0.0.1:8090/"], "?sso= stripped");
 });
 
