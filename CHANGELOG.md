@@ -3,6 +3,22 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Admin session is cookie-carried with no server-side denylist: login
+  sets `cw_admin` (`HttpOnly, SameSite=Strict, Path=/, Max-Age 43200`,
+  `Secure` on TLS or trusted `X-Forwarded-Proto: https`) and `DELETE`
+  clears the cookie (always `200 {ok:true}`) — logout clears this
+  browser only, a copied token stays valid until its own auth-token
+  expiry. SSO redeem answers `200 {ok:true}` plus `Set-Cookie` with no token
+  in the body (Origin-checked, nonce-claim-before-issue, error bodies
+  stay `{message,status}`). No `{token}` in any auth body, no
+  `?token=` path, no `localStorage`/JS token state; bearer header
+  paths hard-removed from browser flows, native auth stays for ops
+  tooling only. PocketBase v0.41.0.
+
 ## v0.2.0-rc.9 — 2026-10-29
 
 ### Added
