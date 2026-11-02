@@ -6,13 +6,12 @@
 
   var CW = window.CW = window.CW || {};
 
-  var LS_KEY = "cw_admin_token";
   var LS_PROJECT = "cw_admin_project";
   var LS_ENV = "cw_admin_env";
   var LS_HOME_SINCE = "cw_home_since";
 
   var state = {
-    token: null, // memory-only (never persisted; HttpOnly cookie carries reloads)
+    token: null, // legacy always-null: cookie-only auth never stores a bearer; kept so old harnesses reading state.token still see cleared, isAuthed() uses state.session only
     session: false, // cookie-session flag (HttpOnly, JS-invisible): true once login/probe succeeds
     projects: [],
     envs: [],
@@ -43,11 +42,6 @@
     var el = $(id);
     if (el && el.addEventListener) el.addEventListener(ev, fn);
     return el;
-  }
-
-  function authHeaders() {
-    // BARE token. Do NOT prefix with "TOKEN " (PocketBase data API 403s).
-    return state.token ? { Authorization: state.token } : {};
   }
 
   var toastTimer = null;
@@ -219,10 +213,10 @@
     }
   }
 
-  // Cookie-cutover gate: true with a memory token OR a validated
-  // HttpOnly-cookie session (state.session, set by setLoggedIn).
+  // Cookie-only gate: true with a validated HttpOnly-cookie session
+  // (state.session, set by setLoggedIn). No token fallback remains.
   function isAuthed() {
-    return !!(state.token || state.session);
+    return !!state.session;
   }
 
   function selectedEnv() {
@@ -319,42 +313,16 @@
     return Promise.resolve(ok);
   }
 
-  // J5: single token-storage helper (auth.js login, account.js sso-redeem,
-  // boot.js boot-restore, core.js logoutFallback). Memory-only: the
-  // HttpOnly session cookie (JS-invisible) carries reloads, so a token is
-  // never written to localStorage; a legacy LS_KEY copy (pre-cookie
-  // builds) is removed once as a migration and then never touched.
-  function saveToken(tok) {
-    state.token = (tok == null ? null : tok);
-    try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
-    return state.token;
-  }
-
-  function loadToken() {
-    // One-time migration: adopt a legacy localStorage copy into memory,
-    // then drop it so no token persists in localStorage afterwards.
-    if (!state.token) {
-      try {
-        var legacy = localStorage.getItem(LS_KEY);
-        if (legacy) state.token = legacy;
-      } catch (e) { state.token = null; }
-    }
-    try { localStorage.removeItem(LS_KEY); } catch (e2) { /* private mode */ }
-    return state.token;
-  }
-
   function clearToken() {
     state.token = null;
     // Fail-closed: a token clear must never leave a stale cookie-session
     // flag behind (login-failure calls clearToken without setLoggedIn).
     state.session = false;
-    try { localStorage.removeItem(LS_KEY); } catch (e) { /* private mode */ }
   }
 
   function api(path) {
-    // Cookie-first: same-origin include carries the HttpOnly session; the
-    // memory Authorization header stays as a fallback for the middleware.
-    return fetch(path, { credentials: "same-origin", headers: authHeaders() }).then(function (res) {
+    // Cookie-only: same-origin include carries the HttpOnly session.
+    return fetch(path, { credentials: "same-origin" }).then(function (res) {
       if (res.status === 401 || res.status === 403) { logoutRef(); throw new Error("session expired — please log in"); }
       if (!res.ok) {
         return res.json().then(function (data) {
@@ -471,7 +439,7 @@
     return fetch(path, {
       method: method,
       credentials: "same-origin",
-      headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+      headers: { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     }).then(function (res) {
       return res.json().then(function (data) {
@@ -485,14 +453,12 @@
     });
   }
 
-  CW.LS_KEY = LS_KEY;
   CW.LS_PROJECT = LS_PROJECT;
   CW.LS_ENV = LS_ENV;
   CW.LS_HOME_SINCE = LS_HOME_SINCE;
   CW.state = state;
   CW.$ = $;
   CW.on = on;
-  CW.authHeaders = authHeaders;
   CW.toast = toast;
   CW.toastErr = toastErr;
   CW.guard = guard;
@@ -512,8 +478,6 @@
   CW.serverMessage = serverMessage;
   CW.apiError = apiError;
   CW.copyText = copyText;
-  CW.saveToken = saveToken;
-  CW.loadToken = loadToken;
   CW.clearToken = clearToken;
   CW.api = api;
   CW.apiAll = apiAll;

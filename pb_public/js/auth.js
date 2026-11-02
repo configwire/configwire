@@ -6,9 +6,8 @@
 
   function login(email, password) {
     CW.showLoginError("");
-    // Cookie-first session: the server sets an HttpOnly cookie on success.
-    // A token in the body (if any) is kept memory-only as an Authorization
-    // fallback; nothing is ever persisted.
+    // Cookie-only session: the server sets an HttpOnly cookie on success.
+    // Nothing is kept in JS memory or persisted: reloads re-probe the cookie.
     return fetch("/api/v1/admin/session", {
       method: "POST",
       credentials: "same-origin",
@@ -21,8 +20,7 @@
       }
       return res.json();
     }).then(function (data) {
-      if (data && data.token) CW.saveToken(data.token); // memory-only fallback
-      else CW.clearToken();
+      CW.clearToken();
       CW.setLoggedIn(true);
       CW.refreshAll();
       return data;
