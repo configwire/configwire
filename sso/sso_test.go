@@ -17,8 +17,18 @@ import (
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tests"
+	"github.com/configwire/configwire/account"
 	"github.com/configwire/configwire/internal/testhelp"
 )
+
+func TestSessionCookieParityWithAccount(t *testing.T) {
+	if sessionCookieName != account.SessionCookieName {
+		t.Fatalf("sso cookie %q != account %q: keep cw_admin single-sourced", sessionCookieName, account.SessionCookieName)
+	}
+	if sessionMaxAgeSeconds != account.SessionMaxAgeSeconds {
+		t.Fatalf("sso max-age %d != account %d: keep 12h single-sourced", sessionMaxAgeSeconds, account.SessionMaxAgeSeconds)
+	}
+}
 
 // testSecretHex is the fixed P0 fixture secret (test-only).
 const testSecretHex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -264,16 +274,28 @@ func testServer(mode string, secret []byte) *server {
 
 // callRedeem invokes postRedeem directly, reporting status + raw body.
 func callRedeem(app core.App, srv *server, body string) (int, string) {
+	code, respBody, _ := callRedeemFull(app, srv, body, nil)
+	return code, respBody
+}
+
+// callRedeemFull invokes postRedeem directly, reporting status + raw
+// body + response headers (for Set-Cookie pins). extra sets additional
+// request headers (Origin/Referer for the CSRF pin).
+func callRedeemFull(app core.App, srv *server, body string, extra map[string]string) (int, string, http.Header) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/sso/redeem", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range extra {
+		req.Header.Set(k, v)
+	}
 	rec := httptest.NewRecorder()
 	re := &core.RequestEvent{App: app}
 	re.Request = req
 	re.Response = rec
 	if err := srv.postRedeem(re); err != nil {
-		return testhelp.CodeMessage(err, rec)
+		code, msg := testhelp.CodeMessage(err, rec)
+		return code, msg, rec.Header()
 	}
-	return rec.Code, rec.Body.String()
+	return rec.Code, rec.Body.String(), rec.Header()
 }
 
 // callMode invokes getMode directly.
@@ -309,10 +331,21 @@ func TestRedeemHandlerMatrix(t *testing.T) {
 		t.Fatalf("valid redeem: status=%d body=%s, want 200", code, body)
 	}
 	var okBody struct {
+		Ok    bool   `json:"ok"`
 		Token string `json:"token"`
 	}
-	if err := json.Unmarshal([]byte(body), &okBody); err != nil || okBody.Token == "" {
-		t.Fatalf("valid redeem body=%q, want {token}", body)
+	if err := json.Unmarshal([]byte(body), &okBody); err != nil || !okBody.Ok {
+		t.Fatalf("valid redeem body=%q, want {ok:true}", body)
+	}
+	if okBody.Token != "" || strings.Contains(body, "token") {
+		t.Fatalf("valid redeem body=%q, must carry no token", body)
+	}
+	_, _, hdr := callRedeemFull(app, srv, `{"ticket":`+quoteJSON(mintValidRedeem(t, "owner@example.com", secret))+`}`, nil)
+	cookie := hdr.Get("Set-Cookie")
+	if !strings.Contains(cookie, "cw_admin=") || !strings.Contains(cookie, "HttpOnly") ||
+		!strings.Contains(cookie, "SameSite=Strict") || !strings.Contains(cookie, "Path=/") ||
+		!strings.Contains(cookie, "Max-Age=43200") {
+		t.Fatalf("valid redeem Set-Cookie=%q, want cw_admin HttpOnly SameSite=Strict Path=/ Max-Age=43200", cookie)
 	}
 
 	// Replay of the same ticket -> 409 (nonce already claimed).
@@ -361,6 +394,32 @@ func TestRedeemHandlerMatrix(t *testing.T) {
 	code, _ = callRedeem(app, srv, ``)
 	if code != http.StatusBadRequest {
 		t.Errorf("empty body: status=%d, want 400", code)
+	}
+}
+
+// TestRedeemOriginReject pins the login-CSRF guard: a cross-origin
+// Origin (or Referer) is rejected with 403 before any ticket validation.
+func TestRedeemOriginReject(t *testing.T) {
+	app := ssoTestApp(t)
+	createTestSuperuser(t, app, "owner@example.com")
+	secret := testSecret(t)
+	srv := testServer(ModeSSO, secret)
+	ticket := mintValidRedeem(t, "owner@example.com", secret)
+	code, body, _ := callRedeemFull(app, srv, `{"ticket":`+quoteJSON(ticket)+`}`, map[string]string{
+		"Origin": "https://evil.example.com",
+	})
+	if code != http.StatusForbidden || !strings.Contains(body, "cross-origin session requests are not allowed.") {
+		t.Fatalf("evil Origin: status=%d body=%s, want 403 cross-origin", code, redactLen(body))
+	}
+	if strings.Contains(body, "token") {
+		t.Fatalf("403 body must carry no token: %s", redactLen(body))
+	}
+	ticket2 := mintValidRedeem(t, "owner@example.com", secret)
+	code, body, _ = callRedeemFull(app, srv, `{"ticket":`+quoteJSON(ticket2)+`}`, map[string]string{
+		"Referer": "https://evil.example.com/landing",
+	})
+	if code != http.StatusForbidden || !strings.Contains(body, "cross-origin session requests are not allowed.") {
+		t.Fatalf("evil Referer: status=%d body=%s, want 403 cross-origin", code, redactLen(body))
 	}
 }
 

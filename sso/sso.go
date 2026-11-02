@@ -5,8 +5,9 @@
 // Tenant surface:
 //   - POST /api/v1/admin/sso/redeem {ticket} (public): validate the
 //     HMAC ticket per spec §5, enforce nonce single-use, and return
-//     200 {token} via PocketBase record.NewAuthToken() semantics for the
-//     matched non-installer _superusers record.
+//     200 {ok:true} with the cw_admin cookie set via the same cookie
+//     semantics as POST /api/v1/admin/session for the matched
+//     non-installer _superusers record.
 //   - GET /api/v1/admin/auth/mode -> {mode} (public): the UI mode signal
 //     ("standard" default, "sso" when cloud-managed).
 //
@@ -39,6 +40,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -363,6 +365,69 @@ func (b *redeemBucket) allow(ip string) bool {
 	return w.count <= RedeemPerIPLimit
 }
 
+// sessionCookieName is the HttpOnly cookie carrying the superuser token.
+// Byte-identical semantics to account.setSessionCookie (duplicated to
+// keep sso standalone: HttpOnly, SameSite=Strict, Path=/, Max-Age 12h;
+// Secure when the request is TLS or the proxy signals https via
+// X-Forwarded-Proto from a trusted peer).
+const sessionCookieName = "cw_admin"
+
+// sessionMaxAgeSeconds is the cookie lifetime (12h, byte-identical to
+// account.sessionMaxAgeSeconds). It only stops the browser from sending
+// the cookie, not a token lifetime.
+const sessionMaxAgeSeconds = 12 * 60 * 60
+
+// sessionOriginDenied is the POST CSRF guard: a present Origin/Referer
+// must be same-origin (host, including port, equals the request Host),
+// else the request is rejected. Absent headers (curl, same-origin
+// navigations without Origin) pass.
+func sessionOriginDenied(re *core.RequestEvent) bool {
+	for _, h := range []string{"Origin", "Referer"} {
+		raw := strings.TrimSpace(re.Request.Header.Get(h))
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			return true
+		}
+		if !strings.EqualFold(u.Host, re.Request.Host) {
+			return true
+		}
+	}
+	return false
+}
+
+// sessionSecure reports whether the cookie must carry the Secure flag:
+// direct TLS, or a proxy-terminated https session signalled by
+// X-Forwarded-Proto: https from a trusted proxy peer only (same trust
+// boundary as limits.ClientIP).
+func sessionSecure(re *core.RequestEvent) bool {
+	if re.IsTLS() {
+		return true
+	}
+	if !limits.IsTrustedProxyPeer(re.Request.RemoteAddr) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(re.Request.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+// setSessionCookie stamps the cw_admin cookie. Secure follows TLS or
+// X-Forwarded-Proto so proxies terminating TLS still get it, while
+// plain-HTTP local dev keeps working.
+func setSessionCookie(re *core.RequestEvent, token string) {
+	secure := sessionSecure(re)
+	http.SetCookie(re.Response, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   sessionMaxAgeSeconds,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
 // superusersCollection is the PocketBase auth collection holding admins.
 const superusersCollection = core.CollectionNameSuperusers
 
@@ -434,11 +499,13 @@ type redeemRequest struct {
 }
 
 // postRedeem handles POST /api/v1/admin/sso/redeem (PUBLIC).
-// Order: 404 (sso not enabled in standard mode) -> 400 (body/
+// Order: 404 (sso not enabled in standard mode) -> 429 (per-IP budget)
+// -> 403 (Origin present but not same-origin) -> 400 (body/
 // malformed/expired/tampered) -> 409 (replay) -> 404 (unknown user) ->
-// 200 {token}. Bodies are written via re.JSON (not ApiError) so the
-// spec §6 lowercase shapes go out verbatim — the router sentenizes
-// ApiError messages. Never logs ticket/secret/nonce/MAC (email= only).
+// 200 {ok:true} with the cw_admin cookie set. Bodies are written via
+// re.JSON (not ApiError) so the spec §6 lowercase shapes go out
+// verbatim — the router sentenizes ApiError messages. Never logs
+// ticket/secret/nonce/MAC (email= only).
 func (s *server) postRedeem(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	if len(s.secret) == 0 {
@@ -452,6 +519,12 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 	// apireq.TooMany so it is byte-identical to limits.BlockIP.
 	if !s.allowRedeem(limits.ClientIP(re)) {
 		return apireq.TooMany(re, "Rate limit exceeded.")
+	}
+	if sessionOriginDenied(re) {
+		return re.JSON(http.StatusForbidden, map[string]any{
+			"message": "cross-origin session requests are not allowed.",
+			"status":  http.StatusForbidden,
+		})
 	}
 	var req redeemRequest
 	if err := apireq.DecodeBody(re, &req); err != nil {
@@ -490,7 +563,8 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 		return apireq.Internal(re, "sso: failed to issue token", err)
 	}
 	log.Printf("sso: redeemed ticket email=%s", pt.Email)
-	return re.JSON(http.StatusOK, map[string]any{"token": token})
+	setSessionCookie(re, token)
+	return re.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
 // ticketError renders a spec-exact error body ({message, status}).
