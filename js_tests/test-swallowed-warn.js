@@ -28,7 +28,7 @@ test("boot scope-restore refresh warns instead of swallowing home-stats failure"
     warn: function (msg, err) { warnings.push({ msg: msg, err: err }); },
     error: function () {},
   };
-  ctx.CW.state.token = "t"; // refreshAll/showHome only refresh when logged in
+  ctx.CW.state.session = true; // refreshAll/showHome only refresh when logged in
   var boom = new Error("home-stats down");
   ctx.CW.apiAll = function (url) {
     if (url.indexOf("/api/collections/projects/records") === 0) {

@@ -132,7 +132,7 @@ function setVal(id, v) { el(id).value = v; }
 
 function reset() {
   var s = h.CW.state;
-  s.token = "tok";
+  s.session = true;
   s.projects = []; s.envs = []; s.projectId = null; s.envId = null; s.envSlug = "dev";
   s.flags = []; s.groups = {}; s.releases = [];
   s.rules = []; s.rulesLoaded = false;
@@ -366,9 +366,9 @@ test("route: known project opens detail scope", async function () {
   assert.equal(el("detail-project-name").textContent, "A");
 });
 
-test("route: no token returns early", function () {
+test("route: no session returns early", function () {
   reset();
-  h.CW.state.token = null;
+  h.CW.state.session = false;
   h.CW.state.projects = [{ id: "a", name: "A" }];
   h.context.location.hash = "#/p/a";
   h.CW.route();
