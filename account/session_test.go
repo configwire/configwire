@@ -153,37 +153,146 @@ func TestSessionPasswordRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSessionTokenModeRejectsNonSuperuser pins the migration-only token
-// path: a non-superuser (or invalid) token is rejected with 401 and
-// never sets a cookie.
-func TestSessionTokenModeRejectsNonSuperuser(t *testing.T) {
+// callDeleteSession invokes deleteSession with an optional cookie,
+// reporting status plus body.
+func callDeleteSession(app core.App, cookie string) (int, *httptest.ResponseRecorder, string) {
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/session", nil)
+	if cookie != "" {
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: cookie})
+	}
+	rec := httptest.NewRecorder()
+	re := &core.RequestEvent{App: app}
+	re.Request = req
+	re.Response = rec
+	code, _ := testhelp.CodeMessage(deleteSession(re), rec)
+	return code, rec, rec.Body.String()
+}
+
+// TestSessionLogoutCookieOnly pins the cookie-only logout: DELETE with
+// the cookie is 200 {"ok":true} with no server-side row, empty logout
+// is still 200, and the logged-out token stays valid as a bearer until
+// its own collection auth-token expiry (no denylist: replay succeeds).
+func TestSessionLogoutCookieOnly(t *testing.T) {
 	resetSessionBucket()
 	app := accountTestApp(t)
-	if _, err := createSuperuser(app, "sess-other-admin@example.com", "password123"); err != nil {
+	const email = "logout-cookie@example.com"
+	if _, err := createSuperuser(app, email, "password123"); err != nil {
 		t.Fatalf("create superuser: %v", err)
 	}
-	var badToken string
-	if col, err := app.FindCollectionByNameOrId("users"); err == nil && col != nil {
-		rec := core.NewRecord(col)
-		rec.SetEmail("plain-user@example.com")
-		rec.SetPassword("password123")
-		if err := app.Save(rec); err != nil {
-			t.Fatalf("save plain user: %v", err)
-		}
-		tok, err := rec.NewAuthToken()
-		if err != nil {
-			t.Fatalf("mint plain-user token: %v", err)
-		}
-		badToken = tok
-	} else {
-		badToken = "invalid-token-for-session-test"
+	code, hdr, raw := callPostSession(app, `{"email":"`+email+`","password":"password123"}`)
+	if code != http.StatusOK {
+		t.Fatalf("session post: got %d %q, want 200", code, raw)
+	}
+	token := sessionCookieValue(t, hdr)
+
+	code, _, body := callDeleteSession(app, token)
+	if code != http.StatusOK {
+		t.Fatalf("logout: got %d %q, want 200", code, body)
+	}
+	if !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("logout: body lacks ok:true in %q", body)
 	}
 
-	code, hdr, raw := callPostSession(app, `{"token":"`+badToken+`"}`)
-	if code != http.StatusUnauthorized {
-		t.Fatalf("non-superuser token: got %d %q, want 401", code, raw)
+	if code, _, body := callDeleteSession(app, ""); code != http.StatusOK {
+		t.Fatalf("empty logout: got %d %q, want 200", code, body)
+	} else if !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("empty logout: body lacks ok:true in %q", body)
 	}
-	if joined := strings.Join(hdr["Set-Cookie"], ";"); strings.Contains(joined, sessionCookieName+"=") {
-		t.Fatalf("rejected token must not set a cookie in %q", joined)
+
+	// Bearer replay after logout succeeds: cookie-only logout clears
+	// the browser copy, it does not revoke the token server-side.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/account/list", nil)
+	req.Header.Set("Authorization", token)
+	rec := httptest.NewRecorder()
+	re := &core.RequestEvent{App: app}
+	re.Request = req
+	re.Response = rec
+	if status := testhelp.Code(CookieAuthMiddleware().Func(re), rec); status != http.StatusOK {
+		t.Fatalf("bearer replay after logout: got %d, want 200", status)
+	}
+	if got := re.Request.Header.Get("Authorization"); got != token {
+		t.Fatalf("bearer replay: Authorization = %q, want the token untouched", got)
+	}
+}
+
+// TestSessionCookieRejectsNonSuperuser pins that a valid non-superuser
+// bearer presented via the cw_admin cookie never authenticates as admin:
+// the middleware must leave re.Auth unset (not superuser) so downstream
+// RequireSuperuserAuth still rejects. Skips when the base users collection
+// is absent (split-repo fixture drift).
+func TestSessionCookieRejectsNonSuperuser(t *testing.T) {
+	app := accountTestApp(t)
+	col, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Skipf("users collection absent: %v", err)
+	}
+	rec := core.NewRecord(col)
+	rec.SetEmail("regular-user@example.com")
+	rec.SetPassword("password123")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("create regular user: %v", err)
+	}
+	token, err := rec.NewAuthToken()
+	if err != nil {
+		t.Fatalf("mint regular token: %v", err)
+	}
+	if token == "" {
+		t.Fatal("empty regular token")
+	}
+	// Via cookie.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/account/list", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+	re := &core.RequestEvent{App: app}
+	re.Request = req
+	re.Response = recorder
+	if err := CookieAuthMiddleware().Func(re); err != nil {
+		t.Fatalf("cookie middleware: %v", err)
+	}
+	if re.Auth != nil && re.Auth.IsSuperuser() {
+		t.Fatal("non-superuser cookie resolved as superuser Auth")
+	}
+	// Via explicit Authorization header: passed through untouched, still not admin.
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/admin/account/list", nil)
+	req2.Header.Set("Authorization", token)
+	rec2 := httptest.NewRecorder()
+	re2 := &core.RequestEvent{App: app}
+	re2.Request = req2
+	re2.Response = rec2
+	if err := CookieAuthMiddleware().Func(re2); err != nil {
+		t.Fatalf("header middleware: %v", err)
+	}
+	if re2.Auth != nil && re2.Auth.IsSuperuser() {
+		t.Fatal("non-superuser bearer resolved as superuser Auth")
+	}
+}
+
+// TestSessionOldTokenShape400 pins the hard remove of the migration-only
+// token adoption: a legacy {token} body is rejected with 400 and never
+// sets a cookie — even when the token itself is a valid superuser bearer.
+// Holders without a cookie re-login with email+password.
+func TestSessionOldTokenShape400(t *testing.T) {
+	resetSessionBucket()
+	app := accountTestApp(t)
+	rec, err := createSuperuser(app, "sess-legacy-admin@example.com", "password123")
+	if err != nil {
+		t.Fatalf("create superuser: %v", err)
+	}
+	validToken, err := rec.NewAuthToken()
+	if err != nil {
+		t.Fatalf("mint superuser token: %v", err)
+	}
+
+	for _, body := range []string{
+		`{"token":"` + validToken + `"}`,
+		`{"token":"invalid-token-for-session-test"}`,
+	} {
+		code, hdr, raw := callPostSession(app, body)
+		if code != http.StatusBadRequest {
+			t.Fatalf("legacy token body: got %d %q, want 400", code, raw)
+		}
+		if joined := strings.Join(hdr["Set-Cookie"], ";"); strings.Contains(joined, sessionCookieName+"=") {
+			t.Fatalf("rejected token must not set a cookie in %q", joined)
+		}
 	}
 }

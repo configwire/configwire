@@ -1,30 +1,31 @@
 // Cookie-carried superuser auth: the Admin UI no longer persists the
 // superuser token in localStorage. Instead the browser holds it in a
 // JS-invisible cookie and the middleware below re-attaches it per
-// request. This is NOT a server-side session: nothing is stored
-// server-side, so clearing the cookie only removes the token from that
-// browser — the underlying PocketBase token stays valid until its own
-// collection auth-token expiry. Revocation means rotating/ending the
-// token itself, not deleting the cookie.
+// request. Logout clears the cookie in that browser only: a copied
+// token stays usable elsewhere until its own collection auth-token
+// expiry. There is no server-side revocation list.
 //
 //   - POST /api/v1/admin/session (PUBLIC, Origin-checked, per-IP
-//     rate-limited) accepts {email,password} or {token}. On success it
+//     rate-limited) accepts {email,password} only: a legacy {token}
+//     body answers 400 (holders without a cookie re-login with the
+//     password). On success it
 //     sets the cw_admin cookie (HttpOnly, SameSite=Strict, Path=/,
 //     Max-Age 12h; Secure when the request is TLS or the proxy signals
 //     https via X-Forwarded-Proto, so plain-HTTP local dev keeps
 //     working) and returns {"ok":true} with no token in the body.
 //     Direct auth-with-password login is untouched.
-//   - DELETE /api/v1/admin/session clears the cookie, returns
-//     {"ok":true}. Idempotent; no auth required (logout).
-//   - CookieAuthMiddleware runs before PocketBase's token loader: when
-//     the Authorization header is empty and the cw_admin cookie is
-//     present it copies the cookie value into the header (and resolves
-//     e.Auth directly so ordering against the default loader cannot
-//     matter). An explicit Authorization header always wins; only
-//     superuser tokens resolve (route-layer RequireSuperuserAuth still
-//     enforces), so a non-superuser bearer can never gain admin rights
-//     through the cookie path. Nothing is stored
-//     server-side and the token value is never logged (email= only).
+//   - DELETE /api/v1/admin/session clears the cw_admin cookie and
+//     returns {"ok":true}. Idempotent; no auth required (logout).
+//     Empty logout (no token presented) is still 200.
+//   - CookieAuthMiddleware runs before PocketBase's token loader: an
+//     explicit Authorization header is passed through untouched; only
+//     when the header is empty does the cw_admin cookie fill it in
+//     (plus e.Auth, so the middleware is correct whether it runs
+//     before or after PocketBase's default token loader). Only
+//     superuser tokens resolve: a non-superuser bearer gains nothing
+//     here since every consuming route enforces RequireSuperuserAuth,
+//     and resolving it would only turn a 401 into a 403. Tokens are
+//     never logged (email= only).
 package account
 
 import (
@@ -64,6 +65,11 @@ const sessionCookieName = "cw_admin"
 // usable until its own collection auth-token expiry, so the cookie bound
 // is not a token lifetime.
 const sessionMaxAgeSeconds = 12 * 60 * 60
+
+// Exported aliases for the sso parity test (sso duplicates these to stay
+// standalone). Do not introduce a second value: change these, not copies.
+const SessionCookieName = sessionCookieName
+const SessionMaxAgeSeconds = sessionMaxAgeSeconds
 
 // SessionPerIPLimit caps POST /api/v1/admin/session at 10 requests per
 // SessionPerIPWindow per client IP (code constant, no knob: legit login
@@ -133,28 +139,30 @@ func registerSession(se *core.ServeEvent) {
 	se.Router.DELETE("/api/v1/admin/session", deleteSession)
 }
 
-// CookieAuthMiddleware is a global fallback: explicit Authorization
-// headers keep working unchanged; only when the header is empty does
-// the cw_admin cookie fill it in (plus e.Auth, so the middleware is
-// correct whether it runs before or after PocketBase's default token
-// loader). Only superuser tokens resolve: a non-superuser bearer gains
-// nothing here since every consuming route enforces
+// CookieAuthMiddleware is a global fallback that fills the Authorization
+// header from the cw_admin cookie: an explicit Authorization header is
+// passed through untouched for the default loader; only when the header
+// is empty does the cw_admin cookie fill it in (plus e.Auth, so the
+// middleware is correct whether it runs before or after PocketBase's
+// default token loader). Only superuser tokens resolve: a non-superuser
+// bearer gains nothing here since every consuming route enforces
 // RequireSuperuserAuth, and resolving it would only turn a 401 into a
-// 403. Registered with a priority just ahead of the default token
-// loader so the header is in place for every downstream consumer.
+// 403. Registered with a priority just ahead of the default token loader
+// so the header is in place for every downstream consumer.
 func CookieAuthMiddleware() *hook.Handler[*core.RequestEvent] {
 	return &hook.Handler[*core.RequestEvent]{
 		Id:       "cwAdminCookieAuth",
 		Priority: apis.DefaultLoadAuthTokenMiddlewarePriority - 1,
 		Func: func(re *core.RequestEvent) error {
-			if re.Request.Header.Get("Authorization") == "" {
-				if c, err := re.Request.Cookie(sessionCookieName); err == nil && strings.TrimSpace(c.Value) != "" {
-					token := strings.TrimSpace(c.Value)
-					re.Request.Header.Set("Authorization", token)
-					if re.Auth == nil {
-						if rec, err := re.App.FindAuthRecordByToken(token, core.TokenTypeAuth); err == nil && rec != nil && rec.IsSuperuser() {
-							re.Auth = rec
-						}
+			if header := strings.TrimSpace(re.Request.Header.Get("Authorization")); header != "" {
+				return re.Next()
+			}
+			if c, err := re.Request.Cookie(sessionCookieName); err == nil && strings.TrimSpace(c.Value) != "" {
+				token := strings.TrimSpace(c.Value)
+				re.Request.Header.Set("Authorization", token)
+				if re.Auth == nil {
+					if rec, err := re.App.FindAuthRecordByToken(token, core.TokenTypeAuth); err == nil && rec != nil && rec.IsSuperuser() {
+						re.Auth = rec
 					}
 				}
 			}
@@ -166,7 +174,6 @@ func CookieAuthMiddleware() *hook.Handler[*core.RequestEvent] {
 type sessionRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	Token    string `json:"token"`
 }
 
 // sessionOriginDenied is the POST CSRF guard: a present Origin/Referer
@@ -259,9 +266,9 @@ func clearSessionCookie(re *core.RequestEvent) {
 
 // postSession handles POST /api/v1/admin/session (PUBLIC).
 // Order: 429 (per-IP budget, before any bcrypt) -> 403 (Origin present
-// but not same-origin) -> 400 (validation) -> 401 (bad
-// credentials/token) -> 200 {"ok":true} with the cw_admin cookie set.
-// The token never appears in the body or the logs (email= only).
+// but not same-origin) -> 400 (validation, including the legacy {token}
+// shape) -> 401 (bad credentials) -> 200 {"ok":true} with the cw_admin
+// cookie set. The token never appears in the body or the logs (email= only).
 func postSession(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	// Cheap reject before bcrypt/validation: per-IP fixed window.
@@ -274,55 +281,49 @@ func postSession(re *core.RequestEvent) error {
 			"status":  http.StatusForbidden,
 		})
 	}
-	var req sessionRequest
+	var req struct {
+		sessionRequest
+		Token *string `json:"token"`
+	}
 	if err := decodeBody(re, &req); err != nil {
 		return err
 	}
-	var token string
-	if strings.TrimSpace(req.Token) != "" {
-		// Token mode (MIGRATION ONLY, do not extend): adopt an existing
-		// superuser token so pre-cookie localStorage holders migrate to
-		// the cookie without re-entering the password. The token is
-		// validated, never echoed back. Any bearer that reaches this
-		// endpoint upgrades into the persistent cookie, so this path
-		// exists only for the migration window and should be removed
-		// once stored tokens have rolled (the password path below is
-		// the steady-state login).
-		token = strings.TrimSpace(req.Token)
-		rec, err := re.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
-		if err != nil || rec == nil || !rec.IsSuperuser() {
-			return re.UnauthorizedError("invalid token.", nil)
-		}
-		log.Printf("account: session created via token email=%s", rec.GetString("email"))
-	} else {
-		if err := ValidateCredentials(req.Email, req.Password); err != nil {
-			return re.BadRequestError(err.Error(), nil)
-		}
-		email := strings.TrimSpace(req.Email)
-		rec := findSuperuserByEmail(re.App, email)
-		if rec == nil {
-			burnBcryptDummy(req.Password)
-			log.Printf("account: session login failed email=%s", email)
-			return re.UnauthorizedError("invalid email or password.", nil)
-		}
-		if !rec.ValidatePassword(req.Password) {
-			log.Printf("account: session login failed email=%s", email)
-			return re.UnauthorizedError("invalid email or password.", nil)
-		}
-		t, err := rec.NewAuthToken()
-		if err != nil {
-			return internalError(re, "failed to create session", err)
-		}
-		token = t
-		log.Printf("account: session created email=%s", email)
+	// The migration-only {token} adoption is removed: a legacy body
+	// carrying a token is rejected so holders without a cookie re-login
+	// with email+password. Probed on the same decode (BindBody consumes
+	// the body, so a second decode would misread it as empty).
+	if req.Token != nil && strings.TrimSpace(*req.Token) != "" {
+		return re.BadRequestError("token login is no longer supported: sign in with email and password.", nil)
 	}
+	if err := ValidateCredentials(req.Email, req.Password); err != nil {
+		return re.BadRequestError(err.Error(), nil)
+	}
+	email := strings.TrimSpace(req.Email)
+	rec := findSuperuserByEmail(re.App, email)
+	if rec == nil {
+		burnBcryptDummy(req.Password)
+		log.Printf("account: session login failed email=%s", email)
+		return re.UnauthorizedError("invalid email or password.", nil)
+	}
+	if !rec.ValidatePassword(req.Password) {
+		log.Printf("account: session login failed email=%s", email)
+		return re.UnauthorizedError("invalid email or password.", nil)
+	}
+	token, err := rec.NewAuthToken()
+	if err != nil {
+		return internalError(re, "failed to create session", err)
+	}
+	log.Printf("account: session created email=%s", email)
 	setSessionCookie(re, token)
 	return re.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 
 // deleteSession handles DELETE /api/v1/admin/session: clears the
-// cw_admin cookie and returns {"ok":true}. Idempotent by design, so no
-// auth and no Origin check (SameSite=Strict already scopes the cookie).
+// cw_admin cookie and returns {"ok":true}. Idempotent by design (empty
+// logout is 200), so no auth and no Origin check (SameSite=Strict
+// already scopes the cookie). Always 200: the browser copy is gone and
+// a copied token stays valid until its own collection auth-token
+// expiry by design.
 func deleteSession(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	clearSessionCookie(re)
