@@ -135,19 +135,6 @@ test("withPage preserves hash and strips encoded page keys", function () {
   });
 });
 
-// --- authHeaders (core.js:43-46) ---
-
-test("authHeaders returns bare token, empty object when logged out", function () {
-  var ctx = fresh();
-  jsonEq(ctx.CW.authHeaders(), {});
-  ctx.CW.state.token = "tok123";
-  jsonEq(ctx.CW.authHeaders(), { Authorization: "tok123" });
-  // Bare token: no Bearer prefix (core.js:44).
-  assert.ok(ctx.CW.authHeaders().Authorization.indexOf("Bearer") < 0);
-  ctx.CW.state.token = null;
-  jsonEq(ctx.CW.authHeaders(), {});
-});
-
 // --- selectedEnv / envSlug (core.js:94-104) ---
 
 test("selectedEnv hit and miss", function () {
@@ -226,15 +213,15 @@ test("scope helpers swallow private-mode localStorage throws", function () {
 
 // --- api (core.js:135-145) ---
 
-test("api sends auth header and resolves json on 200", function () {
+test("api sends no Authorization header: cookie-only via same-origin credentials", function () {
   var ctx = h.load(["core.js"], {
     fetchImpl: function (url, opts) {
       assert.equal(url, "/api/collections/projects/records");
-      jsonEq(opts.headers, { Authorization: "tok" });
+      assert.equal(opts.credentials, "same-origin");
+      assert.ok(!opts.headers || !opts.headers.Authorization, "no bearer fallback: " + JSON.stringify(opts.headers));
       return Promise.resolve(jsonRes(200, { items: [] }));
     },
   });
-  ctx.CW.state.token = "tok";
   return ctx.CW.api("/api/collections/projects/records").then(function (data) {
     jsonEq(data, { items: [] });
     assert.equal(ctx.fetchCalls.length, 1);
@@ -243,17 +230,18 @@ test("api sends auth header and resolves json on 200", function () {
 
 test("api 401 clears token and rejects session expired", function () {
   var ctx = h.load(["core.js"], {
-    localStorageSeed: { cw_admin_token: "tok" },
     fetchImpl: function () {
       return Promise.resolve(jsonRes(401, { message: "unauth" }));
     },
   });
   ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   return ctx.CW.api("/x").then(
     function () { throw new Error("should reject"); },
     function (err) {
       assert.equal(err.message, "session expired — please log in");
       assert.equal(ctx.CW.state.token, null);
+      assert.equal(ctx.CW.state.session, false);
       assert.ok(!Object.prototype.hasOwnProperty.call(ctx.store, "cw_admin_token"));
     }
   );
@@ -266,11 +254,13 @@ test("api 403 clears token and rejects session expired", function () {
     },
   });
   ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   return ctx.CW.api("/x").then(
     function () { throw new Error("should reject"); },
     function (err) {
       assert.equal(err.message, "session expired — please log in");
       assert.equal(ctx.CW.state.token, null);
+      assert.equal(ctx.CW.state.session, false);
     }
   );
 });
@@ -282,12 +272,14 @@ test("api non-401 error includes server message", function () {
     },
   });
   ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   return ctx.CW.api("/boom").then(
     function () { throw new Error("should reject"); },
     function (err) {
       assert.equal(err.message, "request failed (500): kaput");
       // Non-auth failure keeps the session.
       assert.equal(ctx.CW.state.token, "tok");
+      assert.equal(ctx.CW.state.session, true);
     }
   );
 });
@@ -407,7 +399,7 @@ test("apiMut normalizes status/data and sends JSON body", function () {
     jsonEq(out, { status: 200, data: { id: "n1" } });
     assert.equal(seen[0].opts.method, "POST");
     assert.equal(seen[0].opts.headers["Content-Type"], "application/json");
-    assert.equal(seen[0].opts.headers.Authorization, "tok");
+    assert.ok(!("Authorization" in seen[0].opts.headers), "no bearer fallback");
     assert.equal(seen[0].opts.body, JSON.stringify({ key: "f" }));
   });
 });
@@ -419,23 +411,26 @@ test("apiMut normalizes non-json body to HTTP-status message", function () {
     },
   });
   ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   return ctx.CW.apiMut("POST", "/x", {}).then(function (out) {
     jsonEq(out, { status: 201, data: { message: "HTTP 201" } });
     assert.equal(ctx.CW.state.token, "tok");
+    assert.equal(ctx.CW.state.session, true);
   });
 });
 
 test("apiMut calls logoutRef on 401 but still resolves", function () {
   var ctx = h.load(["core.js"], {
-    localStorageSeed: { cw_admin_token: "tok" },
     fetchImpl: function () {
       return Promise.resolve(jsonRes(401, { message: "expired" }));
     },
   });
   ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   return ctx.CW.apiMut("GET", "/x").then(function (out) {
     jsonEq(out, { status: 401, data: { message: "expired" } });
     assert.equal(ctx.CW.state.token, null);
+    assert.equal(ctx.CW.state.session, false);
     assert.ok(!Object.prototype.hasOwnProperty.call(ctx.store, "cw_admin_token"));
   });
 });

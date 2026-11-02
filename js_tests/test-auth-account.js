@@ -72,7 +72,6 @@ test("login success sets cookie session, clears error, flips shell, refreshes", 
 
 test("login 401 writes login-error text and clears token", async function () {
   var ctx = fresh({
-    localStorageSeed: { cw_admin_token: "stale-token" },
     fetchImpl: function () {
       return Promise.resolve(jsonRes(401, { message: "unauth" }));
     },
@@ -95,7 +94,7 @@ test("login 401 writes login-error text and clears token", async function () {
 // --- logout (auth.js:32-36) ---
 
 test("logout clears storage+state and hides admin", function () {
-  var ctx = fresh({ localStorageSeed: { cw_admin_token: "tok-x" } });
+  var ctx = fresh();
   ctx.CW.state.token = "tok-x";
   $(ctx, "admin-section").hidden = false; // pretend logged in
   ctx.CW.logout();
@@ -147,11 +146,11 @@ test("checkSetup rejection falls back to normal login", async function () {
   assert.equal($(ctx, "login-section").hidden, false);
 });
 
-test("checkSetup short-circuits when a token exists (zero fetch)", async function () {
+test("checkSetup short-circuits when a session exists (zero fetch)", async function () {
   var ctx = fresh({
     fetchImpl: function () { throw new Error("must not fetch"); },
   });
-  ctx.CW.state.token = "tok-x";
+  ctx.CW.state.session = true;
   var out = await ctx.CW.checkSetup();
   assert.deepEqual(plain(out), { needsSetup: false });
   assert.equal(ctx.fetchCalls.length, 0);

@@ -113,18 +113,14 @@ test("getAuthMode: fetch failure falls back to standard (contract predates)", as
 
 // --- redeemSsoTicket (account.js) ---
 
-test("redeemSsoTicket success adopts cookie session and strips ?sso=", async function () {
+test("redeemSsoTicket success sets cookie session in one fetch and strips ?sso=", async function () {
   var urls = [];
   var ctx = freshUnit({
     fetchImpl: function (url, opts) {
       urls.push(String(url));
-      if (String(url) === "/api/v1/admin/sso/redeem") {
-        assert.equal(opts.method, "POST");
-        assert.deepEqual(plain(JSON.parse(opts.body)), { ticket: "TICKET123" });
-        return Promise.resolve(jsonRes(200, { token: "sso-tok-1" }));
-      }
-      assert.equal(url, "/api/v1/admin/session");
-      assert.deepEqual(plain(JSON.parse(opts.body)), { token: "sso-tok-1" });
+      assert.equal(String(url), "/api/v1/admin/sso/redeem");
+      assert.equal(opts.method, "POST");
+      assert.deepEqual(plain(JSON.parse(opts.body)), { ticket: "TICKET123" });
       return Promise.resolve(jsonRes(200, { ok: true }));
     },
   });
@@ -134,10 +130,10 @@ test("redeemSsoTicket success adopts cookie session and strips ?sso=", async fun
     replaceState: function (a, b, url) { replaced.push(String(url)); },
   };
   var data = await ctx.CW.redeemSsoTicket("TICKET123");
-  assert.deepEqual(urls, ["/api/v1/admin/sso/redeem", "/api/v1/admin/session"]);
-  assert.deepEqual(plain(data), { token: "sso-tok-1" });
-  // Memory-only token like CW.login success, cookie adopted for reloads.
-  assert.equal(ctx.CW.state.token, "sso-tok-1");
+  assert.deepEqual(urls, ["/api/v1/admin/sso/redeem"]);
+  assert.deepEqual(plain(data), { ok: true });
+  // Cookie-direct session: no token in the body, none stored in memory.
+  assert.equal(ctx.CW.state.token, null);
   assert.equal(ctx.CW.state.session, true);
   assert.ok(!Object.prototype.hasOwnProperty.call(ctx.store, "cw_admin_token"));
   assert.equal($(ctx, "login-section").hidden, true);
@@ -223,10 +219,10 @@ test("sso logged-out shell routes to the notice, never to login", function () {
   assert.equal($(ctx, "sso-error").hidden, true);
 });
 
-test("sso syncSidebar with token keeps the logout button like standard", function () {
+test("sso syncSidebar with session keeps the logout button like standard", function () {
   var ctx = freshGated();
   ctx.CW.state.authMode = "sso";
-  ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   $(ctx, "logout-btn").hidden = true; // prove the sync shows it
   $(ctx, "logout-btn").style.display = "none";
   ctx.CW.syncSidebar();
@@ -311,24 +307,24 @@ test("standard mode keeps every surface: login/logout/account all present", func
   assert.equal($(ctx, "sso-section").hidden, true, "no notice in standard mode");
 });
 
-test("standard syncSidebar shows logout with a token", function () {
+test("standard syncSidebar shows logout with a session", function () {
   var ctx = freshGated();
-  ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   ctx.CW.syncSidebar();
   assert.equal($(ctx, "logout-btn").hidden, false);
 });
 
-test("boot sso with stored token re-applies gating after mode resolves", async function () {
+test("boot sso with cookie session shows shell after probe", async function () {
   var ctx = h.load(undefined, {
-    localStorageSeed: { cw_admin_token: "stored-tok" },
     fetchImpl: bootFetch({
       "/api/v1/admin/auth/mode": { mode: "sso", cloudUrl: "https://cloud.example.com" },
+      "/api/v1/admin/account/list": { items: [] },
       "/api/v1/meta": { version: "v0.0.0", assets: "a" },
     }),
   });
   ctx.dispatch("DOMContentLoaded");
   await flush(10);
-  assert.equal(ctx.CW.state.token, "stored-tok");
+  assert.equal(ctx.CW.state.session, true, "cookie probe authed the reload");
   assert.equal($(ctx, "login-section").hidden, true, "no login after reload");
   assert.equal($(ctx, "logout-btn").hidden, false, "logout shown like standard after reload");
   assert.equal($(ctx, "logout-btn").style.display, "");
@@ -336,16 +332,17 @@ test("boot sso with stored token re-applies gating after mode resolves", async f
   assert.equal($(ctx, "admin-section").hidden, false, "shell works after reload");
 });
 
-test("boot standard with stored token keeps logout and account controls", async function () {
+test("boot standard with cookie session keeps logout and account controls", async function () {
   var ctx = h.load(undefined, {
-    localStorageSeed: { cw_admin_token: "stored-tok" },
     fetchImpl: bootFetch({
       "/api/v1/admin/auth/mode": { mode: "standard" },
+      "/api/v1/admin/account/list": { items: [] },
       "/api/v1/meta": { version: "v0.0.0", assets: "a" },
     }),
   });
   ctx.dispatch("DOMContentLoaded");
   await flush(10);
+  assert.equal(ctx.CW.state.session, true, "cookie probe authed the reload");
   assert.equal($(ctx, "logout-btn").hidden, false, "logout present in standard reload");
   assert.equal($(ctx, "account-card").hidden, false, "account card present in standard reload");
   assert.equal($(ctx, "admin-section").hidden, false);
@@ -361,10 +358,12 @@ test("sso CW.logout navigates to the cloud dashboard URL", function () {
   ctx.CW.state.authMode = "sso";
   ctx.CW.state.cloudUrl = "https://cloud.example.com";
   ctx.CW.state.token = "tok";
+  ctx.CW.state.session = true;
   ctx.context.location.href = "http://127.0.0.1:8090/#/p/x";
   ctx.CW.logout();
   assert.equal(ctx.context.location.href, "https://cloud.example.com");
   assert.equal(ctx.CW.state.token, null, "token cleared before navigating");
+  assert.equal(ctx.CW.state.session, false, "session cleared before navigating");
   assert.equal($(ctx, "login-section").hidden, true, "still no login form");
   assert.equal($(ctx, "sso-section").hidden, false, "notice was the fallback under navigation");
 });
@@ -389,9 +388,11 @@ test("sso 401 session-expiry navigates home to cloud", async function () {
   ctx.CW.state.authMode = "sso";
   ctx.CW.state.cloudUrl = "https://cloud.example.com";
   ctx.CW.state.token = "stale-tok";
+  ctx.CW.state.session = true;
   ctx.context.location.href = "http://127.0.0.1:8090/#/";
   await assert.rejects(ctx.CW.api("/api/collections/flags/records"), /session expired/);
   assert.equal(ctx.CW.state.token, null);
+  assert.equal(ctx.CW.state.session, false);
   assert.equal(ctx.context.location.href, "https://cloud.example.com");
   assert.equal($(ctx, "login-section").hidden, true, "expiry never reveals login");
 });
@@ -418,7 +419,7 @@ function freshRace(fetchImpl) {
   var ctx = h.load(["core.js", "auth.js", "router.js", "account.js"], {
     fetchImpl: fetchImpl,
   });
-  // Mirror index.html defaults, then the stored-token boot flip while the
+  // Mirror index.html defaults, then the cookie-probe boot flip while the
   // mode is still unknown (standard branch — today's boot order).
   $(ctx, "login-section").hidden = false;
   $(ctx, "setup-section").hidden = true;
@@ -426,7 +427,7 @@ function freshRace(fetchImpl) {
   $(ctx, "admin-section").hidden = true;
   $(ctx, "logout-btn").hidden = true;
   ctx.CW.state.token = "tok";
-  try { ctx.context.localStorage.setItem("cw_admin_token", "tok"); } catch (e) { /* stub */ }
+  ctx.CW.state.session = true;
   ctx.CW.setLoggedIn(true);
   // Record every login-section visibility write from here on: "never
   // revealed" means no write of false, not just a clean final state.
@@ -459,12 +460,14 @@ test("race: logout with mode unresolved resolving sso ends at cloud, login never
   assert.ok(p && typeof p.then === "function", "unresolved mode takes the async path");
   // Await-first: nothing cleared and no surface flipped while mode pending.
   assert.equal(ctx.CW.state.token, "tok", "token kept until mode resolves");
+  assert.equal(ctx.CW.state.session, true, "session kept until mode resolves");
   assert.equal($(ctx, "login-section").hidden, true, "login not revealed while pending");
   assert.equal(ctx.context.location.href, "http://127.0.0.1:8090/#/p/x", "no navigation while pending");
   resolveMode();
   await p;
   await flush();
   assert.equal(ctx.CW.state.token, null, "token cleared after resolve");
+  assert.equal(ctx.CW.state.session, false, "session cleared after resolve");
   assert.equal(ctx.context.location.href, "https://cloud.example.com", "sso logout navigates home to cloud");
   assert.equal($(ctx, "login-section").hidden, true, "login never shown");
   assert.ok(ctx.loginWrites.indexOf(false) === -1, "no login-section reveal at any point");
@@ -487,6 +490,7 @@ test("race: logout with mode unresolved resolving standard returns to login, no 
   await p;
   await flush();
   assert.equal(ctx.CW.state.token, null);
+  assert.equal(ctx.CW.state.session, false);
   assert.equal(ctx.context.location.href, "http://127.0.0.1:8090/#/", "href untouched");
   assert.equal($(ctx, "login-section").hidden, false, "classic login returns");
   assert.equal($(ctx, "sso-section").hidden, true, "no notice in standard mode");
@@ -500,6 +504,7 @@ test("race: logout with mode fetch failing falls back to standard login (residua
   await ctx.CW.logout();
   await flush();
   assert.equal(ctx.CW.state.token, null);
+  assert.equal(ctx.CW.state.session, false);
   assert.equal(ctx.context.location.href, "http://127.0.0.1:8090/#/", "href untouched");
   assert.equal($(ctx, "login-section").hidden, false, "failure fallback stays standard: login returns");
   assert.equal($(ctx, "sso-section").hidden, true);
@@ -521,6 +526,7 @@ test("race: 401 auto-logout with mode unresolved resolving sso navigates home", 
   resolveMode();
   await flush(10);
   assert.equal(ctx.CW.state.token, null);
+  assert.equal(ctx.CW.state.session, false);
   assert.equal(ctx.context.location.href, "https://cloud.example.com", "expiry navigates home once mode resolves");
   assert.equal($(ctx, "login-section").hidden, true, "expiry never reveals login");
   assert.ok(ctx.loginWrites.indexOf(false) === -1, "no login-section reveal at any point");
@@ -543,11 +549,13 @@ test("race: logoutRef fallback without auth.js awaits mode then navigates home",
   });
   assert.equal(typeof ctx.CW.logout, "undefined", "fallback precondition: no CW.logout");
   ctx.CW.state.token = "stale-tok";
+  ctx.CW.state.session = true;
   ctx.context.location.href = "http://127.0.0.1:8090/#/";
   await assert.rejects(ctx.CW.api("/api/collections/flags/records"), /session expired/);
   resolveMode();
   await flush(10);
   assert.equal(ctx.CW.state.token, null);
+  assert.equal(ctx.CW.state.session, false);
   assert.equal(ctx.context.location.href, "https://cloud.example.com");
   assert.equal($(ctx, "login-section").hidden, true, "expiry never reveals login");
 });
@@ -611,16 +619,12 @@ test("boot sso mode with no token hides login+setup, shows notice", async functi
   assert.ok(urls.indexOf("/api/v1/admin/setup/status") === -1, "setup not probed in sso mode");
 });
 
-test("boot ?sso= auto-redeems, adopts cookie session, strips param", async function () {
+test("boot ?sso= auto-redeems in one fetch, strips param", async function () {
   var posts = [];
   var ctx = h.load(undefined, {
     fetchImpl: function (url, opts) {
       if (String(url) === "/api/v1/admin/sso/redeem") {
         posts.push(plain(JSON.parse(opts.body)));
-        return Promise.resolve(jsonRes(200, { token: "boot-sso-tok" }));
-      }
-      if (String(url) === "/api/v1/admin/session") {
-        posts.push({ sessionAdopt: plain(JSON.parse(opts.body)) });
         return Promise.resolve(jsonRes(200, { ok: true }));
       }
       if (String(url) === "/api/v1/meta") return Promise.resolve(jsonRes(200, { version: "v0.0.0", assets: "a" }));
@@ -634,8 +638,8 @@ test("boot ?sso= auto-redeems, adopts cookie session, strips param", async funct
   };
   ctx.dispatch("DOMContentLoaded");
   await flush(10);
-  assert.deepEqual(posts, [{ ticket: "BOOT.tik" }, { sessionAdopt: { token: "boot-sso-tok" } }], "redeem posted then cookie adopted");
-  assert.equal(ctx.CW.state.token, "boot-sso-tok");
+  assert.deepEqual(posts, [{ ticket: "BOOT.tik" }], "single redeem fetch, no session middle hop");
+  assert.equal(ctx.CW.state.token, null);
   assert.ok(!Object.prototype.hasOwnProperty.call(ctx.store, "cw_admin_token"));
   assert.deepEqual(replaced, ["http://127.0.0.1:8090/"], "?sso= stripped");
 });
