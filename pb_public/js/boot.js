@@ -50,23 +50,16 @@
       // markup already hides it; this keeps it hidden if a prior SSO
       // attempt revealed it before falling back).
       try { var sn = CW.$("sso-section"); if (sn) sn.hidden = true; } catch (e) { /* best-effort */ }
-      // Cookie-first restore: a legacy localStorage copy migrates to
-      // memory via loadToken (then is dropped); otherwise the HttpOnly
-      // cookie is probed — it survives reloads while memory does not.
-      CW.loadToken();
+      // Cookie-only restore: probe the HttpOnly session (raw fetch, so a
+      // 401 here never fans out into the logout flow) before falling back
+      // to the login/setup surface. Memory holds no token, so there is no
+      // short-circuit: every reload re-probes the cookie.
       CW.loadPersistedScope();
-      if (CW.state.token) {
-        bootAuthed();
-        return;
-      }
-      // No memory token: probe the cookie session (raw fetch, so a 401
-      // here never fans out into the logout flow) before falling back to
-      // the login/setup surface.
       var probed = false;
       try {
         if (typeof fetch === "function") {
           probed = true;
-          fetch("/api/v1/admin/account/list", { credentials: "same-origin", headers: CW.authHeaders() })
+          fetch("/api/v1/admin/account/list", { credentials: "same-origin" })
             .then(function (res) {
               if (res && res.ok) bootAuthed();
               else bootLoggedOut();
@@ -1220,12 +1213,6 @@
         CW.$("publish-result").textContent = "Drafts discarded.";
       });
       return;
-    });
-
-    // HTMX: inject the BARE superuser token on every HTMX-driven request so
-    // partials (if any) share the same auth as fetch calls.
-    document.body.addEventListener("htmx:configRequest", function (ev) {
-      if (CW.state.token) ev.detail.headers["Authorization"] = CW.state.token; // bare, no TOKEN prefix
     });
   });
 

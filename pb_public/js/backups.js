@@ -1,6 +1,6 @@
 /* ConfigWire admin shell — backups.js (PocketBase data backups, superuser).
  * Lists, creates, downloads, deletes, and restores /api/backups snapshots.
- * Auth is the BARE superuser token (CW.authHeaders — never "Bearer"), same
+ * Auth is the HttpOnly session cookie (credentials:same-origin), same
  * as every other admin card. Download rides a short-lived superuser file
  * token from POST /api/files/token (never logged).
  */
@@ -310,7 +310,7 @@
     var fd;
     try { fd = new FormData(); fd.append("file", f, f.name || "backup.zip"); }
     catch (e) { backupUploadStatus((e && e.message) || "Upload failed"); return Promise.resolve({ status: 0, data: null }); }
-    return fetch("/api/backups/upload", { method: "POST", credentials: "same-origin", headers: CW.authHeaders(), body: fd }).then(function (res) {
+    return fetch("/api/backups/upload", { method: "POST", credentials: "same-origin", body: fd }).then(function (res) {
       return res.json().then(function (data) { return { status: res.status, data: data }; }, function () { return { status: res.status, data: { message: "HTTP " + res.status } }; });
     }, function (err) {
       backupUploadStatus((err && err.message) || "Upload failed");
