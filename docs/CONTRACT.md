@@ -853,18 +853,18 @@ change for standalone deploys):
 
 - `CONFIGWIRE_AUTH_MODE=standard|sso` (default `standard`). `sso`
   match is case-insensitive, surrounding whitespace ignored; anything
-  else, including empty, is `standard`. Ref: `:94-99`.
+  else, including empty, is `standard`. Ref: `sso/sso.go:101-109`.
 - `CONFIGWIRE_CLOUD_SSO_SECRET=<64-hex>` (32 bytes). Required in
   `sso` mode: missing or malformed fails fast at startup before any
   route serves. Set without `sso` mode: ignored with a log line.
   Ref: `main.go:497-508`.
 - `CONFIGWIRE_CLOUD_URL` (optional): dashboard URL surfaced as
   `cloudUrl` in the mode response for the managed notice link.
-  Ref: `:341-349`.
+  Ref: `sso/sso.go:486-495`.
 
 ### 12a. Mode signal — `GET /api/v1/admin/auth/mode`
 
-Public, pre-auth. Ref: `:326,340-349`.
+Public, pre-auth. Ref: `sso/sso.go:482-483,486-495`.
 
 Success `200` (default shape is exactly `{mode}`):
 
@@ -877,9 +877,9 @@ Success `200` (default shape is exactly `{mode}`):
 
 ### 12b. Redeem — `POST /api/v1/admin/sso/redeem`
 
-Public, rate-limited like setup (same global `limits.CheckIP`
-middleware under `/api/v1/admin/`; no per-route bucket).
-Ref: `:13-18,324-338`.
+Public, Origin-checked, rate-limited like setup (same global `limits.CheckIP`
+middleware under `/api/v1/admin/` plus the per-route redeem bucket).
+Ref: `sso/sso.go:14-27,517-522`.
 
 Request:
 
@@ -889,14 +889,15 @@ Request:
 
 Empty body then `400` (`empty body: expected a JSON object.`);
 malformed JSON then `400` (`malformed JSON body: ...`).
-Ref: `:424-444`.
+Ref: `sso/sso.go:529-532`.
 
-Success `200` (token issued with PocketBase
+Success `200` (session issued with PocketBase
 `record.NewAuthToken()` semantics for the matched non-installer
-`_superusers` record, email matched exactly after `TrimSpace`):
+`_superusers` record, email matched exactly after `TrimSpace`, carried
+as the `cw_admin` cookie via `Set-Cookie`, never in the body):
 
 ```json
-{"token": "<auth-token>"}
+{"ok": true}
 ```
 
 Errors (spec-exact `{message, status}` bodies via `re.JSON`):
@@ -914,7 +915,7 @@ Errors (spec-exact `{message, status}` bodies via `re.JSON`):
   when shape is fine but time failed.
 - `404 unknown user.` only after the MAC passes (no oracle).
 - `409` when the nonce is already in the single-use cache; the
-  nonce is claimed BEFORE the token issues (insert-then-issue).
+  nonce is claimed BEFORE the session issues (nonce-claim-before-issue).
 - `404 sso not enabled.` when the server runs in `standard` mode
   (secret empty): redeem exists but never issues.
 - Nonce cache is in-memory, entry TTL 60s (== ticket TTL).

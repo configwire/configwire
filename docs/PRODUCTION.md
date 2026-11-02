@@ -183,15 +183,19 @@ inside the window, and per-IP rate limiting can be bypassed N-fold.
 
 ## Known trade-offs (documented, not changing)
 
-- **Admin token in localStorage.** The superuser token persists as
-  `cw_admin_token` (`configwire/pb_public/js/core.js:9,313,318` (`LS_KEY`, `saveToken`/`loadToken`)):
-  reload keeps you logged in, which every current deployment relies
-   on. The self-only CSP blunts the XSS this storage invites
-   (`configwire/security/security.go:42` (`SetHeaders` self-only CSP)). Moving to
-  sessionStorage/memory would log operators out on every reload, so
-  the trade-off stays until a concrete XSS forces a rethink. On
-  shared machines, skip persistence and log out (logout clears both
-  copies).
+- **Admin session in `cw_admin` cookie.** The superuser session is a
+  cookie-carried token (`cw_admin`, `HttpOnly, SameSite=Strict,
+  Path=/, Max-Age 43200`), never `localStorage` or JS state. Cookie
+  matrix: direct plain-HTTP serve sets no `Secure`; behind
+  Caddy-HTTPS (TLS or trusted `X-Forwarded-Proto: https`) it sets
+  `Secure`; a spoofed proto from an untrusted peer is ignored; logout
+  clears both variants (dual clearing). XSS cannot exfiltrate the
+   token via `localStorage` because it is never there — requests are
+   still possible while hostile script runs, so the self-only CSP
+   (`configwire/security/security.go` `SetHeaders`) still matters.
+   There is no server-side logout revocation: logout clears this
+   browser only, a copied token stays valid until its own
+   collection auth-token expiry — rotate on suspected compromise.
 - **HSTS `includeSubDomains` on shared parents.** The HSTS value
    stamps `includeSubDomains` per common guidance. On a shared parent
    domain (for example a tenant under someone else's apex), that pins

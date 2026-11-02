@@ -55,7 +55,15 @@ binary plus operator procedure.
   2. Optionally also rotate the auth collection's token secret
      (Settings → Application / auth collection options) and restart
      for a global invalidate across all auth records.
-  3. Re-issue SDK keys (section above) if key material may have leaked.
+   3. Re-issue SDK keys (section above) if key material may have leaked.
+
+### Logout vs rotate (no denylist)
+
+- Logout (`DELETE` session) clears this browser's cookie only: a
+  copied token stays valid until its own collection auth-token
+  expiry. Rotate (password/email change above) invalidates every
+  token for that superuser at once via `tokenKey` rotation. Use
+  logout for a single browser, rotate for suspected compromise.
 
 ## 3. PII — bucket-only identity, tunable retention
 
@@ -217,8 +225,11 @@ binary plus operator procedure.
 - All 9 collections default-deny (`nil` rules → `403` for
   non-superusers). Releases rows are additionally immutable via
   server hooks (updates denied on every path incl. dashboard).
-- Admin UI token lives in memory (+ optional localStorage copy):
-  shared machines should skip persistence; logout clears both.
+- Admin UI session lives in the `cw_admin` HttpOnly cookie, never in
+  JS state or `localStorage`: `DELETE` clears this browser only (no
+  server-side denylist). There is no `{token}` in any login body and
+  no `?token=` bootstrap path; PocketBase native auth remains for
+  ops tooling only.
 
 ## 7. Stream — 10min cap + poll bound
 

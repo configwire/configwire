@@ -17,8 +17,9 @@ Key facts (landed code):
   check.
 - Missing, unknown, revoked, or env-mismatched keys answer `401`
   `Missing or invalid SDK key.` on fetch, ingest, and stream.
-- Admin session keys are `cw_admin_*` localStorage (memory-first copy;
-  logout clears both).
+- Admin session is the `cw_admin` cookie, never `localStorage`;
+  logout clears this browser only (no server-side denylist) — rotate
+  below to invalidate every token.
 - Stale Dart `.configwire_*-cache.json` files rebuild on the next
   fetch (schema unchanged).
 
@@ -144,10 +145,9 @@ Receipt: `curl $BASE/healthz` refuses and `lsof -ti:8120` is empty.
   to keep the cohort stable, keep the prefix. Same rule applies to the
   Flutter `SharedPreferencesCacheStore` (`<prefix>.<namespace>.cache` /
   `.bucket`, `namespace` = key prefix).
-- Admin UI: first load restores the stored session from localStorage.
-  An empty or missing token lands on the
-  login form; a garbage token shows an error toast and stays in the
-  shell (pre-existing PocketBase 403 behavior, unchanged by the
-  rebrand).
+- Admin UI: first load reads the session from the `cw_admin` cookie
+  via the session endpoint. An empty or missing cookie lands on the
+  login form; a revoked token shows an error toast and stays in the
+  shell (pre-existing 401 behavior).
 - k6 gate: pass the new key as `GATE_KEY=<cw-key> k6 run
   --summary-export=/tmp/cw-gate-summary.json scripts/k6-fetch.js`.
