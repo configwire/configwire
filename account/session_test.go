@@ -3,6 +3,7 @@ package account
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -351,7 +352,7 @@ func TestSessionRefreshRoundTrip(t *testing.T) {
 		t.Fatal("refresh: empty cookie value")
 	}
 	joined := strings.Join(hdr["Set-Cookie"], ";")
-	for _, want := range []string{"HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=259200"} {
+	for _, want := range []string{"HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=" + strconv.Itoa(sessionMaxAgeSeconds)} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("refresh cookie lacks %q in %q", want, joined)
 		}
@@ -414,5 +415,58 @@ func TestEnsureSuperuserTokenDuration(t *testing.T) {
 		} else if col.AuthToken.Duration != int64(sessionMaxAgeSeconds) {
 			t.Fatalf("from %d: token duration = %d, want %d", start, col.AuthToken.Duration, sessionMaxAgeSeconds)
 		}
+	}
+}
+
+// TestLoadSessionMaxAgeSeconds pins the CONFIGWIRE_SESSION_MAX_AGE
+// parsing: unset means the 3d default, in-range values win verbatim,
+// and malformed or out-of-range input falls back to the default.
+func TestLoadSessionMaxAgeSeconds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  int
+	}{
+		{"unset", "", defaultSessionMaxAgeSeconds},
+		{"one hour floor", "3600", 3600},
+		{"mid window", "7200", 7200},
+		{"thirty day ceiling", "2592000", 2592000},
+		{"below floor", "3599", defaultSessionMaxAgeSeconds},
+		{"above ceiling", "2592001", defaultSessionMaxAgeSeconds},
+		{"zero", "0", defaultSessionMaxAgeSeconds},
+		{"negative", "-5", defaultSessionMaxAgeSeconds},
+		{"non-numeric", "abc", defaultSessionMaxAgeSeconds},
+		{"whitespace", "   ", defaultSessionMaxAgeSeconds},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CONFIGWIRE_SESSION_MAX_AGE", tc.value)
+			if got := loadSessionMaxAgeSeconds(); got != tc.want {
+				t.Fatalf("env %q: got %d, want %d", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEnsureSuperuserTokenDurationFollowsLiveWindow proves the token
+// duration tracks the startup-loaded window, not just the default: with
+// a tuned live value, a differing stored duration converges to it.
+func TestEnsureSuperuserTokenDurationFollowsLiveWindow(t *testing.T) {
+	app := accountTestApp(t)
+	old := sessionMaxAgeSeconds
+	sessionMaxAgeSeconds = 7200
+	defer func() { sessionMaxAgeSeconds = old }()
+	col, err := app.FindCollectionByNameOrId(superusersCollection)
+	if err != nil {
+		t.Fatalf("find _superusers: %v", err)
+	}
+	col.AuthToken.Duration = int64(defaultSessionMaxAgeSeconds)
+	if err := app.Save(col); err != nil {
+		t.Fatalf("save default duration: %v", err)
+	}
+	ensureSuperuserTokenDuration(app)
+	if col, err = app.FindCollectionByNameOrId(superusersCollection); err != nil {
+		t.Fatalf("find _superusers: %v", err)
+	} else if col.AuthToken.Duration != 7200 {
+		t.Fatalf("tuned window: token duration = %d, want 7200", col.AuthToken.Duration)
 	}
 }

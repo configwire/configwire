@@ -10,13 +10,14 @@
 //     body answers 400 (holders without a cookie re-login with the
 //     password). On success it
 //     sets the cw_admin cookie (HttpOnly, SameSite=Strict, Path=/,
-//     Max-Age 3d; Secure when the request is TLS or the proxy signals
+//     Max-Age 3d by default (CONFIGWIRE_SESSION_MAX_AGE to tune);
+//     Secure when the request is TLS or the proxy signals
 //     https via X-Forwarded-Proto, so plain-HTTP local dev keeps
 //     working) and returns {"ok":true} with no token in the body.
 //     Direct auth-with-password login is untouched.
 //   - POST /api/v1/admin/session/refresh (cookie-authed,
 //     Origin-checked) re-mints the token and re-sets the cookie with a
-//     fresh 3d window, returning {"ok":true} with no token in the body.
+//     fresh window, returning {"ok":true} with no token in the body.
 //     Cookie-only equivalent of PocketBase auth-refresh without
 //     exposing the native JSON token to JS.
 //   - DELETE /api/v1/admin/session clears the cw_admin cookie and
@@ -37,6 +38,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -65,22 +68,64 @@ func burnBcryptDummy(password string) {
 // sessionCookieName is the HttpOnly cookie carrying the superuser token.
 const sessionCookieName = "cw_admin"
 
-// sessionMaxAgeSeconds is the cookie lifetime (3d, sliding via
-// POST /api/v1/admin/session/refresh which re-mints a fresh token +
-// cookie on each call, mirroring PocketBase auth-refresh semantics
-// without ever returning the token to JS). It only stops
+// defaultSessionMaxAgeSeconds is the cookie + token lifetime (3d,
+// sliding via POST /api/v1/admin/session/refresh which re-mints a fresh
+// token + cookie on each call, mirroring PocketBase auth-refresh
+// semantics without ever returning the token to JS). It only stops
 // the browser from sending the cookie: a copied PocketBase token stays
 // usable until its own collection auth-token expiry, so the cookie bound
 // is not a token lifetime. The _superusers collection AuthToken
-// duration is ensured to the same 3d (see
+// duration is ensured to the same value (see
 // ensureSuperuserTokenDuration) so the JWT outlives the cookie window
 // and refresh-before-expiry keeps an active user logged in.
-const sessionMaxAgeSeconds = 3 * 24 * 60 * 60
+const defaultSessionMaxAgeSeconds = 3 * 24 * 60 * 60
+
+// Session window bounds for CONFIGWIRE_SESSION_MAX_AGE (seconds):
+// below an hour the sliding admin session is unusable (the UI refreshes
+// opportunistically, not on a timer), above 30d a stolen token lives
+// too long without rotation.
+const (
+	minSessionMaxAgeSeconds = 60 * 60
+	maxSessionMaxAgeSeconds = 30 * 24 * 60 * 60
+)
+
+// sessionMaxAgeEnvName is the boot knob overriding the session window
+// (cookie Max-Age and _superusers AuthToken duration together, so the
+// JWT always outlives the cookie it rides in).
+const sessionMaxAgeEnvName = "CONFIGWIRE_SESSION_MAX_AGE"
+
+// sessionMaxAgeSeconds is the live cookie + token lifetime, set once
+// from the env at serve startup (registerSession). Tests see the
+// default (env unset); the loader is pure so env parsing is unit
+// tested without mutating this.
+var sessionMaxAgeSeconds = defaultSessionMaxAgeSeconds
+
+// loadSessionMaxAgeSeconds parses CONFIGWIRE_SESSION_MAX_AGE (integer
+// seconds within minSessionMaxAgeSeconds..maxSessionMaxAgeSeconds).
+// Empty, malformed, or out-of-range input falls back to the default:
+// silent on empty, one log line naming only the env var otherwise
+// (never its value, per logging convention).
+func loadSessionMaxAgeSeconds() int {
+	raw := strings.TrimSpace(os.Getenv(sessionMaxAgeEnvName))
+	if raw == "" {
+		return defaultSessionMaxAgeSeconds
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < minSessionMaxAgeSeconds || n > maxSessionMaxAgeSeconds {
+		log.Printf("account: invalid %s, using default session window %d", sessionMaxAgeEnvName, defaultSessionMaxAgeSeconds)
+		return defaultSessionMaxAgeSeconds
+	}
+	return n
+}
 
 // Exported aliases for the sso parity test (sso duplicates these to stay
 // standalone). Do not introduce a second value: change these, not copies.
 const SessionCookieName = sessionCookieName
-const SessionMaxAgeSeconds = sessionMaxAgeSeconds
+
+// SessionMaxAgeSeconds reports the live session window in seconds.
+func SessionMaxAgeSeconds() int {
+	return sessionMaxAgeSeconds
+}
 
 // SessionPerIPLimit caps POST /api/v1/admin/session at 10 requests per
 // SessionPerIPWindow per client IP (code constant, no knob: legit login
@@ -146,6 +191,7 @@ func resetSessionBucket() {
 
 // registerSession mounts the public session endpoints. Called from Register.
 func registerSession(se *core.ServeEvent) {
+	sessionMaxAgeSeconds = loadSessionMaxAgeSeconds()
 	se.Router.POST("/api/v1/admin/session", postSession)
 	se.Router.POST("/api/v1/admin/session/refresh", refreshSession)
 	se.Router.DELETE("/api/v1/admin/session", deleteSession)
@@ -153,13 +199,13 @@ func registerSession(se *core.ServeEvent) {
 }
 
 // ensureSuperuserTokenDuration aligns the _superusers collection
-// AuthToken duration to sessionMaxAgeSeconds (3d is mandatory: sliding
-// refresh re-mints on a 12h interval, so the JWT must outlive the cookie
-// window). Any differing value — shorter or longer, including operator
-// edits via the admin UI — is reset and logged. Fail-soft (logs only):
-// a stale duration just means shorter-lived tokens until the next
-// serve. Runs at serve startup only; a live edit via the UI holds until
-// the next restart.
+// AuthToken duration to sessionMaxAgeSeconds (default 3d, tunable via
+// CONFIGWIRE_SESSION_MAX_AGE: sliding refresh re-mints a full window,
+// so the JWT must outlive the cookie). Any differing value — shorter
+// or longer, including operator edits via the admin UI — is reset and
+// logged. Fail-soft (logs only): a stale duration just means
+// shorter-lived tokens until the next serve. Runs at serve startup
+// only; a live edit via the UI holds until the next restart.
 func ensureSuperuserTokenDuration(app core.App) {
 	col, err := app.FindCollectionByNameOrId(superusersCollection)
 	if err != nil {
@@ -169,7 +215,7 @@ func ensureSuperuserTokenDuration(app core.App) {
 		return
 	}
 	old := col.AuthToken.Duration
-	col.AuthToken.Duration = sessionMaxAgeSeconds
+	col.AuthToken.Duration = int64(sessionMaxAgeSeconds)
 	if err := app.Save(col); err != nil {
 		log.Printf("account: failed to ensure superuser token duration: %v", err)
 		return
@@ -361,7 +407,7 @@ func postSession(re *core.RequestEvent) error {
 // token via NewAuthToken, and re-sets the cw_admin cookie, returning
 // {"ok":true} with no token in the body. This is the cookie-only
 // equivalent of PocketBase's auth-refresh (same sliding semantics:
-// each call extends the JWT + cookie by a full 3d), without exposing
+// each call extends the JWT + cookie by a full window), without exposing
 // the native auth-refresh JSON token to JS. Cookie-only by design: the
 // Authorization header is ignored here so a bearer exfiltrated for ops
 // tooling cannot be kept alive without the cookie. Order: 403 (Origin
