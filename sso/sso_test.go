@@ -25,8 +25,39 @@ func TestSessionCookieParityWithAccount(t *testing.T) {
 	if sessionCookieName != account.SessionCookieName {
 		t.Fatalf("sso cookie %q != account %q: keep cw_admin single-sourced", sessionCookieName, account.SessionCookieName)
 	}
-	if sessionMaxAgeSeconds != account.SessionMaxAgeSeconds {
-		t.Fatalf("sso max-age %d != account %d: keep 3d single-sourced", sessionMaxAgeSeconds, account.SessionMaxAgeSeconds)
+	if sessionMaxAgeSeconds != account.SessionMaxAgeSeconds() {
+		t.Fatalf("sso max-age %d != account %d: keep the window single-sourced", sessionMaxAgeSeconds, account.SessionMaxAgeSeconds())
+	}
+}
+
+// TestLoadSessionMaxAgeSeconds pins the redeem side of the
+// CONFIGWIRE_SESSION_MAX_AGE parsing (same table as account's copy:
+// unset means the 3d default, in-range wins, malformed or out-of-range
+// falls back). The parity test above plus this table keep the
+// duplicated loaders in agreement.
+func TestLoadSessionMaxAgeSeconds(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+		want  int
+	}{
+		{"unset", "", defaultSessionMaxAgeSeconds},
+		{"one hour floor", "3600", 3600},
+		{"mid window", "7200", 7200},
+		{"thirty day ceiling", "2592000", 2592000},
+		{"below floor", "3599", defaultSessionMaxAgeSeconds},
+		{"above ceiling", "2592001", defaultSessionMaxAgeSeconds},
+		{"zero", "0", defaultSessionMaxAgeSeconds},
+		{"negative", "-5", defaultSessionMaxAgeSeconds},
+		{"non-numeric", "abc", defaultSessionMaxAgeSeconds},
+		{"whitespace", "   ", defaultSessionMaxAgeSeconds},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CONFIGWIRE_SESSION_MAX_AGE", tc.value)
+			if got := loadSessionMaxAgeSeconds(); got != tc.want {
+				t.Fatalf("env %q: got %d, want %d", tc.value, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -344,8 +375,8 @@ func TestRedeemHandlerMatrix(t *testing.T) {
 	cookie := hdr.Get("Set-Cookie")
 	if !strings.Contains(cookie, "cw_admin=") || !strings.Contains(cookie, "HttpOnly") ||
 		!strings.Contains(cookie, "SameSite=Strict") || !strings.Contains(cookie, "Path=/") ||
-		!strings.Contains(cookie, "Max-Age=259200") {
-		t.Fatalf("valid redeem Set-Cookie=%q, want cw_admin HttpOnly SameSite=Strict Path=/ Max-Age=259200", cookie)
+		!strings.Contains(cookie, "Max-Age="+strconv.Itoa(sessionMaxAgeSeconds)) {
+		t.Fatalf("valid redeem Set-Cookie=%q, want cw_admin HttpOnly SameSite=Strict Path=/ Max-Age=%d", cookie, sessionMaxAgeSeconds)
 	}
 
 	// Replay of the same ticket -> 409 (nonce already claimed).

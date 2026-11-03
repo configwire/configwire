@@ -41,6 +41,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -367,16 +368,55 @@ func (b *redeemBucket) allow(ip string) bool {
 
 // sessionCookieName is the HttpOnly cookie carrying the superuser token.
 // Byte-identical semantics to account.setSessionCookie (duplicated to
-// keep sso standalone: HttpOnly, SameSite=Strict, Path=/, Max-Age 3d;
+// keep sso standalone: HttpOnly, SameSite=Strict, Path=/, Max-Age 3d
+// by default (same CONFIGWIRE_SESSION_MAX_AGE knob as account);
 // Secure when the request is TLS or the proxy signals https via
 // X-Forwarded-Proto from a trusted peer).
 const sessionCookieName = "cw_admin"
 
-// sessionMaxAgeSeconds is the cookie lifetime (3d, byte-identical to
-// account.sessionMaxAgeSeconds). It only stops the browser from sending
-// the cookie, not a token lifetime. Sliding refresh is owned by
-// POST /api/v1/admin/session/refresh.
-const sessionMaxAgeSeconds = 3 * 24 * 60 * 60
+// defaultSessionMaxAgeSeconds is the cookie lifetime (3d default,
+// byte-identical to account's default; the live value follows the same
+// CONFIGWIRE_SESSION_MAX_AGE knob via loadSessionMaxAgeSeconds so the
+// redeem cookie matches the login cookie). It only stops the browser
+// from sending the cookie, not a token lifetime. Sliding refresh is
+// owned by POST /api/v1/admin/session/refresh.
+const defaultSessionMaxAgeSeconds = 3 * 24 * 60 * 60
+
+// Session window bounds, byte-identical to account's copy (see the
+// parity test): below an hour the sliding admin session is unusable,
+// above 30d a stolen token lives too long without rotation.
+const (
+	minSessionMaxAgeSeconds = 60 * 60
+	maxSessionMaxAgeSeconds = 30 * 24 * 60 * 60
+)
+
+// sessionMaxAgeEnvName mirrors account's knob: one env drives both the
+// login and the redeem cookie, so the two issuance paths never diverge.
+const sessionMaxAgeEnvName = "CONFIGWIRE_SESSION_MAX_AGE"
+
+// sessionMaxAgeSeconds is the live redeem-cookie lifetime, set once
+// from the env at serve startup (Register). Duplicated (not imported)
+// to keep sso standalone, like the cookie helper below.
+var sessionMaxAgeSeconds = defaultSessionMaxAgeSeconds
+
+// loadSessionMaxAgeSeconds parses CONFIGWIRE_SESSION_MAX_AGE (integer
+// seconds within minSessionMaxAgeSeconds..maxSessionMaxAgeSeconds).
+// Byte-identical to account.loadSessionMaxAgeSeconds; the parity test
+// guards drift. Empty, malformed, or out-of-range input falls back to
+// the default: silent on empty, one log line naming only the env var
+// otherwise (never its value, per logging convention).
+func loadSessionMaxAgeSeconds() int {
+	raw := strings.TrimSpace(os.Getenv(sessionMaxAgeEnvName))
+	if raw == "" {
+		return defaultSessionMaxAgeSeconds
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < minSessionMaxAgeSeconds || n > maxSessionMaxAgeSeconds {
+		log.Printf("sso: invalid %s, using default session window %d", sessionMaxAgeEnvName, defaultSessionMaxAgeSeconds)
+		return defaultSessionMaxAgeSeconds
+	}
+	return n
+}
 
 // sessionOriginDenied is the POST CSRF guard: a present Origin/Referer
 // must be same-origin (host, including port, equals the request Host),
@@ -475,6 +515,7 @@ func Register(se *core.ServeEvent, cfg Config) {
 	if mode != ModeSSO {
 		mode = ModeStandard
 	}
+	sessionMaxAgeSeconds = loadSessionMaxAgeSeconds()
 	cache := cfg.Cache
 	if cache == nil {
 		cache = NewNonceCache(NonceTTL)
