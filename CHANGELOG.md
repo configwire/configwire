@@ -3,21 +3,21 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
-## Unreleased
+## v0.2.0-rc.10 — 2026-11-03
+
+### Added
+
+- New "Admin log" setting: when on, every admin API request is saved to the log store as one info line (`METHOD /path -> status`). A success-lines switch keeps only failures, and an opt-in health-check switch adds `/healthz`. Path only — query strings, tokens, bodies, and IPs are never logged. Off by default; find it in the log settings dialog.
+- Per-env SDK key cap: set `CONFIGWIRE_MAX_KEYS_PER_ENV` and minting a key beyond the cap answers `400` (revoked keys never count, so rotation frees room). Unset means unlimited, as before.
+- Plan ceilings for tunable limits: `CONFIGWIRE_MAX_*` env knobs cap rate limits, retention windows, and log windows — values above the ceiling answer `400` and stored values clamp down to it. Unset means no ceiling, as before.
+- Sliding session refresh with a tunable window: `POST /api/v1/admin/session/refresh` re-issues the cookie session with a fresh window, answering `{ok:true}` with no token in the body. Set `CONFIGWIRE_SESSION_MAX_AGE=<seconds>` (1h–30d, default 3d) and the cookie lifetime plus the auth-token duration move together, so refresh-before-expiry keeps working at any window. Unset or invalid means the 3d default.
 
 ### Changed
 
-- Admin session is cookie-carried with no server-side denylist: login
-  sets `cw_admin` (`HttpOnly, SameSite=Strict, Path=/, Max-Age 43200`,
-  `Secure` on TLS or trusted `X-Forwarded-Proto: https`) and `DELETE`
-  clears the cookie (always `200 {ok:true}`) — logout clears this
-  browser only, a copied token stays valid until its own auth-token
-  expiry. SSO redeem answers `200 {ok:true}` plus `Set-Cookie` with no token
-  in the body (Origin-checked, nonce-claim-before-issue, error bodies
-  stay `{message,status}`). No `{token}` in any auth body, no
-  `?token=` path, no `localStorage`/JS token state; bearer header
-  paths hard-removed from browser flows, native auth stays for ops
-  tooling only. PocketBase v0.41.0.
+- Admin session is cookie-carried with no server-side denylist: login sets `cw_admin` (`HttpOnly, SameSite=Strict, Path=/, Max-Age 3d by default`, `Secure` on TLS or trusted proxy HTTPS) and `DELETE` clears the cookie (always `200 {ok:true}`) — logout clears this browser only, a copied token stays valid until its own auth-token expiry. SSO redeem answers `200 {ok:true}` plus `Set-Cookie` with no token in the body. No `{token}` in any auth body, no `?token=` path, no `localStorage`/JS token state; bearer header paths hard-removed from browser flows, native auth stays for ops tooling only. PocketBase v0.41.0.
+- The server now finds its Admin UI files next to the binary or in `./pb_public`, whichever contains them — serving no longer depends on the working directory.
+- Louder boot warnings on public binds: an open CORS origin or an empty admin allowlist on a non-loopback address now logs at Error level with a pointer to the production checklist. Loopback behavior is unchanged; it never exits.
+- Operator docs: logout-vs-rotate runbook (logout clears one browser, rotate to invalidate every token), plus single-process requirements — the purge ticker must run on exactly one node and SSO redeem on a single replica (or sticky).
 
 ## v0.2.0-rc.9 — 2026-10-29
 
