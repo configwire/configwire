@@ -398,31 +398,21 @@ func TestSessionRefreshRejectsNonSuperuser(t *testing.T) {
 
 func TestEnsureSuperuserTokenDuration(t *testing.T) {
 	app := accountTestApp(t)
-	col, err := app.FindCollectionByNameOrId(superusersCollection)
-	if err != nil {
-		t.Fatalf("find _superusers: %v", err)
-	}
-	// Longer operator values are kept: sliding refresh only needs the
-	// JWT to outlive the cookie window.
-	col.AuthToken.Duration = int64(14 * 24 * 60 * 60)
-	if err := app.Save(col); err != nil {
-		t.Fatalf("save long duration: %v", err)
-	}
-	ensureSuperuserTokenDuration(app)
-	if col, err = app.FindCollectionByNameOrId(superusersCollection); err != nil {
-		t.Fatalf("find _superusers: %v", err)
-	} else if col.AuthToken.Duration != int64(14*24*60*60) {
-		t.Fatalf("long duration overwritten = %d, want kept at %d", col.AuthToken.Duration, int64(14*24*60*60))
-	}
-	// Shorter values are raised to the 3d minimum.
-	col.AuthToken.Duration = int64(60 * 60)
-	if err := app.Save(col); err != nil {
-		t.Fatalf("save short duration: %v", err)
-	}
-	ensureSuperuserTokenDuration(app)
-	if col, err = app.FindCollectionByNameOrId(superusersCollection); err != nil {
-		t.Fatalf("find _superusers: %v", err)
-	} else if col.AuthToken.Duration != int64(sessionMaxAgeSeconds) {
-		t.Fatalf("token duration = %d, want %d", col.AuthToken.Duration, sessionMaxAgeSeconds)
+	// 3d is mandatory: both shorter and longer values are reset.
+	for _, start := range []int64{60 * 60, 432000, 14 * 24 * 60 * 60} {
+		col, err := app.FindCollectionByNameOrId(superusersCollection)
+		if err != nil {
+			t.Fatalf("find _superusers: %v", err)
+		}
+		col.AuthToken.Duration = start
+		if err := app.Save(col); err != nil {
+			t.Fatalf("save duration %d: %v", start, err)
+		}
+		ensureSuperuserTokenDuration(app)
+		if col, err = app.FindCollectionByNameOrId(superusersCollection); err != nil {
+			t.Fatalf("find _superusers: %v", err)
+		} else if col.AuthToken.Duration != int64(sessionMaxAgeSeconds) {
+			t.Fatalf("from %d: token duration = %d, want %d", start, col.AuthToken.Duration, sessionMaxAgeSeconds)
+		}
 	}
 }

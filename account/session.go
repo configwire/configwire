@@ -152,17 +152,20 @@ func registerSession(se *core.ServeEvent) {
 	ensureSuperuserTokenDuration(se.App)
 }
 
-// ensureSuperuserTokenDuration enforces the minimum _superusers
-// AuthToken duration needed for sliding refresh (sessionMaxAgeSeconds).
-// Longer operator values are kept as-is; shorter ones are raised and
-// logged. Fail-soft (logs only): a stale duration just means
-// shorter-lived tokens until the next serve.
+// ensureSuperuserTokenDuration aligns the _superusers collection
+// AuthToken duration to sessionMaxAgeSeconds (3d is mandatory: sliding
+// refresh re-mints on a 12h interval, so the JWT must outlive the cookie
+// window). Any differing value — shorter or longer, including operator
+// edits via the admin UI — is reset and logged. Fail-soft (logs only):
+// a stale duration just means shorter-lived tokens until the next
+// serve. Runs at serve startup only; a live edit via the UI holds until
+// the next restart.
 func ensureSuperuserTokenDuration(app core.App) {
 	col, err := app.FindCollectionByNameOrId(superusersCollection)
 	if err != nil {
 		return
 	}
-	if col.AuthToken.Duration >= int64(sessionMaxAgeSeconds) {
+	if col.AuthToken.Duration == int64(sessionMaxAgeSeconds) {
 		return
 	}
 	old := col.AuthToken.Duration
@@ -171,7 +174,7 @@ func ensureSuperuserTokenDuration(app core.App) {
 		log.Printf("account: failed to ensure superuser token duration: %v", err)
 		return
 	}
-	log.Printf("account: raised superuser token duration from %d to %d", old, int64(sessionMaxAgeSeconds))
+	log.Printf("account: set superuser token duration from %d to %d", old, int64(sessionMaxAgeSeconds))
 }
 
 // CookieAuthMiddleware is a global fallback that fills the Authorization
