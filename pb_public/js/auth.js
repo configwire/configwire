@@ -64,6 +64,28 @@
     doLogout();
   }
 
+  // Sliding refresh: cookie-only equivalent of PocketBase auth-refresh.
+  // POSTs to /api/v1/admin/session/refresh which re-mints the JWT and
+  // re-sets the cw_admin cookie with a fresh 3d window. Silent on
+  // failure: an expired session surfaces via the next api() 401 which
+  // drives the normal logout flow. Throttled to one call per 60s so
+  // overlapping boot paths share a single mint.
+  var lastRefresh = 0;
+  function refreshSession() {
+    try {
+      var now = Date.now();
+      if (now - lastRefresh < 60 * 1000) return Promise.resolve(false);
+      lastRefresh = now;
+      return fetch("/api/v1/admin/session/refresh", {
+        method: "POST",
+        credentials: "same-origin",
+      }).then(function (res) {
+        return !!(res && res.ok);
+      }, function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+
   CW.login = login;
   CW.logout = logout;
+  CW.refreshSession = refreshSession;
 })();

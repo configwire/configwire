@@ -10,10 +10,15 @@
 //     body answers 400 (holders without a cookie re-login with the
 //     password). On success it
 //     sets the cw_admin cookie (HttpOnly, SameSite=Strict, Path=/,
-//     Max-Age 12h; Secure when the request is TLS or the proxy signals
+//     Max-Age 3d; Secure when the request is TLS or the proxy signals
 //     https via X-Forwarded-Proto, so plain-HTTP local dev keeps
 //     working) and returns {"ok":true} with no token in the body.
 //     Direct auth-with-password login is untouched.
+//   - POST /api/v1/admin/session/refresh (cookie-authed,
+//     Origin-checked) re-mints the token and re-sets the cookie with a
+//     fresh 3d window, returning {"ok":true} with no token in the body.
+//     Cookie-only equivalent of PocketBase auth-refresh without
+//     exposing the native JSON token to JS.
 //   - DELETE /api/v1/admin/session clears the cw_admin cookie and
 //     returns {"ok":true}. Idempotent; no auth required (logout).
 //     Empty logout (no token presented) is still 200.
@@ -60,11 +65,17 @@ func burnBcryptDummy(password string) {
 // sessionCookieName is the HttpOnly cookie carrying the superuser token.
 const sessionCookieName = "cw_admin"
 
-// sessionMaxAgeSeconds is the cookie lifetime (12h). It only stops
+// sessionMaxAgeSeconds is the cookie lifetime (3d, sliding via
+// POST /api/v1/admin/session/refresh which re-mints a fresh token +
+// cookie on each call, mirroring PocketBase auth-refresh semantics
+// without ever returning the token to JS). It only stops
 // the browser from sending the cookie: a copied PocketBase token stays
 // usable until its own collection auth-token expiry, so the cookie bound
-// is not a token lifetime.
-const sessionMaxAgeSeconds = 12 * 60 * 60
+// is not a token lifetime. The _superusers collection AuthToken
+// duration is ensured to the same 3d (see
+// ensureSuperuserTokenDuration) so the JWT outlives the cookie window
+// and refresh-before-expiry keeps an active user logged in.
+const sessionMaxAgeSeconds = 3 * 24 * 60 * 60
 
 // Exported aliases for the sso parity test (sso duplicates these to stay
 // standalone). Do not introduce a second value: change these, not copies.
@@ -136,7 +147,31 @@ func resetSessionBucket() {
 // registerSession mounts the public session endpoints. Called from Register.
 func registerSession(se *core.ServeEvent) {
 	se.Router.POST("/api/v1/admin/session", postSession)
+	se.Router.POST("/api/v1/admin/session/refresh", refreshSession)
 	se.Router.DELETE("/api/v1/admin/session", deleteSession)
+	ensureSuperuserTokenDuration(se.App)
+}
+
+// ensureSuperuserTokenDuration enforces the minimum _superusers
+// AuthToken duration needed for sliding refresh (sessionMaxAgeSeconds).
+// Longer operator values are kept as-is; shorter ones are raised and
+// logged. Fail-soft (logs only): a stale duration just means
+// shorter-lived tokens until the next serve.
+func ensureSuperuserTokenDuration(app core.App) {
+	col, err := app.FindCollectionByNameOrId(superusersCollection)
+	if err != nil {
+		return
+	}
+	if col.AuthToken.Duration >= int64(sessionMaxAgeSeconds) {
+		return
+	}
+	old := col.AuthToken.Duration
+	col.AuthToken.Duration = sessionMaxAgeSeconds
+	if err := app.Save(col); err != nil {
+		log.Printf("account: failed to ensure superuser token duration: %v", err)
+		return
+	}
+	log.Printf("account: raised superuser token duration from %d to %d", old, int64(sessionMaxAgeSeconds))
 }
 
 // CookieAuthMiddleware is a global fallback that fills the Authorization
@@ -315,6 +350,45 @@ func postSession(re *core.RequestEvent) error {
 	}
 	log.Printf("account: session created email=%s", email)
 	setSessionCookie(re, token)
+	return re.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
+// refreshSession handles POST /api/v1/admin/session/refresh
+// (cookie-authed): validates the current cookie bearer, mints a fresh
+// token via NewAuthToken, and re-sets the cw_admin cookie, returning
+// {"ok":true} with no token in the body. This is the cookie-only
+// equivalent of PocketBase's auth-refresh (same sliding semantics:
+// each call extends the JWT + cookie by a full 3d), without exposing
+// the native auth-refresh JSON token to JS. Cookie-only by design: the
+// Authorization header is ignored here so a bearer exfiltrated for ops
+// tooling cannot be kept alive without the cookie. Order: 403 (Origin
+// present but not same-origin) -> 401 (missing/invalid/non-superuser
+// bearer) -> 200 {"ok":true} with the rotated cookie.
+func refreshSession(re *core.RequestEvent) error {
+	security.SetHeaders(re)
+	if sessionOriginDenied(re) {
+		return re.JSON(http.StatusForbidden, map[string]any{
+			"message": "cross-origin session requests are not allowed.",
+			"status":  http.StatusForbidden,
+		})
+	}
+	c, err := re.Request.Cookie(sessionCookieName)
+	token := ""
+	if err == nil && c != nil {
+		token = strings.TrimSpace(c.Value)
+	}
+	if token == "" {
+		return re.UnauthorizedError("missing session.", nil)
+	}
+	rec, err := re.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
+	if err != nil || rec == nil || !rec.IsSuperuser() {
+		return re.UnauthorizedError("invalid session.", nil)
+	}
+	fresh, err := rec.NewAuthToken()
+	if err != nil {
+		return internalError(re, "failed to refresh session", err)
+	}
+	setSessionCookie(re, fresh)
 	return re.JSON(http.StatusOK, map[string]any{"ok": true})
 }
 

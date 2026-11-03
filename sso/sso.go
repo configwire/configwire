@@ -367,15 +367,16 @@ func (b *redeemBucket) allow(ip string) bool {
 
 // sessionCookieName is the HttpOnly cookie carrying the superuser token.
 // Byte-identical semantics to account.setSessionCookie (duplicated to
-// keep sso standalone: HttpOnly, SameSite=Strict, Path=/, Max-Age 12h;
+// keep sso standalone: HttpOnly, SameSite=Strict, Path=/, Max-Age 3d;
 // Secure when the request is TLS or the proxy signals https via
 // X-Forwarded-Proto from a trusted peer).
 const sessionCookieName = "cw_admin"
 
-// sessionMaxAgeSeconds is the cookie lifetime (12h, byte-identical to
+// sessionMaxAgeSeconds is the cookie lifetime (3d, byte-identical to
 // account.sessionMaxAgeSeconds). It only stops the browser from sending
-// the cookie, not a token lifetime.
-const sessionMaxAgeSeconds = 12 * 60 * 60
+// the cookie, not a token lifetime. Sliding refresh is owned by
+// POST /api/v1/admin/session/refresh.
+const sessionMaxAgeSeconds = 3 * 24 * 60 * 60
 
 // sessionOriginDenied is the POST CSRF guard: a present Origin/Referer
 // must be same-origin (host, including port, equals the request Host),

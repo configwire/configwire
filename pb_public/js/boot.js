@@ -72,6 +72,15 @@
     function bootAuthed() {
       CW.setLoggedIn(true);
       CW.refreshAll();
+      try {
+        if (CW.refreshSession) {
+          if (!window.__cwRefreshTimer) {
+            window.__cwRefreshTimer = setInterval(function () {
+              try { CW.refreshSession(); } catch (e) { /* silent: next api 401 logs out */ }
+            }, 12 * 60 * 60 * 1000);
+          }
+        }
+      } catch (e) { /* silent: next api 401 logs out */ }
       // Reload-with-cookie in sso mode: the cached mode may be unknown on
       // a fresh page load (mode resolves via fetch), so revalidate in the
       // background and re-apply the sso gating if the server says sso.

@@ -296,3 +296,133 @@ func TestSessionOldTokenShape400(t *testing.T) {
 		}
 	}
 }
+
+func callRefreshSession(app core.App, cookie string, origin string) (int, http.Header, string) {
+	return callRefreshWithHeader(app, cookie, "", origin)
+}
+
+func callRefreshWithHeader(app core.App, cookie string, authHeader string, origin string) (int, http.Header, string) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/session/refresh", nil)
+	if cookie != "" {
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: cookie})
+	}
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+		req.Host = "example.com"
+	}
+	req.RemoteAddr = "127.0.0.1:52341"
+	rec := httptest.NewRecorder()
+	re := &core.RequestEvent{App: app}
+	re.Request = req
+	re.Response = rec
+	err := refreshSession(re)
+	code, _ := testhelp.CodeMessage(err, rec)
+	return code, rec.Header(), rec.Body.String()
+}
+
+func TestSessionRefreshRoundTrip(t *testing.T) {
+	resetSessionBucket()
+	app := accountTestApp(t)
+	const email = "sess-refresh-admin@example.com"
+	if _, err := createSuperuser(app, email, "password123"); err != nil {
+		t.Fatalf("create superuser: %v", err)
+	}
+	code, hdr, raw := callPostSession(app, `{"email":"`+email+`","password":"password123"}`)
+	if code != http.StatusOK {
+		t.Fatalf("login: got %d %q, want 200", code, raw)
+	}
+	oldCookie := sessionCookieValue(t, hdr)
+
+	code, hdr, raw = callRefreshSession(app, oldCookie, "")
+	if code != http.StatusOK {
+		t.Fatalf("refresh: got %d %q, want 200", code, raw)
+	}
+	if !strings.Contains(raw, `"ok":true`) {
+		t.Fatalf("refresh body lacks ok:true in %q", raw)
+	}
+	if strings.Contains(raw, "token") {
+		t.Fatalf("refresh response must not carry a token in %q", raw)
+	}
+	fresh := sessionCookieValue(t, hdr)
+	if fresh == "" {
+		t.Fatal("refresh: empty cookie value")
+	}
+	joined := strings.Join(hdr["Set-Cookie"], ";")
+	for _, want := range []string{"HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=259200"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("refresh cookie lacks %q in %q", want, joined)
+		}
+	}
+	rec, err := app.FindAuthRecordByToken(fresh, core.TokenTypeAuth)
+	if err != nil || rec == nil || !rec.IsSuperuser() {
+		t.Fatalf("refresh token lookup: rec=%v err=%v", rec, err)
+	}
+	if old, err := app.FindAuthRecordByToken(oldCookie, core.TokenTypeAuth); err != nil || old == nil {
+		t.Fatalf("old token must stay valid after refresh (no denylist): rec=%v err=%v", old, err)
+	}
+
+	if code, _, body := callRefreshSession(app, "", ""); code != http.StatusUnauthorized {
+		t.Fatalf("empty refresh: got %d %q, want 401", code, body)
+	}
+	if code, _, body := callRefreshSession(app, oldCookie, "https://evil.example"); code != http.StatusForbidden {
+		t.Fatalf("cross-origin refresh: got %d %q, want 403", code, body)
+	}
+	if code, _, body := callRefreshWithHeader(app, "", fresh, ""); code != http.StatusUnauthorized {
+		t.Fatalf("header-only refresh: got %d %q, want 401 (cookie-only)", code, body)
+	}
+}
+
+func TestSessionRefreshRejectsNonSuperuser(t *testing.T) {
+	app := accountTestApp(t)
+	col, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Skipf("users collection absent: %v", err)
+	}
+	rec := core.NewRecord(col)
+	rec.SetEmail("refresh-regular@example.com")
+	rec.SetPassword("password123")
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("create regular user: %v", err)
+	}
+	token, err := rec.NewAuthToken()
+	if err != nil {
+		t.Fatalf("mint regular token: %v", err)
+	}
+	if code, _, body := callRefreshSession(app, token, ""); code != http.StatusUnauthorized {
+		t.Fatalf("users-cookie refresh on admin endpoint: got %d %q, want 401", code, body)
+	}
+}
+
+func TestEnsureSuperuserTokenDuration(t *testing.T) {
+	app := accountTestApp(t)
+	col, err := app.FindCollectionByNameOrId(superusersCollection)
+	if err != nil {
+		t.Fatalf("find _superusers: %v", err)
+	}
+	// Longer operator values are kept: sliding refresh only needs the
+	// JWT to outlive the cookie window.
+	col.AuthToken.Duration = int64(14 * 24 * 60 * 60)
+	if err := app.Save(col); err != nil {
+		t.Fatalf("save long duration: %v", err)
+	}
+	ensureSuperuserTokenDuration(app)
+	if col, err = app.FindCollectionByNameOrId(superusersCollection); err != nil {
+		t.Fatalf("find _superusers: %v", err)
+	} else if col.AuthToken.Duration != int64(14*24*60*60) {
+		t.Fatalf("long duration overwritten = %d, want kept at %d", col.AuthToken.Duration, int64(14*24*60*60))
+	}
+	// Shorter values are raised to the 3d minimum.
+	col.AuthToken.Duration = int64(60 * 60)
+	if err := app.Save(col); err != nil {
+		t.Fatalf("save short duration: %v", err)
+	}
+	ensureSuperuserTokenDuration(app)
+	if col, err = app.FindCollectionByNameOrId(superusersCollection); err != nil {
+		t.Fatalf("find _superusers: %v", err)
+	} else if col.AuthToken.Duration != int64(sessionMaxAgeSeconds) {
+		t.Fatalf("token duration = %d, want %d", col.AuthToken.Duration, sessionMaxAgeSeconds)
+	}
+}

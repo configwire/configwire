@@ -26,7 +26,7 @@ func TestSessionCookieParityWithAccount(t *testing.T) {
 		t.Fatalf("sso cookie %q != account %q: keep cw_admin single-sourced", sessionCookieName, account.SessionCookieName)
 	}
 	if sessionMaxAgeSeconds != account.SessionMaxAgeSeconds {
-		t.Fatalf("sso max-age %d != account %d: keep 12h single-sourced", sessionMaxAgeSeconds, account.SessionMaxAgeSeconds)
+		t.Fatalf("sso max-age %d != account %d: keep 3d single-sourced", sessionMaxAgeSeconds, account.SessionMaxAgeSeconds)
 	}
 }
 
@@ -344,8 +344,8 @@ func TestRedeemHandlerMatrix(t *testing.T) {
 	cookie := hdr.Get("Set-Cookie")
 	if !strings.Contains(cookie, "cw_admin=") || !strings.Contains(cookie, "HttpOnly") ||
 		!strings.Contains(cookie, "SameSite=Strict") || !strings.Contains(cookie, "Path=/") ||
-		!strings.Contains(cookie, "Max-Age=43200") {
-		t.Fatalf("valid redeem Set-Cookie=%q, want cw_admin HttpOnly SameSite=Strict Path=/ Max-Age=43200", cookie)
+		!strings.Contains(cookie, "Max-Age=259200") {
+		t.Fatalf("valid redeem Set-Cookie=%q, want cw_admin HttpOnly SameSite=Strict Path=/ Max-Age=259200", cookie)
 	}
 
 	// Replay of the same ticket -> 409 (nonce already claimed).
