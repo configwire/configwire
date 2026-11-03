@@ -185,7 +185,9 @@ inside the window, and per-IP rate limiting can be bypassed N-fold.
 
 - **Admin session in `cw_admin` cookie.** The superuser session is a
   cookie-carried token (`cw_admin`, `HttpOnly, SameSite=Strict,
-  Path=/, Max-Age 43200`), never `localStorage` or JS state. Cookie
+  Path=/, Max-Age 3d by default — tune with
+  `CONFIGWIRE_SESSION_MAX_AGE=<seconds>`, 1h–30d, cookie and token
+  lifetimes move together), never `localStorage` or JS state. Cookie
   matrix: direct plain-HTTP serve sets no `Secure`; behind
   Caddy-HTTPS (TLS or trusted `X-Forwarded-Proto: https`) it sets
   `Secure`; a spoofed proto from an untrusted peer is ignored; logout

@@ -66,7 +66,7 @@
 
   // Sliding refresh: cookie-only equivalent of PocketBase auth-refresh.
   // POSTs to /api/v1/admin/session/refresh which re-mints the JWT and
-  // re-sets the cw_admin cookie with a fresh 3d window. Silent on
+  // re-sets the cw_admin cookie with a fresh window. Silent on
   // failure: an expired session surfaces via the next api() 401 which
   // drives the normal logout flow. Throttled to one call per 60s so
   // overlapping boot paths share a single mint.
