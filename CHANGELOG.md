@@ -3,6 +3,12 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.11 — 2026-11-04
+
+### Fixed
+
+- Outdated operator log rows are now actually deleted: the daily purge (boot run, then every 23–25h) and the manual `POST /api/v1/admin/maintenance/purge` both enforce the log window (`now - maxDays`), so rows older than the Log retention setting no longer accumulate. Dry runs (`?dry=1`) report them under a new additive `serverLogs` count with zero writes; live runs delete them and report the same key. Existing `deleted`/`scrubbed`/`dry`/`cutoff` keys are unchanged. `CONFIGWIRE_PURGE=off` still disables only the ticker; the manual route purges everything.
+
 ## v0.2.0-rc.10 — 2026-11-03
 
 ### Added
