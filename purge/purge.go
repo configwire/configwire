@@ -48,6 +48,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/types"
 
+	"github.com/configwire/configwire/logstore"
 	"github.com/configwire/configwire/retention"
 )
 
@@ -740,7 +741,12 @@ func dailyTicker(app core.App, stop <-chan struct{}) {
 			log.Printf("purge: %s run failed: %v", tag, err)
 			return
 		}
-		log.Printf("purge: %s run scrubbed %d deleted %d (cutoff %s)", tag, scrubbed, n, cutoff.Format(time.RFC3339))
+		sl, err := logstore.Purge(app)
+		if err != nil {
+			log.Printf("purge: %s server-logs run failed: %v", tag, err)
+			return
+		}
+		log.Printf("purge: %s run scrubbed %d deleted %d serverLogs %d (cutoff %s)", tag, scrubbed, n, sl, cutoff.Format(time.RFC3339))
 	}
 	// Boot run first: upgraded DBs with >30d backlog converge immediately
 	// instead of waiting a day (manual route stays the alternative).
@@ -759,13 +765,15 @@ func dailyTicker(app core.App, stop <-chan struct{}) {
 }
 
 // postPurge handles POST /api/v1/admin/maintenance/purge.
-// ?dry=1 (or true) -> 200 {"deleted":N,"scrubbed":M,"dry":true} with ZERO
+// ?dry=1 (or true) -> 200 {"deleted":N,"scrubbed":M,"serverLogs":S,"dry":true} with ZERO
 // writes (deleted counts doomed raw + stale daily rows at the raw cutoff,
-// scrubbed counts rows still carrying identity past the 48h scrub cutoff).
-// ?dry= absent/0/false -> live run (scrub 48h identities, then rollup+purge)
-// -> 200 {"deleted":N,"scrubbed":M,"dry":false}.
+// scrubbed counts rows still carrying identity past the 48h scrub cutoff,
+// serverLogs counts outdated server_logs rows under the live logstore
+// window).
+// ?dry= absent/0/false -> live run (scrub 48h identities, then rollup+purge,
+// then server-logs purge) -> 200 {"deleted":N,"scrubbed":M,"serverLogs":S,"dry":false}.
 // Any other dry value (e.g. abc) -> 400. Unauth/SDK-key -> 401 via
-// middleware; empty events table -> 200 deleted:0 scrubbed:0.
+// middleware; empty events table -> 200 deleted:0 scrubbed:0 serverLogs:0.
 func postPurge(re *core.RequestEvent) error {
 	raw := re.Request.URL.Query().Get("dry")
 	dry := false
@@ -789,11 +797,16 @@ func postPurge(re *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
+		sl, err := logstore.Count(re.App)
+		if err != nil {
+			return err
+		}
 		return re.JSON(http.StatusOK, map[string]any{
-			"deleted":  n,
-			"scrubbed": m,
-			"dry":      true,
-			"cutoff":   cutoff.Format(time.RFC3339),
+			"deleted":    n,
+			"scrubbed":   m,
+			"serverLogs": sl,
+			"dry":        true,
+			"cutoff":     cutoff.Format(time.RFC3339),
 		})
 	}
 	m, err := ScrubIdentitiesOlderThan(re.App, scrubCutoff)
@@ -804,11 +817,16 @@ func postPurge(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("purge: manual run scrubbed %d deleted %d rows (cutoff %s)", m, n, cutoff.Format(time.RFC3339))
+	sl, err := logstore.Purge(re.App)
+	if err != nil {
+		return err
+	}
+	log.Printf("purge: manual run scrubbed %d deleted %d serverLogs %d rows (cutoff %s)", m, n, sl, cutoff.Format(time.RFC3339))
 	return re.JSON(http.StatusOK, map[string]any{
-		"deleted":  n,
-		"scrubbed": m,
-		"dry":      false,
-		"cutoff":   cutoff.Format(time.RFC3339),
+		"deleted":    n,
+		"scrubbed":   m,
+		"serverLogs": sl,
+		"dry":        false,
+		"cutoff":     cutoff.Format(time.RFC3339),
 	})
 }

@@ -444,6 +444,54 @@ func cutoffFor(now time.Time, maxDays int) time.Time {
 // purgePageSize bounds one delete page: one page = one short transaction.
 const purgePageSize = 500
 
+// serverLogsPageFilter builds the doomed-rows filter for one server_logs
+// page: created strictly before cutoffParam, plus the (created,id) keyset
+// cursor when paging past the first page. Shared by Purge (live deletes)
+// and Count (dry reads) so the two can never drift.
+func serverLogsPageFilter(hasCursor bool, cursorVal, cursorID, cutoffParam string) (string, dbx.Params) {
+	params := dbx.Params{"cutoff": cutoffParam}
+	filter := "created < {:cutoff}"
+	if hasCursor {
+		params["cursor"] = cursorVal
+		params["cursorID"] = cursorID
+		filter += " && (created > {:cursor} || (created = {:cursor} && id > {:cursorID}))"
+	}
+	return filter, params
+}
+
+// Count reports how many server_logs rows Purge would delete under the
+// live MaxDays window, with zero writes (dry-run path for the manual purge
+// route). It walks the same indexed candidate set with the same
+// (created,id) cursor paging as Purge. Purge applies regardless of the
+// Enabled flag (retention covers stored history even when new writes are
+// off), and so does this count.
+func Count(app core.App) (int, error) {
+	cutoff := cutoffFor(time.Now(), GetConfig().MaxDays)
+	cutoffParam := cutoff.Format(types.DefaultDateLayout)
+	n := 0
+	var cursorVal, cursorID string
+	hasCursor := false
+	for {
+		filter, params := serverLogsPageFilter(hasCursor, cursorVal, cursorID, cutoffParam)
+		page, err := app.FindRecordsByFilter(logsCollection, filter, "created,id", purgePageSize, 0, params)
+		if err != nil {
+			return n, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		n += len(page)
+		last := page[len(page)-1]
+		cursorVal = last.GetDateTime("created").Time().UTC().Format(types.DefaultDateLayout)
+		cursorID = last.Id
+		hasCursor = true
+		if len(page) < purgePageSize {
+			break
+		}
+	}
+	return n, nil
+}
+
 // Purge deletes server_logs rows with created strictly older than
 // now-MaxDays, paged by (created, id) one short transaction per page so
 // heap stays flat and the write lock is never held for the whole table.
@@ -456,13 +504,7 @@ func Purge(app core.App) (int, error) {
 	var cursorVal, cursorID string
 	hasCursor := false
 	for {
-		params := dbx.Params{"cutoff": cutoffParam}
-		filter := "created < {:cutoff}"
-		if hasCursor {
-			params["cursor"] = cursorVal
-			params["cursorID"] = cursorID
-			filter += " && (created > {:cursor} || (created = {:cursor} && id > {:cursorID}))"
-		}
+		filter, params := serverLogsPageFilter(hasCursor, cursorVal, cursorID, cutoffParam)
 		page, err := app.FindRecordsByFilter(logsCollection, filter, "created,id", purgePageSize, 0, params)
 		if err != nil {
 			return n, err
