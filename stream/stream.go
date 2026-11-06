@@ -110,7 +110,7 @@ func formatUpdate(u Update) string {
 	return "event: config_update\n" + "data: " + string(data) + "\n\n"
 }
 
-// getStream handles GET /api/v1/env/:env/stream and the key-only alias.
+// getStream handles GET /api/v1/stream and the backward-compatible /api/v1/env/:env/stream path.
 // Order (same as fetch): 401 (key) -> 404 (unknown slug) / 401 (key-env
 // mismatch). A client ?env= query value of any shape is accepted-but-ignored
 // (never 400/401/404 from it; no compat header is stamped on this path).

@@ -1,7 +1,7 @@
 // Package fetch implements the SDK delivery endpoint.
 //
-//	GET /api/v1/env/{env}/config?platform=&appVersion=&locale=&country=&userHash=&attrs=<json>&exp=<status>&env=<ignored>
-//	GET /api/v1/config (same handler, key-only alias)
+//	GET /api/v1/config?platform=&appVersion=&locale=&country=&userHash=&attrs=<json>&exp=<status>&env=<ignored>
+//	GET /api/v1/env/{env}/config (same handler, backward-compatible)
 //
 // FETCH CONTRACT:
 //   - Auth: X-ConfigWire-Key via ingest.RequireSDKKey reuse. Unknown, missing,
@@ -191,8 +191,8 @@ func corsOrigin() string {
 }
 
 // Register mounts the SDK delivery endpoint with gzip encoding.
-// Dual-serve: legacy /api/v1/env/{env}/config (canonical, SDK-emitted)
-// plus the key-only /api/v1/config alias (same handler, same stamping).
+// Dual-serve: key-only /api/v1/config (canonical)
+// plus the legacy /api/v1/env/{env}/config path (backward-compatible, same handler, same stamping).
 func Register(se *core.ServeEvent) {
 	se.Router.GET("/api/v1/env/{env}/config", getConfig).Bind(apis.Gzip())
 	se.Router.GET("/api/v1/config", getConfig).Bind(apis.Gzip())
@@ -603,7 +603,7 @@ func setCORS(re *core.RequestEvent) {
 	re.Response.Header().Set("Access-Control-Allow-Origin", corsOrigin())
 }
 
-// getConfig handles GET /api/v1/env/:env/config and the key-only alias.
+// getConfig handles GET /api/v1/config and the backward-compatible /api/v1/env/:env/config path.
 // Order: CORS stamp -> 401 (key) -> 404 (env) -> 401 (env scope) ->
 // 429 (rate) -> 400/414 (attrs) -> 200 empty (no release) -> 304
 // (etag match) -> 200. Key+resolve+429 via ingest.RequireKeyEnv.
