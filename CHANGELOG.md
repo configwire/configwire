@@ -3,6 +3,18 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.12 — 2026-11-06
+
+### Changed
+
+- Key-only routes are canonical: `GET /api/v1/config`, `POST /api/v1/events`, and `GET /api/v1/stream` resolve the environment purely from the SDK key, while the legacy `/api/v1/env/{env}/...` paths stay backward-compatible on the same handlers (env slug validated against the key). Wire behavior is unchanged — this release promotes the key-only shape across the contract, the operator docs, and the handler comments.
+- PocketBase `v0.41.0` → `v0.41.1`, plus indirect bumps (`mimetype` off its retracted `v1.4.15`, `pflag`, `x/net`, `modernc.org/libc` + `sqlite`). No API or wire change.
+- Admin UI version badge now reads the current release candidate.
+
+### Fixed
+
+- Older changelog entries pointed at the monorepo contract path (404 on the export repo); they now use the export-repo canonical link.
+
 ## v0.2.0-rc.11 — 2026-11-04
 
 ### Fixed

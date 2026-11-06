@@ -953,7 +953,7 @@ keys, revoke the old rows, prove the break with a `401`) lives in
 
 ## 13. Backups
 
-PocketBase built-in backups (v0.41.0), adopted as-is. Operator
+PocketBase built-in backups (v0.41.1), adopted as-is. Operator
 procedure, copy-pasteable commands, Docker/S3 notes, and failure
 modes live in `BACKUPS.md`; the shapes below are normative.
 

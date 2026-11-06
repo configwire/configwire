@@ -11,7 +11,7 @@ import (
 // PocketBase's backup API stays registered and superuser-gated in the
 // ConfigWire app.
 //
-// Upstream wiring (PocketBase v0.41.0 apis/backup.go bindBackupApi):
+// Upstream wiring (PocketBase backup API):
 // GET "" list + POST "" create + POST /upload + GET /{key} download +
 // DELETE /{key} + POST /{key}/restore under /api/backups, all except the
 // file-token download bound with RequireSuperuserAuth().
