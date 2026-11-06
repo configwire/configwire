@@ -38,12 +38,13 @@ const (
 // previously rate-limited before resolving; its 429 now moves after
 // env resolution, matching its documented 401 -> 404 order.
 //
-// Dual-serve: legacy /api/v1/env/{env}/* routes carry a non-empty
+// Dual-serve: key-only routes are canonical and carry no slug,
+// resolving purely from the key's bound env record (missing row 404
+// unknown-env, empty/dangling binding 401 wrong-env); legacy
+// /api/v1/env/{env}/* routes are backward-compatible and carry a non-empty
 // {env} slug validated against the key's bound env via
 // envresolve.ResolveForKey (mismatch 401 wrong-env, ambiguous slug 400
-// where reachable); key-only aliases carry no slug and resolve purely
-// from the key's bound env record (missing row 404 unknown-env,
-// empty/dangling binding 401 wrong-env). A client-sent ?env= query
+// where reachable). A client-sent ?env= query
 // value is accepted-but-ignored at the handler layer (never read here,
 // never validated).
 //
