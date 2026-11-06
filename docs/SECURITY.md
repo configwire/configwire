@@ -67,7 +67,7 @@ binary plus operator procedure.
 
 ## 3. PII — bucket-only identity, tunable retention
 
-> v0.2.0-rc.1 (released 2026-10-25) is bucket-only.
+> v0.2.0-rc.11 (released 2026-11-04) is bucket-only (since v0.2.0-rc.1).
 > Bucket (`?b=0-9999`) is the sole identity: a valid `?b=` wins verbatim.
 > Legacy `userHash`/`uid`/`country` inputs plus event-body `userHash` and
 > event-body `userId` (any case, even null) are backward-compat

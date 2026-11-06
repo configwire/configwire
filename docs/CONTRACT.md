@@ -2,7 +2,7 @@
 
 ConfigWire-native wire. No external parity claims.
 
-> v0.2.0-rc.1 (released 2026-10-25) is bucket-only.
+> v0.2.0-rc.11 (released 2026-11-04) is bucket-only (since v0.2.0-rc.1).
 > Bucket (`?b=0-9999`) is the sole identity: a valid `?b=` wins verbatim.
 > Legacy `?userHash=`/`?uid=`/`?country=` plus event-body `userHash` and
 > event-body `userId` (any case, even null) are backward-compat shims only
@@ -15,7 +15,7 @@ ConfigWire-native wire. No external parity claims.
 > There is no `events.userHash` column and no `identity_salts` collection
 > (both dropped in v0.2.0-rc.1); `events.bucket` holds the bucket.
 > Canonical contract:
-> `github.com/configwire/configwire/blob/main/configwire/docs/CONTRACT.md`.
+> `github.com/configwire/configwire/blob/main/docs/CONTRACT.md`.
 
 Conventions used below:
 
@@ -24,15 +24,14 @@ Conventions used below:
 - Admin paths use superuser auth (`Authorization: <token>`, bare, Bearer optional).
 - `Ref` cites the handler source that owns each shape.
 
-## 1. Fetch — `GET /api/v1/env/{env}/config` (canonical) + `GET /api/v1/config` alias
+## 1. Fetch — `GET /api/v1/config` (canonical) + `GET /api/v1/env/{env}/config` backward-compatible
 
 Ref: `configwire/fetch/fetch.go` (`BuildContext`, `ParseBucket`,
 `MintBucket`, `EffectiveBucket`).
 
-Dual-serve: the legacy `GET /api/v1/env/{env}/config` path is canonical
-(SDK-emitted, works against old and new servers). The key-only
-`GET /api/v1/config` alias serves the same handler with no `{env}`
-segment (env resolves purely from the SDK key). A client-sent `?env=`
+Dual-serve: the key-only `GET /api/v1/config` path is canonical
+(env resolves purely from the SDK key). The legacy
+`GET /api/v1/env/{env}/config` path is backward-compatible and serves the same handler (env slug validated against the key). A client-sent `?env=`
 query value of any shape is accepted-but-ignored (never `400`/`401`/`404`
 from it); a trimmed non-empty `?env=` stamps `X-CW-Deprecated-env: true`
 on the response, empty equals absent (no header). The value is never
@@ -112,8 +111,8 @@ Ref: `:477-485`. Values are empty, not flag defaults; SDKs use in-app defaults.
 
 `If-None-Match` equals the stored etag by exact string match only
 (`W/`-prefixed or quoted values do not match) then `304` with an
-empty body. `304` returns before evaluation, so daily rotation only
-takes effect on the next `200`. Ref: `:349` (`EtagMatches`),
+empty body. `304` returns before evaluation (pre-rc.1 daily rotation was
+removed in rc.1, so the old 304-before-eval rotation note is now historical). Ref: `:349` (`EtagMatches`),
 `:596-601` (304 early-return).
 
 ### 1d. Fetch errors
@@ -424,14 +423,13 @@ existing `RegisterHook` (`OnRecordAfterCreateSuccess` on
 `releases`) emits one `config_update` frame to the DEST env's
 subscribers. Ref: `configwire/stream/stream.go:RegisterHook`.
 
-## 4. Events ingest — `POST /api/v1/env/{env}/events` (canonical) + `POST /api/v1/events` alias
+## 4. Events ingest — `POST /api/v1/events` (canonical) + `POST /api/v1/env/{env}/events` backward-compatible
 
 Ref: `configwire/ingest/handler.go` (order), `configwire/ingest/ingest.go` (body).
 
-Dual-serve: the legacy `POST /api/v1/env/{env}/events` path is canonical
-(SDK-emitted, works against old and new servers). The key-only
-`POST /api/v1/events` alias serves the same handler with no `{env}`
-segment (env resolves purely from the SDK key). A client-sent `?env=`
+Dual-serve: the key-only `POST /api/v1/events` path is canonical
+(env resolves purely from the SDK key). The legacy
+`POST /api/v1/env/{env}/events` path is backward-compatible and serves the same handler (env slug validated against the key). A client-sent `?env=`
 query value of any shape is accepted-but-ignored (never `400`/`401`/`404`
 from it); a trimmed non-empty `?env=` stamps `X-CW-Deprecated-env: true`
 on the response, empty equals absent (no header). The value is never
@@ -631,14 +629,13 @@ Success `200`:
   flag ID (resolved once, never re-resolved per row/bucket), so
   renamed/orphaned flags keep their history.
 
-## 6. Stream — `GET /api/v1/env/{env}/stream` (canonical) + `GET /api/v1/stream` alias
+## 6. Stream — `GET /api/v1/stream` (canonical) + `GET /api/v1/env/{env}/stream` backward-compatible
 
 Ref: `configwire/stream/stream.go` (handler + hook), `configwire/stream/hub.go` (hub).
 
-Dual-serve: the legacy `GET /api/v1/env/{env}/stream` path is canonical
-(SDK-emitted, works against old and new servers). The key-only
-`GET /api/v1/stream` alias serves the same handler with no `{env}`
-segment (env resolves purely from the SDK key). A client-sent `?env=`
+Dual-serve: the key-only `GET /api/v1/stream` path is canonical
+(env resolves purely from the SDK key). The legacy
+`GET /api/v1/env/{env}/stream` path is backward-compatible and serves the same handler (env slug validated against the key). A client-sent `?env=`
 query value of any shape is accepted-but-ignored (never `400`/`401`/`404`
 from it; no compat header is stamped on this path). The value is never
 logged.
