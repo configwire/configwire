@@ -74,7 +74,7 @@ func optionsStream(re *core.RequestEvent) error {
 }
 
 // RegisterHook fans publish/rollback release creates out to connected
-// subscribers. It binds OnRecordAfterCreateSuccess (PocketBase v0.40.4
+// subscribers. It binds OnRecordAfterCreateSuccess (PocketBase v0.41.0
 // core/app.go:1052, impl core/base.go:970), which fires only after a
 // successful create — so rejected writes never notify:
 //

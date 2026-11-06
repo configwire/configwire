@@ -1,6 +1,6 @@
 # ConfigWire Backups — Operator Guide
 
-PocketBase built-in backups as adopted by the ConfigWire standalone server (PocketBase v0.40.4). Backup zips are created WAL-safe via `VACUUM INTO` (brief write locks during the dump). All backup API paths below are superuser-only: pass a superuser token as `Authorization: <token>` (bare, Bearer optional). SDK keys get `401`.
+PocketBase built-in backups as adopted by the ConfigWire standalone server (PocketBase v0.41.0). Backup zips are created WAL-safe via `VACUUM INTO` (brief write locks during the dump). All backup API paths below are superuser-only: pass a superuser token as `Authorization: <token>` (bare, Bearer optional). SDK keys get `401`.
 
 ```bash
 BASE=http://127.0.0.1:8090
