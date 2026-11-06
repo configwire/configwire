@@ -31,7 +31,7 @@ no `events.userHash` column and no `identity_salts` collection (both dropped in 
 `deriveIdentity`). No device IDs, no raw IPs or User-Agents in
 storage, no OAuth profile data. Historical note: the pre-bucket
 per-env rotating derived-identity collection
-(migration `1790000018`) was removed in v0.2.0-rc.1 (released 2026-10-25); the server keeps no per-day
+(migration `1790000018`) was removed in v0.2.0-rc.1 (released 2026-10-25; latest v0.2.0-rc.11 — 2026-11-04); the server keeps no per-day
 secrets.
 
 ## 3. Types of data and data subjects

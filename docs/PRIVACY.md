@@ -65,7 +65,7 @@ shipped:
   identifiers; request logging (`_logs`) is off by default.
 
 Historical note: the pre-bucket per-env rotating derived-identity
-store (migration `1790000018`) was removed in v0.2.0-rc.1 (released 2026-10-25); the server keeps no
+store (migration `1790000018`) was removed in v0.2.0-rc.1 (released 2026-10-25; latest v0.2.0-rc.11 — 2026-11-04); the server keeps no
 per-day secrets and computes no IP/UA-based identifier. There is no `events.userHash` column and no `identity_salts` collection; `events.bucket` holds the bucket.
 
 How long rows live: raw event rows default 30 days, daily rollups

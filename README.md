@@ -49,7 +49,7 @@ Preseed it instead with `CONFIGWIRE_ADMIN_EMAIL` + `CONFIGWIRE_ADMIN_PASSWORD`
 ## Run locally
 
 Prereqs: Go (floor per `go.mod`), `make`, `bash`, `curl`, `python3`.
-Node `>= 20` for `js_tests` only.
+Dart SDK `>=3.12.0` for the client. Node `>= 20` for `js_tests` only.
 
 > [!IMPORTANT]
 > Serve MUST run from this directory so `./pb_public` resolves. From anywhere
@@ -88,9 +88,10 @@ and the [example](https://github.com/configwire/dart/tree/main/example).
 Ports: `8090` default serve · `8108` e2e (`scripts/e2e.sh`, do not reuse).
 CI (`.github/workflows/ci.yml`) runs build/vet/test + `make lint` on push/PR.
  
-Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (released 2026-10-25): `?b=0-9999` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` (any casing) are accepted-but-ignored, never stored. Raw `events` 30d → rolled into `event_daily` (90d);
-stats past 30d answer `approximate:true`. Rate limits: global 200 rps/IP +
-burst 400, fetch 100 / ingest 50 rps per key (`429` carries `Retry-After: 1`).
+Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (released 2026-10-25; latest v0.2.0-rc.11 — 2026-11-04): `?b=0-9999` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` (any casing) are accepted-but-ignored, never stored. Raw `events` 30d → rolled into `event_daily` (90d), both tunable `1..1825`
+via `PUT /api/v1/admin/retention`;
+stats past 30d answer `approximate:true` only when merged, exact otherwise. Rate limits: global 200 rps effective (min 200, burst 400 ceiling) per IP,
+fetch 100 / ingest 50 rps per key (`429` carries `Retry-After: 1`).
 Details in [`docs/CONTRACT.md`](docs/CONTRACT.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
 
 ## License
