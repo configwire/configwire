@@ -1515,7 +1515,24 @@
       if (lv !== cv) return lv > cv;
     }
     if (c.pre && !l.pre) return true;
-    return false;
+    if (l.pre && !c.pre) return false;
+    if (l.pre === c.pre) return false;
+    // Both have prereleases: semver §11 identifier-by-identifier
+    // (numeric numerically, numeric < alphanumeric, else lexical,
+    // longer wins on prefix tie). Fixes rc.12 never beating rc.11.
+    var la = String(l.pre).split(".");
+    var ca = String(c.pre).split(".");
+    var m = Math.min(la.length, ca.length);
+    for (var j = 0; j < m; j++) {
+      if (la[j] === ca[j]) continue;
+      var ln = /^\d+$/.test(la[j]) ? parseInt(la[j], 10) : null;
+      var cn = /^\d+$/.test(ca[j]) ? parseInt(ca[j], 10) : null;
+      if (ln !== null && cn !== null) return ln > cn;
+      if (ln !== null) return false;
+      if (cn !== null) return true;
+      return la[j] > ca[j];
+    }
+    return la.length > ca.length;
   }
   function updateVersion() {
     var el = document.getElementById("cw-version");
