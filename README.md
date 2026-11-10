@@ -22,6 +22,7 @@ external DB. Admin UI ships as static files.
 docker run -d \
   --name configwire \
   --restart unless-stopped \
+  --read-only --tmpfs /tmp --cap-drop ALL \
   -p 8090:8090 \
   -v cw-data:/app/pb_data \
   ghcr.io/configwire/configwire:latest
@@ -29,6 +30,10 @@ docker run -d \
 curl -s http://localhost:8090/healthz
 # -> {"status":"ok"}
 ```
+
+The image runs as non-root UID/GID `10001`; only `/app/pb_data` (volume)
+and `/tmp` (tmpfs) are writable. If you bind-mount a host directory
+instead of a named volume, `chown -R 10001:10001 <dir>` it first.
 
 Or via Compose (see [`docker-compose.yml`](docker-compose.yml)):
 

@@ -181,6 +181,31 @@ each process independently.
 Skip it and a replayed ticket redeemed on a second replica passes
 inside the window, and per-IP rate limiting can be bypassed N-fold.
 
+## 9. Container runtime: non-root, read-only, no dashboard
+
+The published image (`ghcr.io/configwire/configwire`) runs as non-root
+UID/GID `10001` and supports a read-only root filesystem. Run it with:
+
+```bash
+docker run -d --name configwire \
+  --read-only --tmpfs /tmp --cap-drop ALL \
+  --security-opt no-new-privileges \
+  -p 8090:8090 -v cw-data:/app/pb_data \
+  ghcr.io/configwire/configwire:latest
+```
+
+- The process writes only under `/app/pb_data`; a named volume inherits
+  `10001:10001`. A bind mount must be pre-owned:
+  `mkdir -p /srv/cw-data && chown -R 10001:10001 /srv/cw-data`.
+- [`docker-compose.yml`](../docker-compose.yml) applies the same flags;
+  keep `read_only`, `tmpfs: /tmp`, `cap_drop: [ALL]`, and
+  `no-new-privileges` if you copy it.
+- The image builds with `GO_TAGS=no_ui`, so the PocketBase dashboard at
+  `/_/` is not shipped. That path falls through to the ConfigWire SPA
+  shell and never reaches PocketBase's UI; admin access is the ConfigWire
+  UI at `/`, the `/api/*` routes, and `./configwire superuser ...` inside
+  the container.
+
 ## Known trade-offs (documented, not changing)
 
 - **Admin session in `cw_admin` cookie.** The superuser session is a

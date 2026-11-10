@@ -257,6 +257,13 @@ binary plus operator procedure.
   - `X-Content-Type-Options: nosniff`,
   - `X-Frame-Options: DENY`,
   - `Referrer-Policy: no-referrer`.
+- Container surface: release images run as non-root UID/GID `10001` and
+  build with PocketBase's `no_ui` tag, so the PocketBase dashboard is not
+  shipped (the `/_/` path falls through to the ConfigWire SPA shell and
+  never serves the dashboard UI). A read-only root filesystem works
+  (`--read-only --tmpfs /tmp --cap-drop ALL --security-opt
+  no-new-privileges`); `/app/pb_data` is the only persistent write path.
+  See `PRODUCTION.md` section 9.
 
 ## 9. Scale gate (measured 2026-09-22, k6 v2.3.0, port 8106)
 

@@ -84,6 +84,9 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
+          # Release images strip the PocketBase dashboard at /_/. Override
+          # with --build-arg GO_TAGS= to ship it.
+          build-args: GO_TAGS=no_ui
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
           # Per-arch cache scope: amd64/arm64 layers must not share entries.
@@ -94,23 +97,68 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: Scan image for HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Smoke test pushed digest
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
-          docker run --rm "$REF" --help
-          docker run -d --name configwire-smoke -p 8090:8090 "$REF"
-          trap 'docker rm -f configwire-smoke >/dev/null 2>&1' EXIT
+          UID_OUT=$(docker run --rm --entrypoint id "$REF" -u)
+          if [ "$UID_OUT" != "10001" ]; then
+            echo "expected uid 10001, got '$UID_OUT'" >&2
+            exit 1
+          fi
+
+          docker volume create configwire-smoke-data >/dev/null
+          docker run -d --name configwire-smoke \
+            --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges \
+            -v configwire-smoke-data:/app/pb_data \
+            -p 8090:8090 "$REF"
+          cleanup() {
+            docker rm -f configwire-smoke >/dev/null 2>&1 || true
+            docker volume rm configwire-smoke-data >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
           for _ in $(seq 1 30); do
-            if wget --no-verbose --tries=1 --spider http://localhost:8090/healthz 2>/dev/null; then
-              exit 0
+            if curl -fsS http://localhost:8090/healthz >/dev/null 2>&1; then
+              break
             fi
             sleep 1
           done
-          echo "healthz never became ready" >&2
-          docker logs configwire-smoke 2>&1 | head -50
-          exit 1
+
+          healthz=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8090/healthz)
+          root=$(curl -s -o /tmp/configwire-root.html -w '%{http_code}' http://localhost:8090/)
+          dashboard=$(curl -s -o /tmp/configwire-dash.html -w '%{http_code}' http://localhost:8090/_/)
+          echo "healthz=$healthz root=$root /_/=$dashboard"
+          if [ "$healthz" != "200" ] || [ "$root" != "200" ]; then
+            docker logs configwire-smoke 2>&1 | head -50
+            exit 1
+          fi
+          if ! grep -q 'ConfigWire Admin' /tmp/configwire-root.html; then
+            echo "admin UI missing from / response" >&2
+            exit 1
+          fi
+          if grep -q '<title>PocketBase</title>' /tmp/configwire-dash.html; then
+            echo "PocketBase dashboard is still served at /_/" >&2
+            exit 1
+          fi
+          if ! grep -q 'ConfigWire Admin' /tmp/configwire-dash.html; then
+            echo "unexpected /_/ response: expected the ConfigWire SPA shell" >&2
+            exit 1
+          fi
 
       - name: Export digest
         run: |
@@ -134,6 +182,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -157,6 +206,9 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Derive floating RC tag
         id: float
@@ -220,6 +272,15 @@ jobs:
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Sign merged manifest (keyless)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE:${{ github.ref_name }}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "signing $IMAGE@$DIGEST"
+          cosign sign --yes "$IMAGE@$DIGEST"
 
       - name: Smoke test merged tag
         run: |
