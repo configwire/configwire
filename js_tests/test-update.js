@@ -1,5 +1,6 @@
 "use strict";
-// test-update.js — update.js version math, staleness + hang-guard (Wave 2, todo 8).
+// test-update.js — update.js version math, staleness + hang-guard (Wave 2, todo 8),
+// plus boot.js topbar version wiring (Phase 5: same-origin meta only).
 // Loads core.js + boot.js + update.js via harness.js; node:test + node:assert/strict only.
 // Run from configwire/: node --test js_tests/test-update.js
 //
@@ -10,6 +11,7 @@
 // update.js:96-100), so this suite NEVER calls ctx.dispatch() — it invokes
 // update's own start listener directly (last DOMContentLoaded entry) and
 // boot's wiring/updateVersion stay dormant, keeping fetchCalls pure-update.
+// The boot tests below are the exception: they dispatch on purpose.
 var test = require("node:test");
 var assert = require("node:assert/strict");
 var h = require("./harness.js");
@@ -254,4 +256,49 @@ test("start arms a single interval plus visibilitychange/online/reload-button li
   assert.ok(btn, "reload button looked up (update.js:87)");
   var clicks = btn.listeners.filter(function (l) { return l.type === "click"; });
   assert.equal(clicks.length, 1, "exactly one reload click listener (update.js:89)");
+});
+
+// --- boot topbar version (Phase 5): same-origin meta, no third party ---
+
+function bootVersion(ctx) {
+  return ctx.document.getElementById("cw-version");
+}
+
+function flushed() {
+  return new Promise(function (resolve) { setImmediate(resolve); });
+}
+
+test("boot: /api/v1/meta version sets #cw-version and boot never fetches GitHub", function () {
+  var ctx = h.load(undefined, {
+    fetchImpl: function (url) {
+      if (String(url).indexOf("/api/v1/meta") === 0) {
+        return Promise.resolve(metaRes({ version: "v9.8.7" }));
+      }
+      return Promise.reject(new Error("harness fetch denied: " + url));
+    },
+  });
+  ctx.dispatch("DOMContentLoaded");
+  var recorded = ctx.fetchCalls.map(function (c) { return String(c.url); });
+  assert.ok(
+    recorded.indexOf("/api/v1/meta") !== -1,
+    "boot requests the same-origin meta endpoint, got " + JSON.stringify(recorded)
+  );
+  assert.ok(
+    recorded.every(function (u) { return u.indexOf("api.github.com") === -1; }),
+    "boot must not call api.github.com, got " + JSON.stringify(recorded)
+  );
+  return flushed().then(function () {
+    assert.equal(bootVersion(ctx).textContent, "v9.8.7");
+  });
+});
+
+test("boot: meta failure keeps the static fallback version", function () {
+  var ctx = h.load(undefined, {
+    fetchImpl: function (url) { return Promise.reject(new Error("offline: " + url)); },
+  });
+  bootVersion(ctx).textContent = "vdev";
+  ctx.dispatch("DOMContentLoaded");
+  return flushed().then(function () {
+    assert.equal(bootVersion(ctx).textContent, "vdev");
+  });
 });

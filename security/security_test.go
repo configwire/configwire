@@ -2,6 +2,7 @@ package security
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -66,5 +67,21 @@ func TestSetHeadersHSTSDefaultOff(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
 		t.Fatalf("Content-Security-Policy must still be stamped by default")
+	}
+}
+
+func TestSetHeadersCSPConnectSelf(t *testing.T) {
+	SetHSTSMaxAge(0)
+	re, rec := headerRecorder()
+	SetHeaders(re)
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "connect-src 'self'") {
+		t.Fatalf("CSP must allow only same-origin connections, got %q", csp)
+	}
+	if strings.Contains(csp, "api.github.com") {
+		t.Fatalf("CSP must not allow api.github.com, got %q", csp)
+	}
+	if !strings.Contains(csp, "script-src 'self'") {
+		t.Fatalf("CSP script-src must stay self-only, got %q", csp)
 	}
 }

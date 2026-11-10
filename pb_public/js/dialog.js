@@ -33,6 +33,7 @@
     dlg = document.createElement("dialog");
     dlg.setAttribute("id", DIALOG_ID);
     dlg.setAttribute("aria-labelledby", TITLE_ID);
+    dlg.setAttribute("aria-modal", "true");
     dlg.setAttribute("role", "alertdialog");
     // Static text only — dynamic message/title set via textContent (XSS-safe).
     dlg.innerHTML =
@@ -145,6 +146,7 @@
       refs.message.setAttribute("id", MESSAGE_ID);
       refs.dlg.setAttribute("aria-labelledby", TITLE_ID);
       refs.dlg.setAttribute("aria-describedby", MESSAGE_ID);
+      refs.dlg.setAttribute("aria-modal", "true");
       refs.dlg.setAttribute("role", "alertdialog");
 
       refs.ok.textContent = String(okText);

@@ -63,13 +63,17 @@
       <div class="topbar-title">
         <h1><span class="brand-config">Config</span><span class="brand-wire">Wire</span></h1>
       </div>
-      <div class="topbar-meta status-pill"><a class="gh-link" href="https://github.com/configwire/configwire"
-          target="_blank" rel="noopener" aria-label="ConfigWire on GitHub"><svg width="16" height="16"
-            viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-            <path
-              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-          </svg></a><span id="cw-version">vdev</span><a id="cw-update" class="update-pill"
-          href="https://github.com/configwire/configwire/releases" target="_blank" rel="noopener" hidden></a></div>
+      <div class="topbar-actions">
+        <div class="topbar-meta status-pill"><a class="gh-link" href="https://github.com/configwire/configwire"
+            target="_blank" rel="noopener" aria-label="ConfigWire on GitHub"><svg width="16" height="16"
+              viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg></a><span id="cw-version">vdev</span><a id="cw-update" class="topbar-release-link"
+            href="https://github.com/configwire/configwire/releases" target="_blank" rel="noopener"
+            title="ConfigWire releases on GitHub">Releases</a>
+        </div>
+      </div>
     </header>
     <main id="main">
       <div id="toast" role="alert" aria-live="assertive" hidden></div>
@@ -463,8 +467,7 @@
             <div>
               <h3 id="project-dialog-title">Add project</h3>
             </div>
-            <button type="button" id="project-dialog-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="project-dialog-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <form id="project-dialog-form" aria-label="Project create">
             <label>Name <input id="project-dialog-name" type="text" required maxlength="128"
@@ -483,8 +486,7 @@
             <div>
               <h3 id="experiment-dialog-title">Add experiment</h3>
             </div>
-            <button type="button" id="experiment-dialog-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="experiment-dialog-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <form id="experiment-form" aria-label="Experiment create or edit">
             <input id="exp-id" type="hidden" value="">
@@ -558,8 +560,7 @@
             <div>
               <h3 id="flag-dialog-title">Add flag</h3>
             </div>
-            <button type="button" id="flag-dialog-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="flag-dialog-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <form id="flag-form" aria-label="Flag create or edit">
             <input id="flag-id" type="hidden" value="">
@@ -602,8 +603,7 @@
             <div>
               <h3 id="key-limits-title">Edit key limits</h3>
             </div>
-            <button type="button" id="key-limits-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="key-limits-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <form id="key-limits-form" aria-label="Edit key limits">
             <input id="key-limits-id" type="hidden" value="">
@@ -669,8 +669,7 @@
             <div>
               <h3 id="flag-rules-title">Rules for flag</h3>
             </div>
-            <button type="button" id="flag-rules-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="flag-rules-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <ul id="flag-rules-list" aria-label="Flag rules">
             <li>Loading…</li>
@@ -684,8 +683,7 @@
             <div>
               <h3 id="rule-dialog-title">Add rule</h3>
             </div>
-            <button type="button" id="rule-dialog-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="rule-dialog-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <form id="flag-rules-form" aria-label="Flag rule create or edit">
             <input id="flag-rules-flag-id" type="hidden" value="">
@@ -765,8 +763,7 @@
             <div>
               <h3 id="flag-experiments-title">Experiments for flag</h3>
             </div>
-            <button type="button" id="flag-experiments-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="flag-experiments-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <ul id="flag-experiments-list" aria-label="Flag experiments">
             <li>Loading…</li>
@@ -792,8 +789,7 @@
             <div>
               <h3 id="release-dialog-title">Release</h3>
             </div>
-            <button type="button" id="release-dialog-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="release-dialog-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <dl id="release-detail"></dl>
           <div class="dialog-actions">
@@ -806,8 +802,7 @@
             <div>
               <h3 id="transfer-export-title">Export flags</h3>
             </div>
-            <button type="button" id="transfer-export-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="transfer-export-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <p class="muted">Merged flags, rules, experiments. Copy or download.</p>
           <textarea id="transfer-export-text" rows="14" readonly spellcheck="false" style="width:100%"></textarea>
@@ -824,8 +819,7 @@
             <div>
               <h3 id="transfer-import-title">Import flags</h3>
             </div>
-            <button type="button" id="transfer-import-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="transfer-import-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <p class="muted">Paste snapshot. Stages drafts; Publish ships them.</p>
           <p class="muted">Top-level experiments[] is deprecated — re-export nested-only.</p>
@@ -845,8 +839,7 @@
             <div>
               <h3 id="transfer-diff-title">Draft snapshot</h3>
             </div>
-            <button type="button" id="transfer-diff-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="transfer-diff-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <p class="muted">Green added, red removed, amber changed.</p>
           <div id="transfer-diff-detail"></div>
@@ -860,8 +853,7 @@
             <div>
               <h3 id="backup-schedule-helper-title">Build schedule</h3>
             </div>
-            <button type="button" id="backup-schedule-helper-close" class="btn ghost" aria-label="Close dialog"
-              style="flex-shrink:0;width:32px;height:32px;padding:0;font-size:18px;color:var(--muted);">×</button>
+            <button type="button" id="backup-schedule-helper-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <div class="backup-schedule-helper-grid">
             <label>Frequency

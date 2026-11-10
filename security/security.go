@@ -5,7 +5,7 @@
 //   - X-Content-Type-Options: nosniff (block MIME sniffing)
 //   - X-Frame-Options: DENY (no clickjacking host)
 //   - Referrer-Policy: no-referrer (never leak URLs/keys on navigation)
-//   - Content-Security-Policy: self-only scripts/styles, no plugins/frames
+//   - Content-Security-Policy: self-only scripts/styles/connections, no plugins/frames
 //
 // Strict-Transport-Security is opt-in only (CONFIGWIRE_HSTS=<max-age seconds>,
 // applied once at boot in main.go). The zero default keeps plain-HTTP serves
@@ -39,7 +39,7 @@ func SetHeaders(re *core.RequestEvent) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Frame-Options", "DENY")
 	h.Set("Referrer-Policy", "no-referrer")
-	h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+	h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
 	if hstsMaxAge > 0 {
 		// includeSubDomains is a documented trade-off (plan §7 risk 2):
 		// operators serving subdomains over plain HTTP should leave

@@ -1481,117 +1481,24 @@
   };
 })();
 
-/* ConfigWire topbar version — fetch same-origin /api/v1/meta, fallback keeps hardcoded text.
- * Update check — fetch GitHub Releases in parallel, show #cw-update with latest state. Silent fail. */
+/* ConfigWire topbar version — same-origin /api/v1/meta only; the fallback
+ * markup keeps vdev. #cw-update is a static link to GitHub Releases, so the
+ * admin browser never calls a third party. */
 (function () {
   "use strict";
-  function isDevTag(tag) {
-    var t = String(tag || "").trim().toLowerCase();
-    return !t || t === "dev" || t === "vdev";
-  }
-  function parseVer(tag) {
-    var s = String(tag || "").trim();
-    if (s.charAt(0) === "v" || s.charAt(0) === "V") s = s.slice(1);
-    s = s.trim();
-    var dash = s.indexOf("-");
-    var pre = "";
-    if (dash >= 0) { pre = s.slice(dash + 1); s = s.slice(0, dash); }
-    var core = s.split(".").map(function (p) {
-      var n = parseInt(p, 10);
-      return isNaN(n) ? 0 : n;
-    });
-    return { core: core, pre: pre };
-  }
-  function isNewer(latestTag, currentTag) {
-    var l = parseVer(latestTag);
-    var c = parseVer(currentTag);
-    var n = Math.max(l.core.length, c.core.length);
-    for (var i = 0; i < n; i++) {
-      var lv = i < l.core.length ? l.core[i] : null;
-      var cv = i < c.core.length ? c.core[i] : null;
-      if (lv === null && cv === null) break;
-      if (lv === null) return false;
-      if (cv === null) return true;
-      if (lv !== cv) return lv > cv;
-    }
-    if (c.pre && !l.pre) return true;
-    if (l.pre && !c.pre) return false;
-    if (l.pre === c.pre) return false;
-    // Both have prereleases: semver §11 identifier-by-identifier
-    // (numeric numerically, numeric < alphanumeric, else lexical,
-    // longer wins on prefix tie). Fixes rc.12 never beating rc.11.
-    var la = String(l.pre).split(".");
-    var ca = String(c.pre).split(".");
-    var m = Math.min(la.length, ca.length);
-    for (var j = 0; j < m; j++) {
-      if (la[j] === ca[j]) continue;
-      var ln = /^\d+$/.test(la[j]) ? parseInt(la[j], 10) : null;
-      var cn = /^\d+$/.test(ca[j]) ? parseInt(ca[j], 10) : null;
-      if (ln !== null && cn !== null) return ln > cn;
-      if (ln !== null) return false;
-      if (cn !== null) return true;
-      return la[j] > ca[j];
-    }
-    return la.length > ca.length;
-  }
   function updateVersion() {
     var el = document.getElementById("cw-version");
     if (!el) return;
-    var upd = document.getElementById("cw-update");
-    var current = (el.textContent || "").trim() || "v0.0.5";
-    var latest = null;
-    function tryShow() {
-      if (!upd || !latest || isDevTag(current)) return;
-      try {
-        if (isNewer(latest, current)) {
-          upd.textContent = "update " + latest;
-          var label = "New version available: " + latest + " (current " + current + ") \u2014 open releases";
-          upd.setAttribute("title", label);
-          upd.setAttribute("aria-label", label);
-          if (upd.classList) upd.classList.remove("is-current");
-          upd.removeAttribute("hidden");
-        } else {
-          upd.textContent = "latest";
-          var label2 = "Up to date: current " + current + ", latest " + latest;
-          upd.setAttribute("title", label2);
-          upd.setAttribute("aria-label", label2);
-          if (upd.classList) upd.classList.add("is-current");
-          upd.removeAttribute("hidden");
-        }
-      } catch (e) { /* keep badge hidden silently */ }
-    }
     try {
       fetch("/api/v1/meta", { headers: { "Accept": "application/json" } })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
           if (d && typeof d.version === "string" && d.version) {
             el.textContent = d.version;
-            current = d.version;
-            tryShow();
           }
         })
         .catch(function () { /* keep fallback silently */ });
     } catch (e) { /* keep fallback silently */ }
-    try {
-      fetch("https://api.github.com/repos/configwire/configwire/releases?per_page=10", {
-        headers: { "Accept": "application/vnd.github+json" }
-      })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) {
-          if (!d || !d.length) return;
-          var best = null;
-          for (var i = 0; i < d.length; i++) {
-            var name = d[i] && typeof d[i].tag_name === "string" ? d[i].tag_name.trim() : "";
-            if (!name || isDevTag(name)) continue;
-            if (!best || isNewer(name, best)) best = name;
-          }
-          if (best) {
-            latest = best;
-            tryShow();
-          }
-        })
-        .catch(function () { /* keep badge hidden silently */ });
-    } catch (e) { /* keep badge hidden silently */ }
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", updateVersion);

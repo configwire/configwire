@@ -15,8 +15,8 @@
 //   2. Deny-fetch: dispatching DOMContentLoaded through h.dispatch() (which
 //      fires document, then body, then window listeners per harness.js) runs
 //      boot's handler + updateVersion (boot.js:13,882-886) + update's start
-//      (update.js:96-100); the recording stub logs the github releases URL
-//      and /api/v1/meta attempts with ZERO real sockets.
+//      (update.js:96-100); the recording stub logs only same-origin
+//      /api/v1/meta attempts (no api.github.com) with ZERO real sockets.
 //   3. Hang guard: exactly one update.js setInterval (POLL_MS 5min) is
 //      captured, never scheduled — the suite exiting with NO --test-force-exit
 //      IS the proof.
@@ -34,7 +34,7 @@ var test = require("node:test");
 var assert = require("node:assert/strict");
 var h = require("./harness.js");
 
-var GITHUB_URL = "https://api.github.com/repos/configwire/configwire/releases?per_page=10"; // boot.js:862
+var FORBIDDEN_HOST = "api.github.com"; // removed from boot.js in Phase 5
 var POLL_MS = 5 * 60 * 1000; // update.js:14
 
 function urls(ctx) {
@@ -114,15 +114,15 @@ test("wiring identity: checkNow-driven state change through the cwAdmin handle",
   });
 });
 
-// --- dispatch: deny-recorded github + meta, single captured interval ---
+// --- dispatch: same-origin meta only, single captured interval ---
 
-test("dispatch records github + meta attempts with zero sockets, arms one interval", function () {
+test("dispatch records same-origin meta with zero sockets and no third-party host", function () {
   var ctx = h.load(undefined, { fetchImpl: asyncDeny() }); // NO files arg
   ctx.dispatch("DOMContentLoaded");
   var recorded = urls(ctx);
   assert.ok(
-    recorded.indexOf(GITHUB_URL) !== -1,
-    "boot.js:862 github releases attempt recorded, got " + JSON.stringify(recorded)
+    recorded.every(function (u) { return u.indexOf(FORBIDDEN_HOST) === -1; }),
+    "no api.github.com attempt may be recorded, got " + JSON.stringify(recorded)
   );
   assert.ok(
     recorded.indexOf("/api/v1/meta") !== -1,
@@ -145,7 +145,7 @@ test("dispatch records github + meta attempts with zero sockets, arms one interv
 
 // --- failure micro-test: allow-list mode sanity (deny-by-default) ---
 
-test("allow-list mode: same-origin meta succeeds while github throws deny error", function () {
+test("allow-list mode: same-origin meta succeeds while an unknown host is denied", function () {
   function allowMetaOnly(url) {
     if (String(url).indexOf("/api/v1/meta") === 0) {
       return Promise.resolve(metaRes({ version: "v9.9.9", assets: "zzz" }));
@@ -159,12 +159,15 @@ test("allow-list mode: same-origin meta succeeds while github throws deny error"
   }).then(function (d) {
     assert.deepEqual(JSON.parse(JSON.stringify(d)), { version: "v9.9.9", assets: "zzz" });
     assert.throws(
-      function () { ctx.context.fetch(GITHUB_URL); },
+      function () { ctx.context.fetch("https://api.github.com/blocked"); },
       /harness fetch denied/,
-      "github attempt throws deny error (deny-by-default)"
+      "third-party attempt throws deny error (deny-by-default)"
     );
     var recorded = urls(ctx);
     assert.ok(recorded.indexOf("/api/v1/meta") !== -1);
-    assert.ok(recorded.indexOf(GITHUB_URL) !== -1, "denied attempt still recorded");
+    assert.ok(
+      recorded.indexOf("https://api.github.com/blocked") !== -1,
+      "denied attempt still recorded"
+    );
   });
 });

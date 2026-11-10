@@ -34,7 +34,7 @@
  *   dirty tracking: tr.is-unpublished/.is-deleted, .rule-item.is-unpublished/.is-deleted, .exp-card.is-unpublished/.is-deleted,
  *   .folder.is-unpublished/.is-deleted, section.card.is-dirty/.has-unpublished, #unpublished-list,
  *   #publish-hint.is-dirty, #sidebar-nav a .badge.unpublished,
- *   topbar update check: #cw-version/#cw-update/.update-pill */
+ *   topbar version: #cw-version/#cw-update/.topbar-release-link */
 :root {
   color-scheme: dark;
   --bg: #141922;
@@ -43,24 +43,50 @@
   --panel-3: #2a3345;
   --border: #2e3850;
   --border-soft: #263049;
+  --border-control: #2e3850;
   --text: #eef2fa;
+  --text-strong: #fff;
   --muted: #9aa6c0;
   --muted-dim: #6f7b96;
+  --placeholder: #a8b4cf;
   --accent: #3b82f6;
   --accent-hover: #5b9bff;
+  --accent-strong: #2563eb;
+  --accent-soft-text: #93c5fd;
+  --accent-rgb: 59, 130, 246;
   --mint: #5eead4;
-  --gradient: linear-gradient(135deg, #3b82f6 0%, #5eead4 100%);
-  --gradient-soft: linear-gradient(135deg, rgba(59, 130, 246, 0.18) 0%, rgba(94, 234, 212, 0.12) 100%);
-  --ring: 0 0 0 3px rgba(94, 234, 212, 0.22);
-  --ok: #5eead4;
-  --danger: #f87171;
+  --mint-rgb: 94, 234, 212;
   --warn: #fbbf24;
+  --warn-rgb: 251, 191, 36;
+  --danger: #f87171;
+  --danger-rgb: 248, 113, 113;
+  --violet-rgb: 167, 139, 250;
+  --gradient: linear-gradient(135deg, #3b82f6 0%, #5eead4 100%);
+  --gradient-soft: linear-gradient(135deg, rgba(var(--accent-rgb), 0.18) 0%, rgba(var(--mint-rgb), 0.12) 100%);
+  --ring: 0 0 0 3px rgba(var(--mint-rgb), 0.22);
+  --ok: #5eead4;
   --radius: 12px;
   --radius-sm: 8px;
-  --shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
-  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.35);
-  --glow: 0 0 20px rgba(59, 130, 246, 0.38);
-  --glow-mint: 0 0 12px rgba(94, 234, 212, 0.3);
+  --shadow-rgb: 0, 0, 0;
+  --shadow: 0 16px 40px rgba(var(--shadow-rgb), 0.55);
+  --shadow-sm: 0 2px 12px rgba(var(--shadow-rgb), 0.35);
+  --glow: 0 0 20px rgba(var(--accent-rgb), 0.38);
+  --glow-mint: 0 0 12px rgba(var(--mint-rgb), 0.3);
+  --on-accent: #fff;
+  --on-gradient: #08111f;
+  --wordmark-config: #9da4ad;
+  --wordmark-wire: #3a9aee;
+  --chart-fetch: #3b82f6;
+  --chart-fetch-bright: #60a5fa;
+  --chart-exposure: #5eead4;
+  --lift: rgba(255, 255, 255, 0.03);
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --bar-track: rgba(255, 255, 255, 0.06);
+  --stats-inset: rgba(15, 23, 42, 0.28);
+  --spark-bg: rgba(0, 0, 0, 0.18);
+  --topbar-bg: rgba(20, 25, 34, 0.94);
+  --dialog-backdrop: rgba(8, 11, 18, 0.75);
+  --sidebar-top: #1d2334;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -102,8 +128,8 @@ html {
 body {
   margin: 0;
   background:
-    radial-gradient(1100px 420px at 85% -120px, rgba(59, 130, 246, 0.12), transparent 60%),
-    radial-gradient(900px 380px at 110% 10%, rgba(94, 234, 212, 0.06), transparent 60%),
+    radial-gradient(1100px 420px at 85% -120px, rgba(var(--accent-rgb), 0.12), transparent 60%),
+    radial-gradient(900px 380px at 110% 10%, rgba(var(--mint-rgb), 0.06), transparent 60%),
     var(--bg);
   background-attachment: fixed;
   color: var(--text);
@@ -161,7 +187,7 @@ code {
   left: -9999px;
   top: 0;
   background: var(--gradient);
-  color: #08111f;
+  color: var(--on-gradient);
   font-weight: 700;
   padding: var(--space-2) var(--space-4);
   border-radius: 0 0 var(--radius-sm) 0;
@@ -181,7 +207,7 @@ code {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  background: linear-gradient(180deg, #1d2334 0%, #1a1f2a 40%);
+  background: linear-gradient(180deg, var(--sidebar-top) 0%, var(--panel) 40%);
   border-right: 1px solid var(--border-soft);
   z-index: 40;
   overflow-y: auto;
@@ -240,11 +266,11 @@ a.brand:focus-visible {
 /* Two-tone wordmark sampled from assets/images/banner.png:
  * Config ≈ #9da4ad (light gray), Wire ≈ #3a9aee (banner blue). */
 .brand-config {
-  color: #9da4ad;
+  color: var(--wordmark-config);
 }
 
 .brand-wire {
-  color: #3a9aee;
+  color: var(--wordmark-wire);
 }
 
 .brand-text small {
@@ -390,7 +416,7 @@ a.brand:focus-visible {
   justify-content: space-between;
   gap: var(--space-4);
   padding: 0 var(--space-6);
-  background: rgba(20, 25, 34, 0.94);
+  background: var(--topbar-bg);
   backdrop-filter: blur(12px) saturate(1.3);
   border-bottom: 1px solid var(--border-soft);
 }
@@ -442,6 +468,19 @@ a.brand:focus-visible {
   display: none;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .topbar-actions {
+    gap: 0;
+  }
+}
+
 .status-pill {
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -473,48 +512,19 @@ a.brand:focus-visible {
   border-radius: 4px;
 }
 
-.update-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
+.topbar-release-link {
+  color: var(--accent-hover);
   font-weight: 700;
-  letter-spacing: 0.03em;
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  background: rgba(251, 191, 36, 0.1);
-  color: var(--warn);
-  border-radius: 999px;
-  padding: 2px 8px;
   text-decoration: none;
-  white-space: nowrap;
+  border-radius: 4px;
 }
 
-.update-pill::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--warn);
-  flex-shrink: 0;
-  animation: cw-update-pulse 2s infinite;
+.topbar-release-link:hover {
+  text-decoration: underline;
 }
 
-.update-pill:hover {
-  border-color: var(--warn);
-}
-
-.update-pill.is-current {
-  border-color: rgba(94, 234, 212, 0.35);
-  background: rgba(94, 234, 212, 0.08);
-  color: var(--mint);
-}
-
-.update-pill.is-current::before {
-  background: var(--mint);
-}
-
-.update-pill:focus-visible {
-  outline: 1px solid var(--warn);
+.topbar-release-link:focus-visible {
+  outline: 1px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -538,13 +548,13 @@ a.brand:focus-visible {
   border-radius: 50%;
   background: var(--gradient);
   display: inline-block;
-  box-shadow: 0 0 6px rgba(94, 234, 212, 0.65);
+  box-shadow: 0 0 6px rgba(var(--mint-rgb), 0.65);
   flex-shrink: 0;
 }
 
 .dot.dirty {
   background: var(--warn);
-  box-shadow: 0 0 6px rgba(251, 191, 36, 0.65);
+  box-shadow: 0 0 6px rgba(var(--warn-rgb), 0.65);
 }
 
 #flag-folders .flag-menu button[role="menuitem"] .dot {
@@ -560,7 +570,7 @@ main {
 
 .grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   margin-top: var(--space-4);
 }
@@ -572,14 +582,14 @@ main {
  * group is layout-only. */
 .scope-group {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   margin: 0;
   padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 56px);
+  background-image: linear-gradient(180deg, var(--lift) 0%, transparent 56px);
   box-shadow: var(--shadow-sm);
 }
 
@@ -630,20 +640,20 @@ main {
 .scope-group-env {
   border-color: var(--border);
   background: var(--panel);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 56px);
+  background-image: linear-gradient(180deg, var(--lift) 0%, transparent 56px);
 }
 
 .scope-group-env .scope-group-badge-env {
-  color: #93c5fd;
-  border-color: rgba(59, 130, 246, 0.55);
-  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent-soft-text);
+  border-color: rgba(var(--accent-rgb), 0.55);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 /* Backups settings group: same container language as .scope-group-env. */
 .scope-group-backups {
   border-color: var(--border);
   background: var(--panel);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 56px);
+  background-image: linear-gradient(180deg, var(--lift) 0%, transparent 56px);
 }
 
 /* ---- Projects home (two-view app: home grid + per-project detail) ---- */
@@ -674,7 +684,7 @@ main {
   border-color: var(--accent);
   background: var(--panel-2);
   transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(59, 130, 246, 0.18), var(--shadow-sm);
+  box-shadow: 0 6px 24px rgba(var(--accent-rgb), 0.18), var(--shadow-sm);
 }
 
 .project-card:focus-visible {
@@ -818,7 +828,7 @@ main {
   font-size: 28px;
   font-weight: 700;
   line-height: 1;
-  color: #fff;
+  color: var(--text-strong);
   font-variant-numeric: tabular-nums;
 }
 
@@ -839,7 +849,7 @@ main {
   margin: 12px -16px 0;
   height: auto;
   min-height: 0;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--spark-bg);
   border-top: 1px solid var(--border-soft);
   border-radius: 0 0 var(--radius) var(--radius);
   padding: 12px 12px 14px;
@@ -906,7 +916,7 @@ main {
 }
 
 .project-card .stats-grid {
-  stroke: rgba(255, 255, 255, 0.08);
+  stroke: var(--chart-grid);
   stroke-width: 1;
   stroke-dasharray: 4 4;
 }
@@ -969,7 +979,6 @@ main {
 .project-card .pc-spark path.pc-spark-line,
 .project-card .pc-spark polyline.pc-spark-line,
 .project-card .pc-spark line.pc-spark-line {
-  stroke: #6ea8fe;
   stroke: var(--accent);
   fill: none;
   stroke-width: 1.5;
@@ -1138,7 +1147,7 @@ main {
   margin-top: var(--space-4);
   border-color: var(--border);
   background: var(--panel);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 56px);
+  background-image: linear-gradient(180deg, var(--lift) 0%, transparent 56px);
 }
 
 .settings-zone-box {
@@ -1509,8 +1518,8 @@ main {
 }
 
 .log-switch[aria-checked="true"] {
-  border-color: rgba(94, 234, 212, 0.4);
-  background: rgba(94, 234, 212, 0.12);
+  border-color: rgba(var(--mint-rgb), 0.4);
+  background: rgba(var(--mint-rgb), 0.12);
 }
 
 .log-switch[aria-checked="true"] .log-switch-knob {
@@ -1640,26 +1649,26 @@ section[aria-labelledby="logs"] .limits-footer {
 
 .log-method.is-get {
   color: var(--mint);
-  border-color: rgba(94, 234, 212, 0.4);
-  background: rgba(94, 234, 212, 0.08);
+  border-color: rgba(var(--mint-rgb), 0.4);
+  background: rgba(var(--mint-rgb), 0.08);
 }
 
 .log-method.is-post {
   color: var(--accent-hover);
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 .log-method.is-put {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(var(--warn-rgb), 0.4);
+  background: rgba(var(--warn-rgb), 0.08);
 }
 
 .log-method.is-del {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 .log-path {
@@ -1711,8 +1720,8 @@ button.log-chip:focus-visible {
 
 .log-chip.log-project {
   color: var(--text);
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 .log-chip.log-project.is-missing {
@@ -1721,8 +1730,8 @@ button.log-chip:focus-visible {
 
 .log-chip.log-env {
   color: var(--text);
-  border-color: rgba(167, 139, 250, 0.45);
-  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(var(--violet-rgb), 0.45);
+  background: rgba(var(--violet-rgb), 0.12);
 }
 
 .log-chip.log-env.is-missing {
@@ -1732,28 +1741,28 @@ button.log-chip:focus-visible {
 .log-chip.log-reason.is-ok,
 .log-chip.log-status.is-ok {
   color: var(--mint);
-  border-color: rgba(94, 234, 212, 0.4);
-  background: rgba(94, 234, 212, 0.08);
+  border-color: rgba(var(--mint-rgb), 0.4);
+  background: rgba(var(--mint-rgb), 0.08);
 }
 
 .log-chip.log-status.is-info {
   color: var(--accent-hover);
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 .log-chip.log-reason.is-warn,
 .log-chip.log-status.is-warn {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(var(--warn-rgb), 0.4);
+  background: rgba(var(--warn-rgb), 0.08);
 }
 
 .log-chip.log-reason.is-err,
 .log-chip.log-status.is-err {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 .log-chip.log-key {
@@ -1765,7 +1774,7 @@ button.log-chip:focus-visible {
   font-family: ui-monospace, monospace;
   font-weight: 500;
   color: var(--muted);
-  border-color: rgba(94, 234, 212, 0.25);
+  border-color: rgba(var(--mint-rgb), 0.25);
 }
 
 /* ---- Logs active-filter bar (logs.js renderActiveLogFilters): pills for
@@ -1790,8 +1799,8 @@ button.log-chip:focus-visible {
   height: auto;
   padding: 2px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
   cursor: pointer;
   max-width: 100%;
@@ -1865,20 +1874,20 @@ button.log-chip:focus-visible {
 
 .log-level.is-info {
   color: var(--accent-hover);
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--accent-rgb), 0.12);
 }
 
 .log-level.is-warn {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(var(--warn-rgb), 0.4);
+  background: rgba(var(--warn-rgb), 0.08);
 }
 
 .log-level.is-err {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 .log-created {
@@ -1927,9 +1936,9 @@ button.log-chip:focus-visible {
   padding-top: 0;
 }
 
-/* Current-IP pill inside the IP HEADERS field (mirrors .update-pill:
- * pulsing status dot via cw-update-pulse, mint = valid/allowed,
- * red = invalid/blocked). Text set via textContent only. The country
+/* Current-IP pill inside the IP HEADERS field (pulsing status dot via
+ * cw-update-pulse, mint = valid/allowed, red = invalid/blocked). Text set
+ * via textContent only. The country
  * pill below shares the base layout, the neutral dot, and the mint
  * valid state (resolved code); it never takes is-invalid — an empty
  * country reads "unknown", never an error. */
@@ -1979,8 +1988,8 @@ button.log-chip:focus-visible {
 
 #admin-current-ip.ip-status-pill.is-valid,
 #admin-current-country.ip-status-pill.is-valid {
-  border-color: rgba(94, 234, 212, 0.35);
-  background: rgba(94, 234, 212, 0.08);
+  border-color: rgba(var(--mint-rgb), 0.35);
+  background: rgba(var(--mint-rgb), 0.08);
   color: var(--mint);
 }
 
@@ -1990,8 +1999,8 @@ button.log-chip:focus-visible {
 }
 
 #admin-current-ip.ip-status-pill.is-invalid {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.45);
+  background: rgba(var(--danger-rgb), 0.08);
   color: var(--danger);
 }
 
@@ -2009,7 +2018,7 @@ button.log-chip:focus-visible {
 
 @media (max-width: 900px) {
   .settings-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .limit-grid {
@@ -2036,7 +2045,7 @@ button.log-chip:focus-visible {
   padding: var(--space-4);
   margin-bottom: var(--space-4);
   /* subtle top shimmer */
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 56px);
+  background-image: linear-gradient(180deg, var(--lift) 0%, transparent 56px);
 }
 
 .grid .card {
@@ -2091,7 +2100,7 @@ h2[id] {
 
 .login-banner-wrap {
   padding: var(--space-4) var(--space-4) 0;
-  background: radial-gradient(420px 160px at 50% 0%, rgba(59, 130, 246, 0.22), transparent 70%);
+  background: radial-gradient(420px 160px at 50% 0%, rgba(var(--accent-rgb), 0.22), transparent 70%);
 }
 
 .login-banner {
@@ -2143,7 +2152,7 @@ textarea {
   background: var(--panel-2);
   padding: 0 var(--space-3);
   height: var(--input-h);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   min-width: 0;
   transition: border-color 140ms ease, box-shadow 140ms ease;
@@ -2156,7 +2165,7 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-  color: #a8b4cf;
+  color: var(--placeholder);
   opacity: 1;
 }
 
@@ -2191,7 +2200,7 @@ button,
   font-weight: 600;
   height: var(--input-h);
   padding: 0 var(--space-4);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-sm);
   background: var(--panel-3);
   color: var(--text);
@@ -2233,15 +2242,15 @@ a:focus-visible {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  color: var(--on-accent);
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3);
 }
 
 .btn.primary:hover {
-  background: #2563EB;
-  border-color: #2563EB;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
   filter: none;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.4);
 }
 
 .btn.secondary {
@@ -2273,13 +2282,13 @@ a:focus-visible {
 /* Danger: red border + text, red fill on hover */
 .btn.danger {
   background: transparent;
-  border-color: rgba(248, 113, 113, 0.45);
+  border-color: rgba(var(--danger-rgb), 0.45);
   color: var(--danger);
   font-weight: 500;
 }
 
 .btn.danger:hover {
-  background: rgba(248, 113, 113, 0.12);
+  background: rgba(var(--danger-rgb), 0.12);
   border-color: var(--danger);
   filter: none;
 }
@@ -2315,8 +2324,8 @@ a:focus-visible {
 }
 
 #toast.ok {
-  border-color: rgba(94, 234, 212, 0.5);
-  background: rgba(94, 234, 212, 0.1);
+  border-color: rgba(var(--mint-rgb), 0.5);
+  background: rgba(var(--mint-rgb), 0.1);
   color: var(--mint);
 }
 
@@ -2361,7 +2370,7 @@ a:focus-visible {
   gap: var(--space-3);
   max-width: min(560px, calc(100vw - 32px));
   padding: var(--space-2) var(--space-4);
-  border: 1px solid rgba(251, 191, 36, 0.45);
+  border: 1px solid rgba(var(--warn-rgb), 0.45);
   border-radius: var(--radius-sm);
   background: var(--panel-2);
   box-shadow: var(--shadow);
@@ -2454,7 +2463,7 @@ a:focus-visible {
 
 #env-bar .env-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -2519,7 +2528,7 @@ a:focus-visible {
 
 #flags-head-actions .flags-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -2587,7 +2596,7 @@ a:focus-visible {
 
 .card-actions .head-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -2666,7 +2675,7 @@ tbody tr {
 }
 
 tbody tr:hover {
-  background: rgba(59, 130, 246, 0.07);
+  background: rgba(var(--accent-rgb), 0.07);
 }
 
 tbody tr:last-child td {
@@ -2746,7 +2755,7 @@ td code {
 
 #flag-folders .folder-toggle:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
   filter: none;
 }
@@ -2875,7 +2884,7 @@ td code {
 
 #flag-folders .flag-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -2922,7 +2931,7 @@ td code {
 
 #flag-folders .flag-menu select:hover {
   border-color: var(--accent);
-  background-color: rgba(59, 130, 246, 0.12);
+  background-color: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -3035,8 +3044,8 @@ td code {
 
 #flag-rules-list .rule-value.is-true {
   color: var(--mint);
-  border-color: rgba(94, 234, 212, 0.4);
-  background: rgba(94, 234, 212, 0.1);
+  border-color: rgba(var(--mint-rgb), 0.4);
+  background: rgba(var(--mint-rgb), 0.1);
 }
 
 #flag-rules-list .rule-value.is-false {
@@ -3081,7 +3090,7 @@ td code {
 #experiment-list .exp-menu button[role="menuitem"]:hover,
 #flag-experiments-list .exp-menu button[role="menuitem"]:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
   filter: none;
 }
@@ -3111,7 +3120,7 @@ td code {
 #flag-rules-list .rule-menu button[role="menuitem"][data-delete-flag-rule]:hover {
   color: var(--danger);
   border-color: var(--danger);
-  background: rgba(248, 113, 113, 0.12);
+  background: rgba(var(--danger-rgb), 0.12);
   filter: none;
 }
 
@@ -3141,7 +3150,7 @@ td code {
 
 #flag-rules-list .rule-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -3284,7 +3293,7 @@ td code {
 
 #experiment-list .exp-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -3435,7 +3444,7 @@ td code {
 
 #flag-experiments-list .exp-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -3522,7 +3531,7 @@ td code {
 
 #release-list .release-menu-btn:hover {
   border-color: var(--accent);
-  background: rgba(59, 130, 246, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: var(--text);
 }
 
@@ -3596,20 +3605,20 @@ td code {
 
 .badge.ok {
   color: var(--mint);
-  border-color: rgba(94, 234, 212, 0.4);
-  background: rgba(94, 234, 212, 0.08);
+  border-color: rgba(var(--mint-rgb), 0.4);
+  background: rgba(var(--mint-rgb), 0.08);
 }
 
 .badge.revoked {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 .badge.legacy {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.4);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(var(--warn-rgb), 0.4);
+  background: rgba(var(--warn-rgb), 0.08);
 }
 
 #login-error {
@@ -3989,7 +3998,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   color: var(--danger);
   border: 1px solid var(--danger);
   border-radius: var(--radius-sm);
-  background: rgba(248, 113, 113, 0.08);
+  background: rgba(var(--danger-rgb), 0.08);
   padding: var(--space-2) var(--space-3);
   font-size: 13px;
 }
@@ -4033,7 +4042,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   margin: var(--space-3) 0 var(--space-2);
   min-width: 0;
   max-width: 100%;
-  background: rgba(15, 23, 42, 0.28);
+  background: var(--stats-inset);
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 8px);
   padding: var(--space-3) var(--space-3) var(--space-2);
@@ -4070,13 +4079,13 @@ section[aria-labelledby="stats"] form.inline-form button {
 }
 
 #stats-view .stats-dot-fetch-bg {
-  background: #3b82f6;
-  box-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+  background: var(--chart-fetch);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.4);
 }
 
 #stats-view .stats-dot-exposure-bg {
-  background: #5eead4;
-  box-shadow: 0 0 6px rgba(94, 234, 212, 0.4);
+  background: var(--chart-exposure);
+  box-shadow: 0 0 6px rgba(var(--mint-rgb), 0.4);
 }
 
 #stats-view .stats-series {
@@ -4087,7 +4096,7 @@ section[aria-labelledby="stats"] form.inline-form button {
 }
 
 #stats-view .stats-grid {
-  stroke: rgba(255, 255, 255, 0.08);
+  stroke: var(--chart-grid);
   stroke-width: 1;
   stroke-dasharray: 4 4;
 }
@@ -4115,7 +4124,7 @@ section[aria-labelledby="stats"] form.inline-form button {
 }
 
 #stats-view .stats-line-fetch {
-  stroke: #3b82f6;
+  stroke: var(--chart-fetch);
   stroke-width: 1;
   fill: none;
   stroke-linecap: round;
@@ -4123,7 +4132,7 @@ section[aria-labelledby="stats"] form.inline-form button {
 }
 
 #stats-view .stats-line-exposure {
-  stroke: #5eead4;
+  stroke: var(--chart-exposure);
   stroke-width: 1;
   fill: none;
   stroke-linecap: round;
@@ -4149,13 +4158,13 @@ section[aria-labelledby="stats"] form.inline-form button {
 }
 
 #stats-view .stats-dot-fetch {
-  fill: #3b82f6;
+  fill: var(--chart-fetch);
   stroke: var(--panel-2);
   stroke-width: 2;
 }
 
 #stats-view .stats-dot-exposure {
-  fill: #5eead4;
+  fill: var(--chart-exposure);
   stroke: var(--panel-2);
   stroke-width: 2;
 }
@@ -4173,7 +4182,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   padding: 6px 10px;
   font-size: 12px;
   color: var(--text);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 16px rgba(var(--shadow-rgb), 0.4);
   z-index: 5;
   width: max-content;
   max-width: min(340px, 90%);
@@ -4250,7 +4259,7 @@ section[aria-labelledby="stats"] form.inline-form button {
 #stats-view .stats-ver {
   margin: var(--space-3) 0 var(--space-2);
   padding: var(--space-3);
-  background: rgba(15, 23, 42, 0.28);
+  background: var(--stats-inset);
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 8px);
   min-width: 0;
@@ -4292,7 +4301,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   display: block;
   height: 8px;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--bar-track);
   border: 1px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
@@ -4302,7 +4311,7 @@ section[aria-labelledby="stats"] form.inline-form button {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  background: linear-gradient(90deg, var(--chart-fetch), var(--chart-fetch-bright));
   transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -4354,9 +4363,9 @@ section[aria-labelledby="stats"] form.inline-form button {
 #key-once {
   margin-top: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border: 1px dashed rgba(94, 234, 212, 0.55);
+  border: 1px dashed rgba(var(--mint-rgb), 0.55);
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(94, 234, 212, 0.08));
+  background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.1), rgba(var(--mint-rgb), 0.08));
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -4743,12 +4752,12 @@ section[aria-labelledby="stats"] form.inline-form button {
 input.invalid,
 textarea.invalid {
   border-color: var(--danger);
-  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.15);
+  box-shadow: 0 0 0 2px rgba(var(--danger-rgb), 0.15);
 }
 
 input.valid,
 textarea.valid {
-  border-color: rgba(94, 234, 212, 0.55);
+  border-color: rgba(var(--mint-rgb), 0.55);
 }
 
 /* ---- Dialogs ----
@@ -4764,6 +4773,15 @@ dialog {
   padding: var(--space-6);
   width: min(640px, 92vw);
   animation: dialog-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dialog-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  color: var(--muted);
 }
 
 @keyframes dialog-in {
@@ -4896,7 +4914,7 @@ dialog#cw-dialog {
 }
 
 dialog::backdrop {
-  background: rgba(8, 11, 18, 0.75);
+  background: var(--dialog-backdrop);
   backdrop-filter: blur(4px);
 }
 
@@ -4956,7 +4974,7 @@ dialog h4 {
   font-size: 12px;
   line-height: 1.45;
   font-weight: 400;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 8px 24px rgba(var(--shadow-rgb), 0.22);
   z-index: 30;
 }
 
@@ -5296,14 +5314,14 @@ dialog#json-editor-dialog h3 {
 /* Unpublished highlights (dirty tracking) */
 .badge.unpublished {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.45);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(var(--warn-rgb), 0.45);
+  background: rgba(var(--warn-rgb), 0.08);
 }
 
 .badge.deleted {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.45);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 tr.is-unpublished,
@@ -5311,8 +5329,8 @@ tr.is-unpublished,
 #flag-experiments-list li.exp-card.is-unpublished,
 #experiment-list li.exp-card.is-unpublished,
 #flag-folders .folder.is-unpublished {
-  background: rgba(251, 191, 36, 0.06);
-  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(var(--warn-rgb), 0.06);
+  border-color: rgba(var(--warn-rgb), 0.45);
   box-shadow: inset 3px 0 0 var(--warn);
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
@@ -5322,20 +5340,20 @@ tr.is-deleted,
 #flag-experiments-list li.exp-card.is-deleted,
 #experiment-list li.exp-card.is-deleted,
 #flag-folders .folder.is-deleted {
-  background: rgba(248, 113, 113, 0.06);
-  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(var(--danger-rgb), 0.06);
+  border-color: rgba(var(--danger-rgb), 0.45);
   box-shadow: inset 3px 0 0 var(--danger);
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
 section.card.is-dirty {
-  border-color: rgba(251, 191, 36, 0.55);
-  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35), 0 0 20px rgba(251, 191, 36, 0.18);
+  border-color: rgba(var(--warn-rgb), 0.55);
+  box-shadow: 0 0 0 1px rgba(var(--warn-rgb), 0.35), 0 0 20px rgba(var(--warn-rgb), 0.18);
   transition: border-color 140ms ease, box-shadow 160ms ease;
 }
 
 section.card.has-unpublished {
-  border-top: 2px solid rgba(251, 191, 36, 0.45);
+  border-top: 2px solid rgba(var(--warn-rgb), 0.45);
 }
 
 #unpublished-list {
@@ -5400,7 +5418,7 @@ section.card.has-unpublished {
 #transfer-export-text:focus-visible,
 #transfer-import-text:focus-visible {
   outline: none;
-  border-color: rgba(94, 234, 212, 0.55);
+  border-color: rgba(var(--mint-rgb), 0.55);
 }
 
 #transfer-export-result,
@@ -5456,26 +5474,26 @@ section.card.has-unpublished {
 }
 
 #transfer-diff-detail .diff-file.diff-added {
-  background: rgba(94, 234, 212, 0.06);
-  border-color: rgba(94, 234, 212, 0.45);
+  background: rgba(var(--mint-rgb), 0.06);
+  border-color: rgba(var(--mint-rgb), 0.45);
   box-shadow: inset 3px 0 0 var(--ok);
 }
 
 #transfer-diff-detail .diff-file.diff-removed {
-  background: rgba(248, 113, 113, 0.06);
-  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(var(--danger-rgb), 0.06);
+  border-color: rgba(var(--danger-rgb), 0.45);
   box-shadow: inset 3px 0 0 var(--danger);
 }
 
 #transfer-diff-detail .diff-file.diff-modified {
-  background: rgba(251, 191, 36, 0.06);
-  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(var(--warn-rgb), 0.06);
+  border-color: rgba(var(--warn-rgb), 0.45);
   box-shadow: inset 3px 0 0 var(--warn);
 }
 
 #transfer-diff-detail .diff-file.diff-flag-exps {
-  background: rgba(251, 191, 36, 0.06);
-  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(var(--warn-rgb), 0.06);
+  border-color: rgba(var(--warn-rgb), 0.45);
   box-shadow: inset 3px 0 0 var(--warn);
 }
 
@@ -5520,20 +5538,20 @@ section.card.has-unpublished {
 
 #transfer-diff-detail .diff-added .diff-badge {
   color: var(--ok);
-  border-color: rgba(94, 234, 212, 0.45);
-  background: rgba(94, 234, 212, 0.08);
+  border-color: rgba(var(--mint-rgb), 0.45);
+  background: rgba(var(--mint-rgb), 0.08);
 }
 
 #transfer-diff-detail .diff-removed .diff-badge {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.45);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 #transfer-diff-detail .diff-modified .diff-badge {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.45);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(var(--warn-rgb), 0.45);
+  background: rgba(var(--warn-rgb), 0.08);
 }
 
 #transfer-diff-detail .diff-path {
@@ -5573,7 +5591,7 @@ section.card.has-unpublished {
 }
 
 #transfer-diff-detail .diff-line.add {
-  background: rgba(94, 234, 212, 0.1);
+  background: rgba(var(--mint-rgb), 0.1);
 }
 
 #transfer-diff-detail .diff-line.add .diff-gutter {
@@ -5581,7 +5599,7 @@ section.card.has-unpublished {
 }
 
 #transfer-diff-detail .diff-line.del {
-  background: rgba(248, 113, 113, 0.1);
+  background: rgba(var(--danger-rgb), 0.1);
 }
 
 #transfer-diff-detail .diff-line.del .diff-gutter {
@@ -5605,20 +5623,20 @@ section.card.has-unpublished {
 
 #transfer-diff-detail .staged-create .diff-badge {
   color: var(--ok);
-  border-color: rgba(94, 234, 212, 0.45);
-  background: rgba(94, 234, 212, 0.08);
+  border-color: rgba(var(--mint-rgb), 0.45);
+  background: rgba(var(--mint-rgb), 0.08);
 }
 
 #transfer-diff-detail .staged-update .diff-badge {
   color: var(--warn);
-  border-color: rgba(251, 191, 36, 0.45);
-  background: rgba(251, 191, 36, 0.08);
+  border-color: rgba(var(--warn-rgb), 0.45);
+  background: rgba(var(--warn-rgb), 0.08);
 }
 
 #transfer-diff-detail .staged-delete .diff-badge {
   color: var(--danger);
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(var(--danger-rgb), 0.45);
+  background: rgba(var(--danger-rgb), 0.08);
 }
 
 /* Promote dialog — mirrors release dialog (task 11). The dialog is built
@@ -5627,8 +5645,7 @@ section.card.has-unpublished {
  * above (same spacing scale, borders, button treatment via the generic
  * .btn/.dialog-actions rules, muted text tones). Buttons need no per-ID
  * rule: #promote-cancel/.btn.ghost + #promote-submit/.btn.primary reuse the
- * generic treatments exactly like #release-dialog-ok does. No
- * prefers-color-scheme / [data-theme] variant exists (single dark theme). */
+ * generic treatments exactly like #release-dialog-ok does. */
 dialog#promote-dialog {
   width: min(560px, 92vw);
   max-height: 88dvh;
@@ -5896,8 +5913,8 @@ section[aria-labelledby="backups-s3"] .card-head {
 }
 
 #backup-s3-badge.backup-s3-badge.is-connected {
-  border-color: rgba(94, 234, 212, 0.4);
-  background: rgba(94, 234, 212, 0.1);
+  border-color: rgba(var(--mint-rgb), 0.4);
+  background: rgba(var(--mint-rgb), 0.1);
   color: var(--mint);
 }
 
@@ -6027,8 +6044,8 @@ section[aria-labelledby="backups-s3"] .card-head {
 }
 
 #backup-s3-switch[aria-checked="true"] {
-  border-color: rgba(94, 234, 212, 0.4);
-  background: rgba(94, 234, 212, 0.12);
+  border-color: rgba(var(--mint-rgb), 0.4);
+  background: rgba(var(--mint-rgb), 0.12);
 }
 
 #backup-s3-switch[aria-checked="true"] .backup-s3-switch-knob {
