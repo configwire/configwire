@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
@@ -190,6 +191,13 @@ func postPublish(re *core.RequestEvent) error {
 	// guaranteed in server output; no new collection.
 	log.Printf("releases: published env=%s version=%d etag=%s author=%s note=%q",
 		slug, version, etag, callerAuthor(re), req.Note)
+	audit.Record(re, audit.Entry{
+		Action: "release.publish", TargetType: "environment",
+		TargetID: env.Id, TargetLabel: slug, Status: http.StatusOK,
+		Detail: map[string]any{
+			"env": slug, "version": version, "etag": etag, "note": req.Note,
+		},
+	})
 
 	return re.JSON(http.StatusOK, map[string]any{"version": version, "etag": etag})
 }
@@ -493,6 +501,14 @@ func postRollbackEnv(re *core.RequestEvent) error {
 		}
 		return re.BadRequestError(err.Error(), nil)
 	}
+	audit.Record(re, audit.Entry{
+		Action: "release.rollback", TargetType: "environment",
+		TargetID: env.Id, TargetLabel: slug, Status: http.StatusOK,
+		Detail: map[string]any{
+			"env": slug, "fromVersion": n, "version": version,
+			"etag": etag, "note": req.Note,
+		},
+	})
 
 	return re.JSON(http.StatusOK, map[string]any{"version": version, "etag": etag})
 }
@@ -572,6 +588,15 @@ func postPromoteEnv(re *core.RequestEvent) error {
 		}
 		return re.BadRequestError(err.Error(), nil)
 	}
+	audit.Record(re, audit.Entry{
+		Action: "release.promote", TargetType: "environment",
+		TargetID: destEnvRec.Id, TargetLabel: destSlug, Status: http.StatusOK,
+		Detail: map[string]any{
+			"srcEnv": srcEnvRec.Id, "srcVersion": req.SrcVersion,
+			"destEnv": destEnvRec.Id, "version": version,
+			"etag": etag, "note": req.Note,
+		},
+	})
 
 	return re.JSON(http.StatusOK, map[string]any{"version": version, "etag": etag})
 }

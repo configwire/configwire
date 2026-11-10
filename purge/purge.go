@@ -64,6 +64,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/types"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/logstore"
 	"github.com/configwire/configwire/retention"
 )
@@ -956,7 +957,12 @@ func dailyTicker(app core.App, stop <-chan struct{}) {
 			log.Printf("purge: %s server-logs run failed: %v", tag, err)
 			return
 		}
-		log.Printf("purge: %s run scrubbed %d deleted %d serverLogs %d (cutoff %s)", tag, scrubbed, n, sl, cutoff.Format(time.RFC3339))
+		al, err := audit.Purge(app)
+		if err != nil {
+			log.Printf("purge: %s audit run failed: %v", tag, err)
+			al = 0
+		}
+		log.Printf("purge: %s run scrubbed %d deleted %d serverLogs %d auditLogs %d (cutoff %s)", tag, scrubbed, n, sl, al, cutoff.Format(time.RFC3339))
 	}
 	// Boot run first: upgraded DBs with >30d backlog converge immediately
 	// instead of waiting a day (manual route stays the alternative).
@@ -975,15 +981,16 @@ func dailyTicker(app core.App, stop <-chan struct{}) {
 }
 
 // postPurge handles POST /api/v1/admin/maintenance/purge.
-// ?dry=1 (or true) -> 200 {"deleted":N,"scrubbed":M,"serverLogs":S,"dry":true} with ZERO
-// writes (deleted counts doomed raw + stale daily rows at the raw cutoff,
+// ?dry=1 (or true) -> 200 {"deleted":N,"scrubbed":M,"serverLogs":S,"auditLogs":A,"dry":true} with ZERO
+// event/rollup/log writes (one purge.run audit row is appended; deleted counts
+// doomed raw + stale daily rows at the raw cutoff,
 // scrubbed counts rows still carrying identity past the 48h scrub cutoff,
 // serverLogs counts outdated server_logs rows under the live logstore
-// window).
+// window, auditLogs counts outdated audit_log rows under the audit window).
 // ?dry= absent/0/false -> live run (scrub 48h identities, then rollup+purge,
-// then server-logs purge) -> 200 {"deleted":N,"scrubbed":M,"serverLogs":S,"dry":false}.
+// then server-logs and audit purge) -> 200 {"deleted":N,"scrubbed":M,"serverLogs":S,"auditLogs":A,"dry":false}.
 // Any other dry value (e.g. abc) -> 400. Unauth/SDK-key -> 401 via
-// middleware; empty events table -> 200 deleted:0 scrubbed:0 serverLogs:0.
+// middleware; empty events table -> 200 deleted:0 scrubbed:0 serverLogs:0 auditLogs:0.
 func postPurge(re *core.RequestEvent) error {
 	raw := re.Request.URL.Query().Get("dry")
 	dry := false
@@ -1011,10 +1018,24 @@ func postPurge(re *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
+		al, err := audit.Count(re.App)
+		if err != nil {
+			log.Printf("purge: audit count failed: %v", err)
+			al = 0
+		}
+		audit.Record(re, audit.Entry{
+			Action: "purge.run", TargetType: "maintenance",
+			TargetLabel: "purge", Status: http.StatusOK,
+			Detail: map[string]any{
+				"dry": true, "deleted": n, "scrubbed": m,
+				"serverLogs": sl, "auditLogs": al,
+			},
+		})
 		return re.JSON(http.StatusOK, map[string]any{
 			"deleted":    n,
 			"scrubbed":   m,
 			"serverLogs": sl,
+			"auditLogs":  al,
 			"dry":        true,
 			"cutoff":     cutoff.Format(time.RFC3339),
 		})
@@ -1031,11 +1052,25 @@ func postPurge(re *core.RequestEvent) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("purge: manual run scrubbed %d deleted %d serverLogs %d rows (cutoff %s)", m, n, sl, cutoff.Format(time.RFC3339))
+	al, err := audit.Purge(re.App)
+	if err != nil {
+		log.Printf("purge: audit run failed: %v", err)
+		al = 0
+	}
+	log.Printf("purge: manual run scrubbed %d deleted %d serverLogs %d auditLogs %d rows (cutoff %s)", m, n, sl, al, cutoff.Format(time.RFC3339))
+	audit.Record(re, audit.Entry{
+		Action: "purge.run", TargetType: "maintenance",
+		TargetLabel: "purge", Status: http.StatusOK,
+		Detail: map[string]any{
+			"dry": false, "deleted": n, "scrubbed": m,
+			"serverLogs": sl, "auditLogs": al,
+		},
+	})
 	return re.JSON(http.StatusOK, map[string]any{
 		"deleted":    n,
 		"scrubbed":   m,
 		"serverLogs": sl,
+		"auditLogs":  al,
 		"dry":        false,
 		"cutoff":     cutoff.Format(time.RFC3339),
 	})

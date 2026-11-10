@@ -3,6 +3,7 @@ package limits
 import (
 	"net/http"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/identity"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
@@ -122,6 +123,18 @@ func putLimits(re *core.RequestEvent) error {
 	if err := applyConfig(next); err != nil {
 		return apireq.Internal(re, "limits: failed to apply rate settings", err)
 	}
+	audit.Record(re, audit.Entry{
+		Action: "limits.update", TargetType: "settings",
+		TargetLabel: "limits", Status: http.StatusOK,
+		Detail: map[string]any{
+			"globalRps": next.GlobalRps,
+			"burst":     next.Burst,
+			"fetchRps":  next.FetchRps,
+			"ingestRps": next.IngestRps,
+			// Count only: never persist the full admin allowlist.
+			"adminAllowedIPs": len(next.AdminAllowedIPs),
+		},
+	})
 	return re.JSON(http.StatusOK, toBodyForRequest(re, next))
 }
 

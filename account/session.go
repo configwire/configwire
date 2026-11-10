@@ -49,6 +49,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/tools/hook"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/security"
@@ -157,10 +158,10 @@ func newSessionBucket() *sessionBucketT {
 	return &sessionBucketT{windows: make(map[string]*sessionWindow)}
 }
 
-// allowSession consumes one login token for ip, reporting false when the
+// allow consumes one token for ip under limit, reporting false when the
 // window is exhausted. Empty ip shares one "unknown" bucket instead of
 // fail-opening (mirrors limits.CheckIP).
-func (b *sessionBucketT) allow(ip string) bool {
+func (b *sessionBucketT) allow(ip string, limit int) bool {
 	if ip == "" {
 		ip = "unknown"
 	}
@@ -181,12 +182,29 @@ func (b *sessionBucketT) allow(ip string) bool {
 			}
 		}
 	}
-	return w.count <= SessionPerIPLimit
+	return w.count <= limit
+}
+
+// loginFailedAudit is the per-IP budget for session.login_failed rows. The
+// login route is public, so one row per failure would let an anonymous
+// client grow a 365-day table without bound; the first failure per window is
+// enough to show the attempt.
+var loginFailedAudit = newSessionBucket()
+
+func auditLoginFailure(re *core.RequestEvent, email string) {
+	if !loginFailedAudit.allow(limits.ClientIP(re), 1) {
+		return
+	}
+	audit.Record(re, audit.Entry{
+		Action: "session.login_failed", TargetType: "account",
+		TargetLabel: email, Status: http.StatusUnauthorized,
+	})
 }
 
 // resetSessionBucket clears all per-IP buckets (test isolation).
 func resetSessionBucket() {
 	sessionBucket = newSessionBucket()
+	loginFailedAudit = newSessionBucket()
 }
 
 // registerSession mounts the public session endpoints. Called from Register.
@@ -356,7 +374,7 @@ func clearSessionCookie(re *core.RequestEvent) {
 func postSession(re *core.RequestEvent) error {
 	security.SetHeaders(re)
 	// Cheap reject before bcrypt/validation: per-IP fixed window.
-	if !sessionBucket.allow(limits.ClientIP(re)) {
+	if !sessionBucket.allow(limits.ClientIP(re), SessionPerIPLimit) {
 		return apireq.TooMany(re, "Rate limit exceeded.")
 	}
 	if sessionOriginDenied(re) {
@@ -387,10 +405,12 @@ func postSession(re *core.RequestEvent) error {
 	if rec == nil {
 		burnBcryptDummy(req.Password)
 		log.Printf("account: session login failed email=%s", email)
+		auditLoginFailure(re, email)
 		return re.UnauthorizedError("invalid email or password.", nil)
 	}
 	if !rec.ValidatePassword(req.Password) {
 		log.Printf("account: session login failed email=%s", email)
+		auditLoginFailure(re, email)
 		return re.UnauthorizedError("invalid email or password.", nil)
 	}
 	token, err := rec.NewAuthToken()
@@ -398,6 +418,11 @@ func postSession(re *core.RequestEvent) error {
 		return internalError(re, "failed to create session", err)
 	}
 	log.Printf("account: session created email=%s", email)
+	audit.Record(re, audit.Entry{
+		Actor: email, ActorID: rec.Id,
+		Action: "session.login", TargetType: "account",
+		TargetID: rec.Id, TargetLabel: email, Status: http.StatusOK,
+	})
 	setSessionCookie(re, token)
 	return re.JSON(http.StatusOK, map[string]any{"ok": true})
 }
@@ -449,6 +474,14 @@ func refreshSession(re *core.RequestEvent) error {
 // expiry by design.
 func deleteSession(re *core.RequestEvent) error {
 	security.SetHeaders(re)
+	// An empty logout has no session to attribute: skip the row so the
+	// public idempotent DELETE cannot be used to grow audit_log.
+	if re.Auth != nil {
+		audit.Record(re, audit.Entry{
+			Action: "session.logout", TargetType: "account",
+			TargetID: re.Auth.Id, TargetLabel: re.Auth.GetString("email"), Status: http.StatusOK,
+		})
+	}
 	clearSessionCookie(re)
 	return re.JSON(http.StatusOK, map[string]any{"ok": true})
 }

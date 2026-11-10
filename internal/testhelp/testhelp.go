@@ -74,3 +74,30 @@ func MustSuperuser(t *testing.T, app core.App, email string) *core.Record {
 	}
 	return rec
 }
+
+// EnsureAuditCollection creates the audit_log collection when the test
+// app does not already carry it (handler tests boot minimal stand-ins and
+// do not import the migrations registry). Shape mirrors migration
+// 1790000029; a pre-existing collection is left untouched.
+func EnsureAuditCollection(t *testing.T, app core.App) {
+	t.Helper()
+	if _, err := app.FindCollectionByNameOrId("audit_log"); err == nil {
+		return
+	}
+	col := core.NewBaseCollection("audit_log")
+	col.Fields.Add(
+		&core.TextField{Name: "actor", Presentable: true},
+		&core.TextField{Name: "actorId"},
+		&core.TextField{Name: "action", Required: true, Presentable: true},
+		&core.TextField{Name: "targetType"},
+		&core.TextField{Name: "targetId"},
+		&core.TextField{Name: "targetLabel"},
+		&core.NumberField{Name: "status", OnlyInt: true},
+		&core.JSONField{Name: "detail"},
+		&core.AutodateField{Name: "created", OnCreate: true},
+		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
+	)
+	if err := app.Save(col); err != nil {
+		t.Fatalf("save audit_log collection: %v", err)
+	}
+}

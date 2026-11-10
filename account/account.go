@@ -22,6 +22,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
@@ -399,6 +400,11 @@ func postSetup(re *core.RequestEvent) error {
 	}
 	email := strings.TrimSpace(req.Email)
 	log.Printf("account: initial superuser created email=%s", email)
+	audit.Record(re, audit.Entry{
+		Actor: email, ActorID: rec.Id,
+		Action: "setup.claim", TargetType: "account",
+		TargetID: rec.Id, TargetLabel: email, Status: http.StatusCreated,
+	})
 	return re.JSON(http.StatusCreated, map[string]any{"id": rec.Id, "email": email})
 }
 
@@ -443,6 +449,10 @@ func createAccount(re *core.RequestEvent) error {
 	}
 	email := strings.TrimSpace(req.Email)
 	log.Printf("account: superuser created email=%s", email)
+	audit.Record(re, audit.Entry{
+		Action: "account.create", TargetType: "account",
+		TargetID: rec.Id, TargetLabel: email, Status: http.StatusCreated,
+	})
 	return re.JSON(http.StatusCreated, map[string]any{"id": rec.Id, "email": email})
 }
 
@@ -473,6 +483,10 @@ func setPassword(re *core.RequestEvent) error {
 		return re.BadRequestError("could not update password", nil)
 	}
 	log.Printf("account: superuser password updated id=%s", rec.Id)
+	audit.Record(re, audit.Entry{
+		Action: "account.password", TargetType: "account",
+		TargetID: rec.Id, TargetLabel: rec.GetString("email"), Status: http.StatusOK,
+	})
 	return re.JSON(http.StatusOK, map[string]any{"id": rec.Id})
 }
 
@@ -512,5 +526,9 @@ func deleteAccount(re *core.RequestEvent) error {
 		return re.BadRequestError("could not delete account", nil)
 	}
 	log.Printf("account: superuser deleted id=%s", id)
+	audit.Record(re, audit.Entry{
+		Action: "account.delete", TargetType: "account",
+		TargetID: id, TargetLabel: rec.GetString("email"), Status: http.StatusOK,
+	})
 	return re.JSON(http.StatusOK, map[string]any{"id": id})
 }

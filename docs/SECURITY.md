@@ -237,9 +237,10 @@ binary plus operator procedure.
 
 - Publish, rollback, stats, and purge routes bind
   `RequireSuperuserAuth`. SDK-key-only callers → `401`.
-- All 9 collections default-deny (`nil` rules → `403` for
-  non-superusers). Releases rows are additionally immutable via
-  server hooks (updates denied on every path incl. dashboard).
+- All collections default-deny (`nil` rules → `403` for
+  non-superusers), including the audit trail (§11). Releases rows are
+  additionally immutable via server hooks (updates denied on every path
+  incl. dashboard).
 - Admin UI session lives in the `cw_admin` HttpOnly cookie, never in
   JS state or `localStorage`: `DELETE` clears this browser only (no
   server-side denylist). There is no `{token}` in any login body and
@@ -272,7 +273,12 @@ binary plus operator procedure.
   calls stay as backup):
   - `X-Content-Type-Options: nosniff`,
   - `X-Frame-Options: DENY`,
-  - `Referrer-Policy: no-referrer`.
+  - `Referrer-Policy: no-referrer`,
+  - `Content-Security-Policy` with `script-src 'self'`, `style-src
+    'self' 'unsafe-inline'`, `img-src 'self' data:`, and `connect-src
+    'self'`. The admin browser never calls a third party; the topbar
+    GitHub link is a static anchor, so no GitHub API/rate-limit traffic
+    originates from the console.
 - Container surface: release images run as non-root UID/GID `10001` and
   build with PocketBase's `no_ui` tag, so the PocketBase dashboard is not
   shipped (the `/_/` path falls through to the ConfigWire SPA shell and
@@ -334,3 +340,54 @@ binary plus operator procedure.
 - Rollback/promote clone snapshots into NEW rows; releases are never
   updated in place. Superseded releases stay readable; only events and
   expired rollups are ever deleted, never release rows.
+
+## 11. Audit trail
+
+- Sensitive admin actions land in the dedicated `audit_log` collection
+  (id `cw_audit_log`), append-only and **on by default**. Rows are
+  superuser-only like every other collection (nil rules); the query API
+  sits behind `RequireSuperuserAuth`, and data-API create/update/delete
+  requests are denied (`403`), so only server-side writes can add a row.
+- Env-only knobs: `CONFIGWIRE_AUDIT_ENABLED` (default `true`) and
+  `CONFIGWIRE_AUDIT_MAX_DAYS` (default **365**, clamped to `1..1825`).
+  There is no runtime settings row in v1 — turning the trail off or
+  shortening retention is a boot-time decision.
+- Recorded actions: `setup.claim`, `session.login`,
+  `session.login_failed`, `session.logout`, `account.create`,
+  `account.password`, `account.delete`, `release.publish`,
+  `release.rollback`, `release.promote`, `key.mint`, `key.revoke`,
+  `key.unrevoke`, `key.update`, `key.delete`, `limits.update`,
+  `retention.update`, `log_settings.update`, `purge.run`, `sso.redeem`,
+  `flag.create`, `flag.update`, `flag.delete`, `rule.create`,
+  `rule.update`, `rule.delete`, `experiment.create`, `experiment.update`,
+  `experiment.delete`, `project.create`, `project.update`,
+  `project.delete`, `environment.create`, `environment.update`,
+  `environment.delete`, `backup.create`, `backup.upload`,
+  `backup.download`, `backup.delete`, `backup.restore`.
+  SDK-key revoke/unrevoke/update/delete and flag/rule/experiment/project/
+  environment create/update/delete issued through the data API are audited
+  by request hooks with the acting superuser; an update names the changed
+  columns in `detail.fields` (values are never copied). Server-side mints
+  are audited by the mint handler.
+- Each row carries `actor` (superuser email, or `system` for public /
+  boot actions), `actorId`, `action`, `targetType`/`targetId`/
+  `targetLabel`, an HTTP-like `status`, a small JSON `detail`, and the
+  `created` timestamp.
+- Redaction is a hard rule: passwords, tokens, tickets, full SDK keys,
+  full admin allowlists, release snapshots, and PII beyond the actor
+  email / target label are never written. Key mints record the prefix
+  and numeric budgets; `limits.update` records the allowlist **count**
+  only; `sso.redeem` records the result without the ticket.
+- Audit writes are best-effort: a storage failure is logged to stderr
+  and never fails the business action. No row is written for a rejected
+  action (the write happens after the business check succeeds).
+- Retention: `audit.Purge` runs with the daily retention ticker and the
+  manual purge route, deleting rows strictly older than
+  `now - CONFIGWIRE_AUDIT_MAX_DAYS` in `(created, id)` pages. The manual
+  route reports an additive `auditLogs` count on dry and live runs.
+- HTTP backup operations (`backup.create`/`upload`/`download`/`delete`/
+  `restore`) are audited by a router middleware: create/upload/delete/
+  restore carry the acting superuser, while a file-token download has no
+  request auth and records actor `system`. Scheduled (cron) backups never
+  pass through a request and are not audited. Backup zips are full dumps,
+  so a restore reintroduces `audit_log` rows the purge already deleted.

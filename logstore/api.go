@@ -9,6 +9,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 )
@@ -94,6 +95,20 @@ func putLogSettings(re *core.RequestEvent) error {
 	if err := UpdateSettings(re.App, next); err != nil {
 		return apireq.Internal(re, "logstore: failed to persist log settings", err)
 	}
+	audit.Record(re, audit.Entry{
+		Action: "log_settings.update", TargetType: "settings",
+		TargetLabel: "log_settings", Status: http.StatusOK,
+		Detail: map[string]any{
+			"enabled":     next.Enabled,
+			"maxDays":     next.MaxDays,
+			"successLogs": next.SuccessLogs,
+			"adminLogs": map[string]any{
+				"enabled":      next.AdminLogs.Enabled,
+				"successLines": next.AdminLogs.SuccessLines,
+				"healthChecks": next.AdminLogs.HealthChecks,
+			},
+		},
+	})
 	return re.JSON(http.StatusOK, toSettingsBody(next))
 }
 

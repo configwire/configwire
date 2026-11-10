@@ -697,18 +697,20 @@ independent of the retention windows. Ref: `configwire/purge/purge.go`
 `currentRollupExtraDays`), and the manual route.
 
 `?dry=` absent/`0`/`false` means live; `1`/`true` means dry-run
-(zero writes, same count); anything else (for example `abc`) then `400`.
+(counts only: no event, rollup or server-log writes, no rollup step; it
+still appends one `purge.run` audit row — see section 14); anything else
+(for example `abc`) then `400`.
 
 Live `200`:
 
 ```json
-{"deleted": 1, "scrubbed": 2, "dry": false, "cutoff": "2026-08-23T00:00:00Z"}
+{"deleted": 1, "scrubbed": 2, "serverLogs": 0, "auditLogs": 0, "dry": false, "cutoff": "2026-08-23T00:00:00Z"}
 ```
 
 Dry-run `200`:
 
 ```json
-{"deleted": 1, "scrubbed": 2, "dry": true, "cutoff": "2026-08-23T00:00:00Z"}
+{"deleted": 1, "scrubbed": 2, "serverLogs": 0, "auditLogs": 0, "dry": true, "cutoff": "2026-08-23T00:00:00Z"}
 ```
 
 `deleted` counts raw events rolled up and deleted plus stale daily
@@ -717,13 +719,16 @@ nulled past the 48h scrub cutoff (rows kept, identity only); `cutoff`
 is the raw-events cutoff (`now - rawDays`, UTC RFC3339). Scrub nulls
 identity on events with `ts` strictly before `now - 48h` and keeps
 every row (counts, env, kind, variant, version, `ts` untouched) so
-later rollups still count them. Empty tables then `200` with
-`deleted: 0, scrubbed: 0`. The daily process-local ticker (boot run,
-then every 23-25h) runs `EnsureRollups` → scrub → purge → server-log
-purge with the same dynamic cutoffs, and aborts the run on any rollup
-error before deleting raw rows. The live manual route runs the same
-rollup-then-purge order (the dry-run route never writes and never rolls
-up, so it stays write-free). Ref: `configwire/purge/purge.go`
+later rollups still count them. `serverLogs` is the outdated
+`server_logs` count/purge under the live logstore window; `auditLogs`
+does the same for `audit_log` under the audit window. Empty tables then
+`200` with `deleted: 0, scrubbed: 0`. The daily process-local ticker
+(boot run, then every 23-25h) runs `EnsureRollups` → scrub → purge →
+server-log purge → audit purge with the same dynamic cutoffs, and aborts
+the run on any rollup error before deleting raw rows. The live manual
+route runs the same rollup-then-purge order (the dry-run route never
+mutates events/rollups/server_logs and never rolls up; only the one
+`purge.run` audit row is appended). Ref: `configwire/purge/purge.go`
 (`ScrubCutoff`, `ScrubIdentitiesOlderThan`, `CountScrubOlderThan`,
 `EnsureRollups`, `PurgeOlderThan`, `dailyTicker`). Set
 `CONFIGWIRE_PURGE=off` (or `0`/`false`) to disable the ticker on a node;
@@ -955,6 +960,68 @@ no auth `401`; rate breach `429` + `Retry-After: 1`. Rows without
 a secret (pre-backfill) answer `500`. Ticket TTL is 60s,
 non-negotiable; `?sso=` is stripped via `history.replaceState`
 right after redeem.
+
+## 14. Audit log
+
+Superuser-only, read-only view of the durable admin audit trail. The
+collection is `audit_log` (rules nil, data-API writes denied so it stays
+append-only), written by the actions listed in `SECURITY.md` section 11
+and retained for `CONFIGWIRE_AUDIT_MAX_DAYS` (default
+365d, clamp 1..1825). Audit writes are best-effort: storage failures
+never fail the admin action.
+
+```text
+GET /api/v1/admin/audit?action=&actor=&targetType=&targetId=&status=&since=&page=&perPage=
+Authorization: <superuser token>
+```
+
+- Filters are optional and exact-match: `action` (e.g.
+  `release.publish`), `actor` (superuser email or `system`),
+  `targetType` (account/environment/sdk_key/flag/rule/experiment/project/backup/settings/maintenance),
+  `targetId`, `status` (0 or absent = any).
+- `since` uses the `<N>d` grammar (1..1825, default 30); `all`
+  (or `0`) removes the time bound. An invalid value is `400`.
+- `page` defaults to 1; `perPage` defaults to 50 and clamps to
+  1..200. Rows are newest-first (`-created`).
+- Response:
+
+```json
+{
+  "items": [
+    {
+      "id": "...",
+      "actor": "admin@example.com",
+      "action": "release.publish",
+      "targetType": "environment",
+      "targetId": "...",
+      "targetLabel": "production",
+      "status": 200,
+      "detail": {"env": "production", "version": 3, "etag": "...", "note": "..."},
+      "created": "2026-11-10T12:00:00Z"
+    }
+  ],
+  "page": 1,
+  "perPage": 50,
+  "total": 1
+}
+```
+
+`created` is RFC3339; `detail` is the stored JSON object or
+`null`. Detail never contains passwords, tokens, tickets, full SDK
+keys, full allowlists, or release snapshots.
+
+Action set (v1): `setup.claim`, `session.login`,
+`session.login_failed`, `session.logout`, `account.create`,
+`account.password`, `account.delete`, `release.publish`,
+`release.rollback`, `release.promote`, `key.mint`,
+`key.revoke`, `key.unrevoke`, `key.update`, `key.delete`,
+`limits.update`, `retention.update`, `log_settings.update`,
+`purge.run`, `sso.redeem`.
+
+Retention runs with the daily ticker and the manual
+`POST /api/v1/admin/maintenance/purge` route (whose response gains
+the additive `auditLogs` count); rows strictly older than the
+configured window are deleted page by page.
 
 ## History
 

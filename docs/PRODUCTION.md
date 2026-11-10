@@ -151,6 +151,11 @@ upgrade for a day older than the raw window: when `event_daily` already
 holds rows for that day it is not re-folded (the no-double-count choice),
 so keep backups across the upgrade. Keep backups
 for the retention window you may need to restore.
+Admin actions are audited by default into `audit_log` for 365 days
+(`CONFIGWIRE_AUDIT_ENABLED`, `CONFIGWIRE_AUDIT_MAX_DAYS` clamped to
+1..1825, superuser-only at `GET /api/v1/admin/audit`); include that window in the
+backup rotation too. Audit write failures are logged and never block the
+admin action.
 Backup zips are full dumps: a restore reintroduces rows the purge
 already deleted, so `cronMaxKeep` must cover the window you may need
 to restore. See `SECURITY.md` section 10 before any `migrate down`.

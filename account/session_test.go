@@ -18,14 +18,14 @@ func TestSessionPerIPBucket(t *testing.T) {
 	resetSessionBucket()
 	const ip = "203.0.113.7"
 	for i := 0; i < SessionPerIPLimit; i++ {
-		if !sessionBucket.allow(ip) {
+		if !sessionBucket.allow(ip, SessionPerIPLimit) {
 			t.Fatalf("attempt %d/%d: rejected, want allow", i+1, SessionPerIPLimit)
 		}
 	}
-	if sessionBucket.allow(ip) {
+	if sessionBucket.allow(ip, SessionPerIPLimit) {
 		t.Fatal("over-budget attempt: allowed, want reject")
 	}
-	if !sessionBucket.allow("198.51.100.9") {
+	if !sessionBucket.allow("198.51.100.9", SessionPerIPLimit) {
 		t.Fatal("other IP: rejected, want allow (per-IP isolation)")
 	}
 }

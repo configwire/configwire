@@ -10,6 +10,7 @@ import (
 	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/apis"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/limits"
 )
@@ -192,6 +193,13 @@ func postMintKey(re *core.RequestEvent) error {
 		return apireq.Internal(re, "ingest: failed to mint key", err)
 	}
 	log.Printf("configwire: minted sdk key id=%s prefix=%s env=%s", rec.Id, KeyPrefix(full), req.Env)
+	audit.Record(re, audit.Entry{
+		Action: "key.mint", TargetType: "sdk_key",
+		TargetID: rec.Id, TargetLabel: KeyPrefix(full), Status: http.StatusCreated,
+		Detail: map[string]any{
+			"env": req.Env, "fetchRps": req.FetchRps, "ingestRps": req.IngestRps,
+		},
+	})
 	return re.JSON(http.StatusCreated, map[string]any{
 		"id":     rec.Id,
 		"prefix": KeyPrefix(full),

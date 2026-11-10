@@ -22,6 +22,7 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/plugins/migratecmd"
 
 	"github.com/configwire/configwire/account"
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/backups"
 	"github.com/configwire/configwire/envresolve"
 	"github.com/configwire/configwire/eval"
@@ -309,6 +310,11 @@ func checkFlagKeyTaken(app core.App, rec *core.Record) error {
 }
 
 func registerConfigwireHooks(app core.App) {
+	// Durable audit trail: the sdk_keys data-API revoke/unrevoke/update/
+	// delete paths emit rows with the acting superuser. Server-side mints
+	// bypass this request hook and are audited by the handler instead.
+	audit.RegisterHooks(app)
+
 	// Superusers: the last remaining admin cannot be deleted on any
 	// path (custom account endpoint, data API, dashboard, server
 	// saves). The hook is authoritative; deleteAccount keeps a
@@ -589,6 +595,10 @@ func main() {
 		retention.Register(se)
 
 		logstore.Register(se)
+
+		audit.RegisterAPI(se)
+
+		audit.RegisterBackupAudit(se)
 
 		ingest.Register(se)
 

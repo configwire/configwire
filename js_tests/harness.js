@@ -10,30 +10,31 @@ var vm = require("node:vm");
 var fs = require("node:fs");
 var path = require("node:path");
 
-// Script order frozen exactly as configwire/pb_public/index.html:694-711.
+// Script order frozen exactly as configwire/pb_public/index.html.
 // core MUST load first: keys.js:5 and boot.js:5 do `var CW = window.CW`
 // with no `|| {}` fallback, so they throw if window.CW does not exist yet
 // (core.js:7 creates it).
 var FULL_ORDER = Object.freeze([
-  "core.js", // index.html:694
-  "dialog.js", // index.html:695
-  "auth.js", // index.html:696
-  "router.js", // index.html:697
-  "account.js", // index.html:698
-  "scope.js", // index.html:699
-  "drafts.js", // index.html:700
-  "flags.js", // index.html:701
-  "rules.js", // index.html:702
-  "experiments.js", // index.html:703
-  "keys.js", // index.html:704
-  "releases.js", // index.html:705
-  "transfer.js", // index.html:706
-  "stats.js", // index.html:707
-  "json-editor.js", // index.html:708
-  "limits.js", // index.html:709 (boot.js:636-637 wires its save handlers)
-  "backups.js", // index.html:737
-  "boot.js", // index.html:710
-  "update.js", // index.html:711
+  "core.js",
+  "dialog.js",
+  "auth.js",
+  "router.js",
+  "account.js",
+  "scope.js",
+  "drafts.js",
+  "flags.js",
+  "rules.js",
+  "experiments.js",
+  "keys.js",
+  "releases.js",
+  "transfer.js",
+  "stats.js",
+  "json-editor.js",
+  "limits.js",
+  "logs.js",
+  "backups.js",
+  "boot.js",
+  "update.js",
 ]);
 
 var JS_DIR = path.join(__dirname, "..", "pb_public", "js");

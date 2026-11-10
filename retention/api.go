@@ -3,6 +3,7 @@ package retention
 import (
 	"net/http"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/security"
 
@@ -69,6 +70,13 @@ func putRetention(re *core.RequestEvent) error {
 	if err := applyConfig(next); err != nil {
 		return apireq.Internal(re, "retention: failed to apply retention settings", err)
 	}
+	audit.Record(re, audit.Entry{
+		Action: "retention.update", TargetType: "settings",
+		TargetLabel: "retention", Status: http.StatusOK,
+		Detail: map[string]any{
+			"rawDays": next.RawDays, "rollupDays": next.RollupDays,
+		},
+	})
 	return re.JSON(http.StatusOK, toBody(next))
 }
 

@@ -47,6 +47,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/configwire/configwire/audit"
 	"github.com/configwire/configwire/internal/apireq"
 	"github.com/configwire/configwire/limits"
 	"github.com/configwire/configwire/security"
@@ -605,6 +606,10 @@ func (s *server) postRedeem(re *core.RequestEvent) error {
 		return apireq.Internal(re, "sso: failed to issue token", err)
 	}
 	log.Printf("sso: redeemed ticket email=%s", pt.Email)
+	audit.Record(re, audit.Entry{
+		Action: "sso.redeem", TargetType: "account",
+		TargetID: rec.Id, TargetLabel: pt.Email, Status: http.StatusOK,
+	})
 	setSessionCookie(re, token)
 	return re.JSON(http.StatusOK, map[string]any{"ok": true})
 }

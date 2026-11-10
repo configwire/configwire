@@ -97,7 +97,7 @@ Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (relea
 `PUT /api/v1/admin/retention`. `event_daily` is refreshed daily (not only at
 purge): stats read completed days from the rollups and only today from raw
 events, so `approximate:true` appears whenever rollups contribute.
-`CONFIGWIRE_STATS_ROLLUPS=legacy` restores the old raw-window read. Rate limits: global 200 rps effective (min 200, burst 400 ceiling) per IP,
+`CONFIGWIRE_STATS_ROLLUPS=legacy` restores the old raw-window read. Admin actions land in the default-on `audit_log` (365d, `CONFIGWIRE_AUDIT_MAX_DAYS`) and are queryable at `GET /api/v1/admin/audit` (superuser-only). Rate limits: global 200 rps effective (min 200, burst 400 ceiling) per IP,
 fetch 100 / ingest 50 rps per key (`429` carries `Retry-After: 1`).
 Details in [`docs/CONTRACT.md`](docs/CONTRACT.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
 
