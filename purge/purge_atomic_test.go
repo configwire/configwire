@@ -8,12 +8,12 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// TestPurgeFailureRollsBackEverything pins purge atomicity: when a raw
-// delete fails mid-run, the whole purge rolls back — no partial upserts
-// land in event_daily and no raw rows are deleted. Under the old
-// per-row loop this same failure left counted-but-undeleted rows that
-// the next run counted again.
-func TestPurgeFailureRollsBackEverything(t *testing.T) {
+// TestPurgeDeleteFailureKeepsRollupsAndRawRows pins the new crash
+// boundary: the day's rollup commits before the raw delete transaction, so
+// a failed delete rolls back only the deletes — raw rows survive AND the
+// absolute-count bucket stays on disk. A rerun sees the existing bucket,
+// skips the rollup, and deletes the rows without double-counting.
+func TestPurgeDeleteFailureKeepsRollupsAndRawRows(t *testing.T) {
 	app := parityTestApp(t)
 	cutoff := time.Now().UTC()
 	old := cutoff.AddDate(0, 0, -31)
@@ -21,8 +21,12 @@ func TestPurgeFailureRollsBackEverything(t *testing.T) {
 	seedEvent(t, app, "dev", "exposure", "control", old, true)
 	seedEvent(t, app, "dev", "fetch", "", old, true)
 
+	failDelete := true
 	app.OnRecordDelete("events").BindFunc(func(e *core.RecordEvent) error {
-		return errors.New("purge-tx-test: forced delete failure")
+		if failDelete {
+			return errors.New("purge-tx-test: forced delete failure")
+		}
+		return e.Next()
 	})
 
 	if _, err := PurgeOlderThan(app, cutoff); err == nil {
@@ -31,8 +35,35 @@ func TestPurgeFailureRollsBackEverything(t *testing.T) {
 	if got := len(liveIDs(t, app, "events")); got != 3 {
 		t.Fatalf("after failed purge: %d raw events, want all 3 kept", got)
 	}
-	if got := len(liveIDs(t, app, "event_daily")); got != 0 {
-		t.Fatalf("after failed purge: %d rollup rows, want 0 (upsert rolled back)", got)
+	rows := mustAllDaily(t, app)
+	if len(rows) != 2 {
+		t.Fatalf("after failed purge: %d rollup rows, want 2 committed buckets (fetch + exposure)", len(rows))
+	}
+	var fetches, exposures int
+	for _, r := range rows {
+		fetches += r.GetInt("fetches")
+		exposures += r.GetInt("exposures")
+	}
+	if fetches != 2 || exposures != 1 {
+		t.Fatalf("committed bucket counts = %d/%d, want 2/1", fetches, exposures)
+	}
+
+	failDelete = false
+	deleted, err := PurgeOlderThan(app, cutoff)
+	if err != nil {
+		t.Fatalf("rerun PurgeOlderThan: %v", err)
+	}
+	if deleted != 3 {
+		t.Fatalf("rerun deleted = %d, want 3", deleted)
+	}
+	rows = mustAllDaily(t, app)
+	fetches, exposures = 0, 0
+	for _, r := range rows {
+		fetches += r.GetInt("fetches")
+		exposures += r.GetInt("exposures")
+	}
+	if len(rows) != 2 || fetches != 2 || exposures != 1 {
+		t.Fatalf("rerun rollups = %d rows %d/%d, want the same 2 buckets 2/1 (no double-add)", len(rows), fetches, exposures)
 	}
 }
 

@@ -16,7 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tests"
+
+	"github.com/configwire/configwire/purge"
 )
 
 // flushTestApp wraps flushBenchApp (defined in batcher_bench_test.go);
@@ -189,5 +192,53 @@ func TestFlushChunkTxnFailureRetriesRows(t *testing.T) {
 	}
 	if len(chunks) != 2 || chunks[0] != 250 || chunks[1] != 250 {
 		t.Fatalf("chunk sizes = %v, want [250 250]", chunks)
+	}
+}
+
+// TestFlushLateFoldFailureRollsBackRaw pins the atomicity fix: when a
+// completed-day event cannot be folded into event_daily, its raw row must
+// roll back too - a raw-only commit would be invisible to stats until purge.
+func TestFlushLateFoldFailureRollsBackRaw(t *testing.T) {
+	app := flushTestApp(t)
+
+	daily, err := app.FindCollectionByNameOrId("event_daily")
+	if err != nil {
+		daily = core.NewBaseCollection("event_daily")
+		daily.Fields.Add(
+			&core.DateField{Name: "day"},
+			&core.TextField{Name: "env"},
+			&core.TextField{Name: "flag"},
+			&core.TextField{Name: "variant"},
+			&core.NumberField{Name: "version"},
+			&core.NumberField{Name: "fetches"},
+			&core.NumberField{Name: "exposures"},
+		)
+		if err := app.Save(daily); err != nil {
+			t.Fatalf("save event_daily: %v", err)
+		}
+	}
+	state, err := app.FindCollectionByNameOrId("rollup_state")
+	if err != nil {
+		state = core.NewBaseCollection("rollup_state")
+		state.Fields.Add(&core.TextField{Name: "key"}, &core.DateField{Name: "lastDay"})
+		if err := app.Save(state); err != nil {
+			t.Fatalf("save rollup_state: %v", err)
+		}
+	}
+	yesterday := purge.DayBucket(time.Now().UTC().AddDate(0, 0, -1))
+	mark := core.NewRecord(state)
+	mark.Set("key", "global")
+	mark.Set("lastDay", yesterday)
+	if err := app.Save(mark); err != nil {
+		t.Fatalf("save rollup state: %v", err)
+	}
+	if err := app.Delete(daily); err != nil {
+		t.Fatalf("drop event_daily: %v", err)
+	}
+
+	bt := NewBatcher(app)
+	bt.flush([]StoredEvent{{Kind: "fetch", Variant: "control", Ts: yesterday.Add(12 * time.Hour), Version: 1}})
+	if got := countFlushEvents(t, app); got != 0 {
+		t.Fatalf("events after a failed late fold = %d, want 0 (raw save must roll back)", got)
 	}
 }

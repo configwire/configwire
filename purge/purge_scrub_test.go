@@ -61,6 +61,10 @@ func scrubTestApp(t *testing.T) *tests.TestApp {
 		`{"type":"number","name":"fetches"}`,
 		`{"type":"number","name":"exposures"}`,
 	)
+	mkCol("rollup_state",
+		`{"type":"text","name":"key","required":true}`,
+		`{"type":"date","name":"lastDay"}`,
+	)
 	return app
 }
 

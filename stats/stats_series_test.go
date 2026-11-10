@@ -9,8 +9,8 @@ import (
 	"github.com/configwire/configwire/purge"
 )
 
-// seriesWindow mirrors the handler's disjoint window math for one fixed now:
-// cutoff = now - days*24h, horizon = DayBucket(now-30d),
+// seriesWindow mirrors the handler's disjoint window math for one fixed now
+// in auto mode: cutoff = now - days*24h, horizon = DayBucket(now),
 // cutoffDay = DayBucket(cutoff), eventCutoff = max(cutoff, horizon).
 func seriesWindow(t *testing.T, now time.Time, days int) (cutoff, cutoffDay, horizon, eventCutoff time.Time) {
 	t.Helper()
@@ -175,21 +175,23 @@ func TestSeriesCrashWindowDisjoint(t *testing.T) {
 	}
 }
 
-func TestSeriesShortWindowRollupsZero(t *testing.T) {
+func TestSeriesShortWindowCompletedDays(t *testing.T) {
 	now := time.Date(2026, 9, 28, 15, 4, 5, 0, time.UTC)
 	_, cutoffDay, horizon, eventCutoff := seriesWindow(t, now, 7)
 	rows := []EventRow{{EnvID: "e1", Kind: "fetch", Ts: now}}
 	buckets := []purge.Rollup{
 		{Day: horizon.AddDate(0, 0, -1), EnvID: "e1", Variant: "control", Fetches: 7, Exposures: 9},
+		{Day: cutoffDay.AddDate(0, 0, -1), EnvID: "e1", Variant: "control", Fetches: 50, Exposures: 60},
+		{Day: horizon, EnvID: "e1", Variant: "control", Fetches: 100, Exposures: 100},
 	}
 	rm := BuildRollupSeries(buckets, "e1", cutoffDay, horizon)
-	if len(rm) != 0 {
-		t.Errorf("7d rollup map = %v, want empty (cutoffDay > history)", rm)
+	if len(rm) != 1 {
+		t.Errorf("7d rollup map = %v, want only yesterday (pre-cutoff and horizon-day excluded)", rm)
 	}
 	merged := MergeSeries(BuildEventSeries(rows, "e1", eventCutoff), rm, SeriesDays(cutoffDay, now))
 	sf, se := sumSeries(merged)
-	if sf != 1 || se != 0 {
-		t.Errorf("7d merged sums = %d/%d, want 1/0", sf, se)
+	if sf != 8 || se != 9 {
+		t.Errorf("7d merged sums = %d/%d, want 8/9 (today raw + yesterday rollup)", sf, se)
 	}
 }
 

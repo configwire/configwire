@@ -120,18 +120,21 @@ func TestPurgeChunked(t *testing.T) {
 		}
 	}
 
-	// Rollup-before-delete, single-counted: exactly one bucket row with
-	// all 5000 fetches merged onto it.
+	// Rollup-before-delete, single-counted: the doomed day has exactly one
+	// bucket row carrying all 5000 fetches. Kept rows on other completed
+	// days may also have been rolled up by EnsureRollups, so match by day.
 	oldDay := DayBucket(old)
-	rows := mustAllDaily(t, app)
-	if len(rows) != 1 {
-		t.Fatalf("event_daily rows = %d, want exactly 1 merged bucket", len(rows))
+	var doomedRows []*core.Record
+	for _, r := range mustAllDaily(t, app) {
+		if DayBucket(r.GetDateTime("day").Time()).Equal(oldDay) {
+			doomedRows = append(doomedRows, r)
+		}
 	}
-	if got := rows[0].GetInt("fetches"); got != nDoomed {
+	if len(doomedRows) != 1 {
+		t.Fatalf("doomed-day event_daily rows = %d, want exactly 1 merged bucket", len(doomedRows))
+	}
+	if got := doomedRows[0].GetInt("fetches"); got != nDoomed {
 		t.Fatalf("merged fetches = %d, want %d (single-counted)", got, nDoomed)
-	}
-	if d := rows[0].GetDateTime("day").Time(); !DayBucket(d).Equal(oldDay) {
-		t.Fatalf("bucket day = %v, want %v", d, oldDay)
 	}
 
 	deleted2, err := PurgeOlderThan(app, cutoff)

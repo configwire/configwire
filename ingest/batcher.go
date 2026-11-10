@@ -1,12 +1,23 @@
 package ingest
 
 import (
+	"errors"
 	"log"
 	"sync"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
+
+	"github.com/configwire/configwire/purge"
 )
+
+// lateFoldError marks an AddLateRollup failure. The chunk transaction must
+// roll back the raw save with it: committing a completed-day row whose count
+// was never folded hides that row from stats until purge deletes it.
+type lateFoldError struct{ err error }
+
+func (e *lateFoldError) Error() string { return "late rollup fold: " + e.err.Error() }
+func (e *lateFoldError) Unwrap() error { return e.err }
 
 // StoredEvent is one validated event ready for persistence. It carries IDs,
 // never raw PII (see hash.go). Flag is the flags record ID scoped to the
@@ -180,7 +191,10 @@ func (b *Batcher) flush(items []StoredEvent) {
 		if err != nil {
 			n = 0
 			for _, it := range chunk {
-				if serr := saveStoredEvent(b.app, col, it); serr != nil {
+				serr := b.app.RunInTransaction(func(txApp core.App) error {
+					return saveStoredEvent(txApp, col, it)
+				})
+				if serr != nil {
 					n++
 					log.Printf("ingest: save event failed (kind=%s variant=%s): %v", it.Kind, it.Variant, serr)
 				}
@@ -208,6 +222,10 @@ func (b *Batcher) flushChunk(col *core.Collection, chunk []StoredEvent) (int, er
 	if err := b.app.RunInTransaction(func(txApp core.App) error {
 		for _, it := range chunk {
 			if serr := saveStoredEvent(txApp, col, it); serr != nil {
+				var foldErr *lateFoldError
+				if errors.As(serr, &foldErr) {
+					return serr
+				}
 				failed++
 				log.Printf("ingest: save event failed (kind=%s variant=%s): %v", it.Kind, it.Variant, serr)
 			}
@@ -237,7 +255,27 @@ func saveStoredEvent(app core.App, col *core.Collection, it StoredEvent) error {
 	rec.Set("country", it.Country)
 	rec.Set("version", it.Version)
 	rec.Set("ts", it.Ts)
-	return app.Save(rec)
+	if err := app.Save(rec); err != nil {
+		return err
+	}
+	// A completed day's raw rows are never read by stats again; fold the
+	// counts in now, in this same transaction, so the late row is neither
+	// lost between a day's rebuild and its high-water mark nor left to be
+	// purged uncounted.
+	if it.Ts.IsZero() || !purge.DayBucket(it.Ts).Before(purge.DayBucket(time.Now().UTC())) {
+		return nil
+	}
+	if err := purge.AddLateRollup(app, purge.EventRow{
+		EnvID:   it.EnvID,
+		Flag:    it.Flag,
+		Kind:    it.Kind,
+		Variant: it.Variant,
+		Version: it.Version,
+		Ts:      it.Ts,
+	}); err != nil {
+		return &lateFoldError{err: err}
+	}
+	return nil
 }
 
 // SplitBatch bounds flush work; size <= 0 returns items as a single chunk.

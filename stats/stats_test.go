@@ -404,32 +404,33 @@ func TestMergeStaleRollupExcluded(t *testing.T) {
 	}
 }
 
-func TestMergeShortWindowExcludesRollups(t *testing.T) {
-	// ?since=7d: cutoff is newer than the horizon, so no rollup day can
-	// satisfy day >= cutoffDay AND day < horizon; events stay exact.
+func TestMergeShortWindowIncludesCompletedDays(t *testing.T) {
+	// ?since=7d: completed days inside the window come from rollups; today
+	// stays raw and the horizon day itself never enters the rollup side.
 	now := time.Now().UTC()
 	cutoff := now.Add(-7 * 24 * time.Hour)
 	horizon := HorizonFor(now)
 	cutoffDay := purge.DayBucket(cutoff)
 	eventCutoff := EventCutoffFor(cutoff, horizon)
-	if !eventCutoff.Equal(cutoff) {
-		t.Errorf("7d eventCutoff = %v, want untouched cutoff %v", eventCutoff, cutoff)
+	if !eventCutoff.Equal(horizon) {
+		t.Errorf("7d eventCutoff = %v, want today's horizon %v (raw side is today only)", eventCutoff, horizon)
 	}
 	rows := []EventRow{{EnvID: "e1", Kind: "fetch", Ts: now}}
 	buckets := []purge.Rollup{
 		{Day: horizon.AddDate(0, 0, -1), EnvID: "e1", Variant: "control", Fetches: 7, Exposures: 9},
+		{Day: horizon, EnvID: "e1", Variant: "control", Fetches: 100, Exposures: 100},
 	}
 	stEvents := Aggregate(rows, "e1", eventCutoff)
 	stRollups := AggregateRollups(buckets, "e1", cutoffDay, horizon)
-	if TotalFor(stRollups) != 0 {
-		t.Errorf("7d rollups = %+v, want zeros", stRollups)
+	if stRollups.Fetches != 7 || stRollups.Exposures != 9 {
+		t.Errorf("7d rollups = %+v, want {7 9} (boundary day excluded)", stRollups)
 	}
-	if ApproximateFor(TotalFor(stRollups)) {
-		t.Errorf("7d events-only window must stay exact (approximate:false)")
+	if !ApproximateFor(TotalFor(stRollups)) {
+		t.Errorf("7d window with rollup days must be approximate")
 	}
 	merged := MergeStats(stEvents, stRollups)
-	if merged.Fetches != 1 || merged.Exposures != 0 {
-		t.Errorf("7d merged = %+v, want {1 0}", merged)
+	if merged.Fetches != 8 || merged.Exposures != 9 {
+		t.Errorf("7d merged = %+v, want {8 9}", merged)
 	}
 }
 
@@ -442,8 +443,20 @@ func TestHorizonForIsUTCMidnight(t *testing.T) {
 	if h.Hour() != 0 || h.Minute() != 0 || h.Second() != 0 || h.Nanosecond() != 0 {
 		t.Errorf("horizon = %v, want UTC midnight", h)
 	}
+	want := purge.DayBucket(now)
+	if !h.Equal(want) {
+		t.Errorf("horizon = %v, want today's DayBucket = %v", h, want)
+	}
+}
+
+func TestLegacyHorizonForIsRawWindow(t *testing.T) {
+	now := time.Now().UTC()
+	h := LegacyHorizonFor(now)
+	if h.Location() != time.UTC || h.Hour() != 0 || h.Minute() != 0 || h.Second() != 0 || h.Nanosecond() != 0 {
+		t.Errorf("legacy horizon = %v, want UTC midnight", h)
+	}
 	want := purge.DayBucket(now.AddDate(0, 0, -purge.RawRetentionDays))
 	if !h.Equal(want) {
-		t.Errorf("horizon = %v, want DayBucket(now-30d) = %v", h, want)
+		t.Errorf("legacy horizon = %v, want DayBucket(now-30d) = %v", h, want)
 	}
 }

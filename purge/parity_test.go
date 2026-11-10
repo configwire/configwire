@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tests"
 )
@@ -74,7 +75,40 @@ func parityTestApp(t *testing.T) *tests.TestApp {
 		`{"type":"number","name":"fetches"}`,
 		`{"type":"number","name":"exposures"}`,
 	)
+	mkCol("rollup_state",
+		`{"type":"text","name":"key","required":true}`,
+		`{"type":"date","name":"lastDay"}`,
+	)
 	return app
+}
+
+// markRollupsReady persists lastDay=yesterday(now) so EnsureRollups is a
+// no-op and a test can drive only the raw/stale delete paths.
+func markRollupsReady(t *testing.T, app *tests.TestApp, now time.Time) {
+	t.Helper()
+	col, err := app.FindCollectionByNameOrId("rollup_state")
+	if err != nil {
+		t.Fatalf("find rollup_state: %v", err)
+	}
+	rec := core.NewRecord(col)
+	rec.Set("key", "global")
+	rec.Set("lastDay", DayBucket(now).AddDate(0, 0, -1))
+	if err := app.Save(rec); err != nil {
+		t.Fatalf("save rollup_state: %v", err)
+	}
+}
+
+// rollupStateDay reads the persisted high-water mark (zero when absent).
+func rollupStateDay(t *testing.T, app *tests.TestApp) time.Time {
+	t.Helper()
+	recs, err := app.FindRecordsByFilter("rollup_state", "key = {:key}", "", 1, 0, dbx.Params{"key": "global"})
+	if err != nil {
+		t.Fatalf("read rollup_state: %v", err)
+	}
+	if len(recs) == 0 {
+		return time.Time{}
+	}
+	return recs[0].GetDateTime("lastDay").Time()
 }
 
 func seedEvent(t *testing.T, app *tests.TestApp, env, kind, variant string, ts time.Time, setTs bool) string {
@@ -184,7 +218,8 @@ func TestPurgeMatchesOracleDeletionSet(t *testing.T) {
 	idDailyFresh := seedDaily(t, app, cutoff.AddDate(0, 0, -1), true, "e1", "", 3, 1)
 	idDailyZero := seedDaily(t, app, time.Time{}, false, "e1", "", 3, 1)
 	// Pre-existing bucket for the doomed (oldDay,e1,"") key: the purge
-	// must ADD onto it, never duplicate it.
+	// keeps it unchanged and never re-adds the raw counts, so the bucket
+	// cannot double-count.
 	seedDaily(t, app, oldDay, true, "e1", "", 10, 5)
 
 	wantEvents, wantDaily := oracleDeleteSet(t, app, cutoff)
@@ -239,9 +274,9 @@ func TestPurgeMatchesOracleDeletionSet(t *testing.T) {
 		t.Fatalf("stale rollup survived")
 	}
 
-	// Rollup-before-delete: doomed rows landed in event_daily, merged onto
-	// the pre-existing bucket (10 fetches + 2 from idOld/idNoFlag = 12,
-	// exposures 5).
+	// A day that already has event_daily rows is never rolled up again:
+	// the pre-existing bucket keeps its counts (10/5) even though raw rows
+	// for the same key are being deleted, so counters cannot double-add.
 	var matches []*core.Record
 	for _, r := range mustAllDaily(t, app) {
 		if r.GetDateTime("day").Time().UTC().Format("2006-01-02") == oldDay.Format("2006-01-02") &&
@@ -250,13 +285,13 @@ func TestPurgeMatchesOracleDeletionSet(t *testing.T) {
 		}
 	}
 	if len(matches) != 1 {
-		t.Fatalf("want exactly 1 row for the (day,e1,\"\") key, got %d (upsert must find-or-create)", len(matches))
+		t.Fatalf("want exactly 1 row for the (day,e1,\"\") key, got %d", len(matches))
 	}
-	if got := matches[0].GetInt("fetches"); got != 12 {
-		t.Fatalf("merged fetches = %d, want 12 (10 pre-existing + 2 rolled)", got)
+	if got := matches[0].GetInt("fetches"); got != 10 {
+		t.Fatalf("pre-existing fetches = %d, want 10 (existing rollup is kept, never re-added)", got)
 	}
 	if got := matches[0].GetInt("exposures"); got != 5 {
-		t.Fatalf("merged exposures = %d, want 5 (untouched)", got)
+		t.Fatalf("pre-existing exposures = %d, want 5 (untouched)", got)
 	}
 
 	// Re-run converges: crash-semantic second run finds nothing to delete
@@ -281,37 +316,4 @@ func mustAllDaily(t *testing.T, app *tests.TestApp) []*core.Record {
 		t.Fatalf("list event_daily: %v", err)
 	}
 	return recs
-}
-
-// TestUpsertFindOrCreateIndexed seeds a collision directly against the
-// (day,env,variant) key and proves the indexed upsert adds onto the
-// existing row instead of inserting a duplicate.
-func TestUpsertFindOrCreateIndexed(t *testing.T) {
-	app := parityTestApp(t)
-	day := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
-	seedDaily(t, app, day, true, "e9", "v", 2, 1)
-	if err := upsertRollups(app, []Rollup{{
-		Day: day, EnvID: "e9", Variant: "v", Fetches: 3, Exposures: 4,
-	}}); err != nil {
-		t.Fatalf("upsertRollups: %v", err)
-	}
-	rows := mustAllDaily(t, app)
-	if len(rows) != 1 {
-		t.Fatalf("upsert created a duplicate row: %d rows for one key", len(rows))
-	}
-	if rows[0].GetInt("fetches") != 5 || rows[0].GetInt("exposures") != 5 {
-		t.Fatalf("upsert = fetches=%d exposures=%d, want 5/5",
-			rows[0].GetInt("fetches"), rows[0].GetInt("exposures"))
-	}
-	// Empty-variant key (stores ''): found, not duplicated.
-	seedDaily(t, app, day, true, "e9", "", 1, 0)
-	if err := upsertRollups(app, []Rollup{{
-		Day: day, EnvID: "e9", Variant: "", Fetches: 2,
-	}}); err != nil {
-		t.Fatalf("upsertRollups empty-variant: %v", err)
-	}
-	rows = mustAllDaily(t, app)
-	if len(rows) != 2 {
-		t.Fatalf("empty-variant upsert duplicated: %d rows, want 2", len(rows))
-	}
 }

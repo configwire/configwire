@@ -139,12 +139,28 @@ binary plus operator procedure.
   - both windows tunable `1..1825` days with the invariant
     `rollupDays >= rawDays`; rollups carry counts only, no PII
     survives past the raw window.
+  - `event_daily` is refreshed daily by the `EnsureRollups` walk (a
+    resumable `rollup_state.lastDay` high-water mark), not only when a
+    purge deletes raw rows; stats read completed days from it and only
+    today from raw `events`. A raw row that arrives with a `ts` on an
+    already-rolled day is folded into that day's bucket by `AddLateRollup`
+    in the same transaction as the raw save, so a backdated event is never
+    dropped between the rollup and its high-water mark. Rows that were
+    already in `events` before this upgrade for a day older than the raw
+    window are not re-folded when `event_daily` already holds rows for that
+    day (the first purge deletes them): re-folding could double-count a
+    crash-window row the old purge had already rolled, so the no-double-count
+    choice is deliberate. Ref:
+    `configwire/purge/purge.go` (`EnsureRollups`, `RollupDay`,
+    `AddLateRollup`).
     - Event identity (`bucket` plus `country`) nulls on the 48h horizon
     (`ScrubIdentitiesOlderThan` past `now - 48h`, rows kept), and
      the daily ticker plus the manual purge route both run
-     scrub → rollup+purge in that order. Ref:
+     `EnsureRollups` → scrub → purge in that order (a rollup error
+     aborts before any delete). Ref:
      `configwire/purge/purge.go` (48h bound, `ScrubCutoff`),
-     (`ScrubIdentitiesOlderThan`), (ticker wiring, manual route).
+     (`ScrubIdentitiesOlderThan`), (`EnsureRollups`, ticker wiring,
+     manual route).
 - Release author and note are free text and land in releases rows, server logs, and backups (see `BACKUPS.md` section 7). Never put email, phone, or other PII in note or author. Prefer an opaque operator id (for example `op-114`) plus a short change reason. Note the publish path defaults author to the superuser email when present, so use a role account where policy requires it.
 - Backup residency is operator controlled: the SQLite file, the local `backups/` dir, and the S3 bucket and region you configure (`BACKUPS.md` sections 4 and 7). Keep backup and record-upload buckets separate.
 
@@ -273,6 +289,12 @@ binary plus operator procedure.
 - `sqlite3 journal_mode` == `wal` (live re-verified).
 - Ingest lag spot: 100-batch → countable in **636ms** (≤2s bound).
 - Post-load matrix: publish `200` (v2), fetch `304`, stats `200`.
+- Stats read path (completed days from `event_daily`, today from raw):
+  benchmark `BenchmarkStatsRollupRead` on a seeded 1M raw rows + 90 days
+  of rollups measured p95 ≈ **10.65ms/op**, ~6.26MB/op on an M1 Pro
+  (2026-11-10); the raw query is scoped to today, so it does not grow
+  with the 30-day raw window. `CONFIGWIRE_STATS_ROLLUPS=legacy` restores
+  the old raw-window read.
 - Post-burst 30s at 100rps: 3001×`200`, 0×`429`, 0×`500` (no stuck state).
 - Runner: **k6** (`k6 --version` → v2.3.0; installed via brew for the
   gate). No `hey` fallback shipped — k6 was present.
@@ -299,9 +321,10 @@ binary plus operator procedure.
     rollups `now - rollupDays`). Event identity (`bucket` plus
     `country`)
    scrubs on a separate 48h bound past `ts` (rows kept, counts
-   untouched, section 3); the daily ticker
-   and the manual purge route both run scrub → rollup+purge
-   in that order. Align backup rotation with the configured
+   untouched, section 3); `event_daily` is refreshed daily by the
+   `EnsureRollups` walk (not only at purge), and the daily ticker plus the
+   manual purge route run `EnsureRollups` → scrub → purge in that order.
+   Align backup rotation with the configured
   windows: backup zips are full dumps and a restore reintroduces
   rows the purge already deleted. Ref:
   `configwire/retention/api.go`,

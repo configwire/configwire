@@ -142,6 +142,15 @@ with the backup window: raw `events` default 30d, `event_daily`
 rollups default 90d, each tunable `1..1825` with
 `rollupDays >= rawDays` via `CONFIGWIRE_RAW_RETENTION_DAYS` /
 `CONFIGWIRE_ROLLUP_RETENTION_DAYS` (`configwire/retention/retention.go` (`loadDefaultsFromEnv`)).
+`event_daily` is refreshed every day by the rollup walk, not only when a
+purge deletes raw rows; stats read completed days from the rollups and
+only today from raw events. A raw row backdated into an already-rolled
+day is folded into that day's rollup at ingest, so the backfill boundary
+does not lose it. The one exception is a row already stored before this
+upgrade for a day older than the raw window: when `event_daily` already
+holds rows for that day it is not re-folded (the no-double-count choice),
+so keep backups across the upgrade. Keep backups
+for the retention window you may need to restore.
 Backup zips are full dumps: a restore reintroduces rows the purge
 already deleted, so `cronMaxKeep` must cover the window you may need
 to restore. See `SECURITY.md` section 10 before any `migrate down`.
@@ -158,10 +167,10 @@ export CONFIGWIRE_PURGE=off
 MUST: exactly 1 process runs with `CONFIGWIRE_PURGE` enabled, every
 other process sets it to `off` (or `0`/`false`). The daily purge
 ticker (`configwire/purge/purge.go` (`purgeEnabled`, `Register`))
-scrubs identities, rolls up raw events into `event_daily`, and prunes
-salts per process. Two tickers on the same DB roll up the same raw
-rows twice, double-counting `event_daily` fetches/exposures and racing
-the delete. The manual `POST /api/v1/admin/maintenance/purge` route
+runs the rollup walk, scrubs identities, and purges raw/server-log
+rows. Two tickers on the same DB duplicate the rollup walk (its
+absolute-count rewrite stays idempotent) but race the deletes, so keep
+exactly one. The manual `POST /api/v1/admin/maintenance/purge` route
 stays mounted everywhere regardless.
 
 Skip it and nodes double-count rollups on every tick.

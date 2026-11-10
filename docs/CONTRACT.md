@@ -563,7 +563,7 @@ SDK-key-only or unauth then `401`.
 Success `200`:
 
 ```json
-{"fetches": 3, "exposures": 2, "perVariant": {"control": 1, "treatment": 1}, "perVersion": {"1": 3}, "version": 1, "echo": {"env": "dev", "flag": "launch_flag", "since": "90d", "sinceDays": 90, "cutoff": "2026-06-25T04:08:22Z", "horizon": "90d", "rollupHorizon": "2026-08-24T00:00:00Z"}, "flagFound": true, "total": 5, "rates": {"control": 0.5, "treatment": 0.5}, "sources": {"events": 2, "rollups": 3}, "approximate": true}
+{"fetches": 3, "exposures": 2, "perVariant": {"control": 1, "treatment": 1}, "perVersion": {"1": 3}, "version": 1, "echo": {"env": "dev", "flag": "launch_flag", "since": "90d", "sinceDays": 90, "cutoff": "2026-06-25T04:08:22Z", "horizon": "90d", "rollupHorizon": "2026-09-23T00:00:00Z"}, "flagFound": true, "total": 5, "rates": {"control": 0.5, "treatment": 0.5}, "sources": {"events": 2, "rollups": 3}, "approximate": true}
 ```
 
 - `?flag=<key>` filters counts by flag relation (key resolution
@@ -593,8 +593,10 @@ Success `200`:
   carry the EFFECTIVE window after the 90d clamp; `cutoff` is the
   UTC RFC3339 window start (now-UTC minus days); `horizon` keeps the
   human-readable window label (same string as `since`, for example
-  `"7d"`); `rollupHorizon` is the UTC-midnight RFC3339 split between
-  raw events and pre-purge daily rollups.
+  `"7d"`); `rollupHorizon` is the UTC-midnight RFC3339 split actually
+  used between raw events and completed-day rollups: today's midnight in
+  auto mode, or the historic `DayBucket(now - rawDays)` when stats falls
+  back to the legacy raw window (see the flag below).
 - `total` is fetches + exposures, never rounded.
 - `rates` is per-variant exposure shares (`perVariant[v] /
   exposures`, display-math only, counts never rounded);
@@ -604,13 +606,22 @@ Success `200`:
   windows are summed-but-flagged-approximate (rollup counters can
   carry a crash-window overshoot, so merged windows never claim
   exactness); events-only windows are exact (`approximate: false`).
-- Disjoint-merge rule: `horizon = DayBucket(now - 30d)` (UTC midnight,
-  the same day grain purge rolls up into). Raw events count when
-  `ts >= max(cutoff, horizon)`; rollup buckets count when
-  `cutoffDay <= day < horizon` (exactly-at-cutoff kept, boundary day
+- Read split: completed days come from `event_daily`, today from raw
+  `events`. In auto mode (default) `horizon = DayBucket(now)` (today's UTC
+  midnight, the same day grain the daily rollup walk writes). Raw events
+  count when `ts >= max(cutoff, horizon)`; rollup buckets count when
+  `cutoffDay <= day < horizon` (exactly-at-cutoff kept, the horizon day
   stays raw-side). Disjoint by construction, so a crash-window row
   present in BOTH sources still counts once (plus `approximate: true`
-  marks the taint).
+  marks the taint). Completed days are refreshed daily by the rollup walk,
+  not only at purge time (section 7).
+- `CONFIGWIRE_STATS_ROLLUPS=auto|legacy` (default `auto`, case-insensitive
+  and trimmed; any invalid value means `auto`). `legacy` always uses
+  `horizon = DayBucket(now - rawDays)` and reads history from raw events,
+  reproducing the pre-rollup numbers. Auto falls back to the same legacy
+  horizon automatically while the rollup backfill is incomplete
+  (`rollup_state.lastDay < yesterday`), so stats never reads a partially
+  rolled window. `echo.rollupHorizon` reports whichever split was used.
 - `series` ("series"): additive daily breakdown alongside the frozen keys, shape `series: [{"day": "2026-09-21", "fetches": 2, "exposures": 1}]`. Dense zero-filled chronological over `SeriesDays`, day grain is `purge.DayBucket` UTC `YYYY-MM-DD`, length covers the since window. Disjoint rule: events `ts >= max(cutoff, horizon)`, rollups `cutoffDay <= day < horizon`, boundary day stays raw-side. Series sums equal totals (`fetches`/`exposures`); `approximate`/`sources` unchanged. Additive-compat: old clients ignore unknown `"series"`. Ref: `configwire/stats/stats_series.go` (`SeriesPoint`, `SeriesDays`, disjoint rule). Each point also carries `versions`: per-day fetch counts by fetched release version (exposures have no version), with `sum(versions)==fetches` per point; JSON `map[int]int` marshals with string keys; zero-fetch days render `versions:{}` (never null).
 - `since` grammar: `?since=<N>d`, absent/blank means 7d default,
   `N > 90` clamped to 90d (never an error), `N < 1` or wrong shape
@@ -621,12 +632,12 @@ Success `200`:
   disambiguates a slug shared by several projects (`400` ambiguous
   without it).
 - Aggregation is over indexed filters (env + ts/day, plus the stored
-  flag relation when `?flag=` is present): `loadRows` selects events by
-  env and ts window, `loadRollups` selects `event_daily` by env and day
-  window; the frozen `Aggregate`/`AggregateRollups` helpers re-apply the
-  same predicates in-Go. Flag join uses the once-per-request stored
-  flag ID (resolved once, never re-resolved per row/bucket), so
-  renamed/orphaned flags keep their history.
+  flag relation when `?flag=` is present): `loadRows` selects today's
+  events by env and `ts >= horizon`, `loadRollups` selects `event_daily`
+  by env and the day window; the frozen `Aggregate`/`AggregateRollups`
+  helpers re-apply the same predicates in-Go. Flag join uses the
+  once-per-request stored flag ID (resolved once, never re-resolved per
+  row/bucket), so renamed/orphaned flags keep their history.
 
 ## 6. Stream — `GET /api/v1/stream` (canonical) + `GET /api/v1/env/{env}/stream` backward-compatible
 
@@ -707,12 +718,16 @@ is the raw-events cutoff (`now - rawDays`, UTC RFC3339). Scrub nulls
 identity on events with `ts` strictly before `now - 48h` and keeps
 every row (counts, env, kind, variant, version, `ts` untouched) so
 later rollups still count them. Empty tables then `200` with
-`deleted: 0, scrubbed: 0`. A daily process-local ticker (boot run,
-then every 23-25h) runs scrub → purge with the same
-dynamic cutoffs. Ref: `:195-199` (`ScrubCutoff`), `:223-269`
-(`ScrubIdentitiesOlderThan`), `:271-310` (`CountScrubOlderThan`,
-dry-run path). Set `CONFIGWIRE_PURGE=off` (or `0`/`false`) to disable the
-ticker on a node; the manual route stays mounted. Ref: `:753-764`.
+`deleted: 0, scrubbed: 0`. The daily process-local ticker (boot run,
+then every 23-25h) runs `EnsureRollups` → scrub → purge → server-log
+purge with the same dynamic cutoffs, and aborts the run on any rollup
+error before deleting raw rows. The live manual route runs the same
+rollup-then-purge order (the dry-run route never writes and never rolls
+up, so it stays write-free). Ref: `configwire/purge/purge.go`
+(`ScrubCutoff`, `ScrubIdentitiesOlderThan`, `CountScrubOlderThan`,
+`EnsureRollups`, `PurgeOlderThan`, `dailyTicker`). Set
+`CONFIGWIRE_PURGE=off` (or `0`/`false`) to disable the ticker on a node;
+the manual route stays mounted.
 
 ## 8. Limits admin — `GET/PUT /api/v1/admin/limits`
 
@@ -820,20 +835,24 @@ fatal on serve. Ref: `configwire/retention/retention.go`
 
 Cutoff is strictly-older-than
 (`ts` before cutoff deleted, exactly-equal kept, zero-ts kept).
-Purge runs cursor-paged (2000 rows per short transaction, ordered by
-`(ts, id)` for raw events and `(day, id)` for stale rollups): each raw
-page is rolled up (that page's rows only) then deleted inside the same
-page transaction — rollup-before-delete per page, never one giant
-transaction — and stale daily rows are deleted page by page the same
-way.
-Upserts are bounded the same way (one page per transaction; a
-high-cardinality upsert splits into sub-batches instead of widening the
-transaction). Crash semantic is per-chunk atomic plus rerun convergence:
-a crash between pages leaves committed pages on disk and rolls the
-in-flight page back whole, so a re-run walks past the survivors and
-finishes them — already-rolled rows are gone, counters never double-add,
-and a clean re-run converges to `deleted: 0`. Ref: `configwire/purge/purge.go`
-(package doc) for the crash semantic, `PurgeOlderThan` for the paging.
+Completed days are rolled into `event_daily` every day by
+`EnsureRollups`: a persisted high-water mark (`rollup_state.lastDay`)
+walks `max(DayBucket(now - rawDays), lastDay + 1)` through yesterday, one
+absolute-count rewrite per day, so an interrupted backfill resumes and a
+re-run is idempotent. That is why `event_daily` is current for completed
+days even when purge has not run yet. Purge deletes cursor-paged (2000
+rows per short transaction, ordered by `(ts, id)` for raw events and
+`(day, id)` for stale rollups): the first page that reaches a doomed day
+rolls that whole day up first (unless `event_daily` already has rows for
+it), then deletes page by page; stale daily rows are deleted the same
+way. Raw storage retention is unchanged.
+Crash semantic is per-day/per-page atomic plus rerun convergence: the
+rollup walk commits one day at a time; a crash between a rollup and its
+raw-page deletes leaves rollups on disk and the re-run skips the rollup,
+deletes the rows, and converges to `deleted: 0` on a clean re-run.
+Counters never double-add. Ref: `configwire/purge/purge.go`
+(package doc) for the crash semantic, `RollupDay`/`EnsureRollups` for the
+rollup walk and `PurgeOlderThan` for the paging.
 
 ## 12. Cloud SSO (tenant side)
 

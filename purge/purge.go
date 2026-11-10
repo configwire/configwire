@@ -1,27 +1,43 @@
-// Package purge enforces the compliance retention policy:
-// raw events die at 30d, daily aggregates live to 90d.
+// Package purge owns the compliance retention policy and the daily
+// rollup state: raw events die at 30d, daily aggregates live to 90d.
 //
-// Rollup-before-delete runs in the SAME operation: rows strictly older
-// than the cutoff are first aggregated into event_daily upserts keyed by
-// (day, env, flag, variant, version), then the raw rows are deleted. Stale
-// event_daily rows older than 90d (cutoff minus RollupRetentionDays minus
-// RawRetentionDays) are deleted too. Raw releases/rollups collections are
-// never touched — events only.
+// ROLLUP WALK: EnsureRollups advances a persisted high-water mark
+// (rollup_state.lastDay) one completed UTC day at a time, from
+// now-RawDays up to yesterday. RollupDay rewrites one day's event_daily
+// rows from the raw rows still on disk with ABSOLUTE counts (delete the
+// day's buckets, then save one row per (env, flag, variant, version)), so
+// re-running a day is idempotent. The day's rollup and its lastDay update
+// commit in one transaction, so a late row either lands in the rebuilt day
+// or sees the advanced mark — never neither.
 //
-// CRASH SEMANTIC: each page commits atomically in its own short
-// transaction — raw pages as (rollup upserts of that page's rows +
-// deletes of those rows), stale-rollup pages as (deletes of that page's
-// rows) — so a crash or a mid-run failure can neither lose data nor
-// double-count: the aborted page rolls back whole (its rollup never
-// becomes visible without its deletes), committed pages stay on disk, and
-// a re-run walks past them via the same (ts,id)/(day,id) cursor and
-// finishes the rest. Already-rolled rows are gone, so counters never
-// double-add. Rollup-before-delete order is preserved inside every page
-// transaction. The (day,env,flag,variant,version) KEY stays idempotent
-// (one row per key, never duplicates); re-running the purge converges
-// (second run finds nothing to delete). On error PurgeOlderThan returns
-// (0, err) even though earlier pages may already be committed — rerun to
-// converge.
+// LATE ROWS: a backdated event whose day is already rolled is folded in
+// additively by AddLateRollup, called from the ingest flush inside the same
+// transaction as the raw save. Stats reads raw only for today, so a
+// completed day's raw rows are never read again; without the inline fold a
+// late row would stay invisible until purge deleted it.
+//
+// A day with no raw rows is a no-op (it never deletes stale buckets on its
+// own). Stats reads completed days from event_daily and only today from
+// raw events.
+//
+// PURGE: rows strictly older than the cutoff are deleted page by page
+// (one short transaction per page, ordered by (ts, id)); stale
+// event_daily rows older than rollupDays are deleted the same way
+// (ordered by (day, id)). Before the first page of a doomed day is
+// deleted, that day is rolled up with RollupDay unless event_daily
+// already has rows for it — this covers backdated/admin rows older than
+// the EnsureRollups window without ever adding counts twice. Raw
+// releases/rollups collections are never touched — events only.
+//
+// CRASH SEMANTIC: the EnsureRollups walk commits one day at a time
+// (rollup transaction, then the lastDay update), so an interrupted
+// backfill resumes at the next uncommitted day and a re-run converges.
+// Raw/stale deletes commit per page. A crash between a RollupDay commit
+// and its raw-page deletes leaves the rollups on disk; the re-run sees
+// existing buckets and deletes without re-adding (counters never
+// double-add). On error PurgeOlderThan returns (0, err) even though
+// earlier pages may already be committed — rerun to converge. A rollup
+// error aborts the run before any delete.
 //
 // DELETION NOTE (no GDPR export UI by design): purged raw rows carry only
 // the bucket/country identity (never raw user ids — see ingest), and
@@ -57,9 +73,6 @@ const (
 	RawRetentionDays = 30
 	// RollupRetentionDays bounds daily aggregate lifetime.
 	RollupRetentionDays = 90
-	// rollupExtraDays derives the event_daily cutoff from the raw-events
-	// cutoff passed to PurgeOlderThan: 90d - 30d = 60d further back.
-	rollupExtraDays = RollupRetentionDays - RawRetentionDays
 	// scrubAfter bounds raw-event identity lifetime independently of the
 	// configured raw window: bucket/country are nulled 48h after ts even
 	// when raw rows live longer (rollups never need identity).
@@ -71,6 +84,25 @@ const (
 	// transaction, so a 500k-row run holds at most this many rows in heap
 	// and never holds the write lock for the whole run.
 	purgePageSize = 2000
+	// rollupPageSize bounds one raw-events page read while RollupDay
+	// rebuilds a single day; the merged counts live in one map until the
+	// day's write transaction.
+	rollupPageSize = 500
+	// rollupStateCollectionName holds the rollup high-water mark.
+	rollupStateCollectionName = "rollup_state"
+	// rollupStateKey identifies the singleton state row.
+	rollupStateKey = "global"
+)
+
+var (
+	// rollupMu serializes the EnsureRollups walk inside this process so
+	// two callers (boot ticker + manual route) cannot interleave the
+	// read-lastDay / rollup / write-lastDay sequence.
+	rollupMu sync.Mutex
+	// rollupDayFn is the test seam for one day's rollup. It carries no
+	// transaction of its own: callers wrap it so the rollup and the state
+	// update commit atomically.
+	rollupDayFn = rollupDayTx
 )
 
 // configuredRawDays returns the active raw-event window from the
@@ -308,46 +340,6 @@ func CountScrubOlderThan(app core.App, scrubCutoff time.Time) (int, error) {
 	return n, nil
 }
 
-// eventRangeExpr is the INDEXED prefilter for the raw-events delete set
-// (uses the events ts range; no full-table scan). It is a conservative
-// SUPERSET of ShouldDelete(ts, cutoff): storage truncates to milliseconds,
-// so a same-millisecond edge row compares equal to the truncated cutoff in
-// SQL while still being strictly older in full precision. Callers apply
-// ShouldDelete on the read-back rows for the exact verdict — the retention
-// predicate itself is unchanged (FROZEN), so the deletion set is
-// bit-for-bit identical to the old full scan.
-//
-// The paged path (eventPageParams + pageFilter, LIMIT purgePageSize) is the
-// string-filter twin of this expression with the same superset contract;
-// this dbx form is kept as the contract reference.
-func eventRangeExpr(cutoff time.Time) dbx.Expression {
-	floor := cutoff.UTC().Truncate(time.Millisecond)
-	return dbx.NewExp("ts != '' AND ts <= {:cutoff}", dbx.Params{"cutoff": dateParam(floor)})
-}
-
-// rollupRangeExpr is the INDEXED prefilter for stale event_daily rows
-// (uses the event_daily(day) index). Same superset contract as
-// eventRangeExpr: callers re-apply the exact non-zero strict-before
-// verdict, so the deletion set matches the old full scan exactly.
-//
-// The paged path (dailyPageParams + pageFilter, LIMIT purgePageSize) is the
-// string-filter twin of this expression with the same superset contract;
-// this dbx form is kept as the contract reference.
-func rollupRangeExpr(rollupCutoff time.Time) dbx.Expression {
-	floor := rollupCutoff.UTC().Truncate(time.Millisecond)
-	return dbx.NewExp("day != '' AND day <= {:rc}", dbx.Params{"rc": dateParam(floor)})
-}
-
-// emptyOrNull matches the old in-Go GetString equality exactly: PocketBase
-// reads both ” and NULL back as "", so an empty bucket value must match
-// either storage (an unset env relation may persist as ” or NULL).
-func emptyOrNull(col, val string) dbx.Expression {
-	if val == "" {
-		return dbx.Or(dbx.HashExp{col: ""}, dbx.NewExp(col+" IS NULL"))
-	}
-	return dbx.HashExp{col: val}
-}
-
 // pageFilter appends a keyset cursor clause to a base range filter so a
 // LIMIT-paged read walks the candidate set in total (orderCol, id) order
 // without OFFSET skips: rows are strictly after the last row of the
@@ -365,47 +357,354 @@ func pageFilter(base string, params dbx.Params, orderCol string, hasCursor bool,
 }
 
 // eventPageParams builds the base indexed filter params for one raw-events
-// page: the string-filter twin of eventRangeExpr (same superset contract —
-// callers still re-apply ShouldDelete per row, so the deletion set is
-// bit-for-bit identical to the old full scan).
+// page. The filter is a conservative SUPERSET of ShouldDelete(ts, cutoff):
+// storage truncates to milliseconds, so a same-millisecond edge row compares
+// equal to the truncated cutoff in SQL while still being strictly older in
+// full precision. Callers re-apply ShouldDelete per row, so the deletion set
+// is bit-for-bit identical to the old full scan.
 func eventPageParams(cutoff time.Time) (string, dbx.Params) {
 	floor := cutoff.UTC().Truncate(time.Millisecond)
 	return "ts != '' && ts <= {:cutoff}", dbx.Params{"cutoff": dateParam(floor)}
 }
 
 // dailyPageParams builds the base indexed filter params for one
-// event_daily page: the string-filter twin of rollupRangeExpr.
+// event_daily page. Same superset contract as the raw-events filter:
+// callers re-apply the exact non-zero strict-before verdict on the
+// read-back rows.
 func dailyPageParams(rollupCutoff time.Time) (string, dbx.Params) {
 	floor := rollupCutoff.UTC().Truncate(time.Millisecond)
 	return "day != '' && day <= {:rc}", dbx.Params{"rc": dateParam(floor)}
 }
 
-// PurgeOlderThan rolls raw events with ts strictly before cutoff into
-// event_daily upserts, deletes those raw rows, then deletes event_daily
-// rows with day strictly before cutoff minus 60d (i.e. older than 90d
-// when cutoff is now-30d). It returns the total rows deleted
-// (raw events + stale rollups).
+// dayRangeParams builds the indexed [d0, d1) bounds for one UTC day.
+func dayRangeParams(day time.Time) (string, dbx.Params) {
+	d0 := DayBucket(day)
+	d1 := d0.AddDate(0, 0, 1)
+	return "ts != '' && ts >= {:d0} && ts < {:d1}", dbx.Params{
+		"d0": dateParam(d0),
+		"d1": dateParam(d1),
+	}
+}
+
+// dayHasRollups reports whether event_daily already holds any row for day.
+func dayHasRollups(app core.App, day time.Time) (bool, error) {
+	d0 := DayBucket(day)
+	d1 := d0.AddDate(0, 0, 1)
+	params := dbx.Params{"d0": dateParam(d0), "d1": dateParam(d1)}
+	recs, err := app.FindRecordsByFilter("event_daily", "day >= {:d0} && day < {:d1}", "", 1, 0, params)
+	if err != nil {
+		return false, err
+	}
+	return len(recs) > 0, nil
+}
+
+// RollupDay rewrites event_daily for one UTC day from the raw events still
+// on disk, inside its own transaction. See rollupDayTx for the semantics.
+func RollupDay(app core.App, day time.Time) error {
+	return app.RunInTransaction(func(txApp core.App) error {
+		return rollupDayFn(txApp, day)
+	})
+}
+
+// rollupDayTx rewrites event_daily for one UTC day from the raw events still
+// on disk. Raw rows are paged by (ts, id) and folded by BuildRollups into a
+// map keyed (env, flag, variant, version); the day's write then deletes
+// every event_daily row in [day, day+1) and saves one row per bucket with
+// ABSOLUTE counts, so a second run produces the same buckets instead of
+// doubling them.
 //
+// A day with no raw rows returns nil before touching event_daily: the caller
+// owns stale-bucket deletion, and a no-op day must not erase a valid rollup.
+func rollupDayTx(app core.App, day time.Time) error {
+	d0 := DayBucket(day)
+	d1 := d0.AddDate(0, 0, 1)
+	base, params := dayRangeParams(d0)
+
+	type bucketKey struct {
+		env     string
+		flag    string
+		variant string
+		version int
+	}
+	byKey := map[bucketKey]*Rollup{}
+	var order []bucketKey
+	rawRows := 0
+	var cursorVal, cursorID string
+	hasCursor := false
+	for {
+		filter, pageParams := pageFilter(base, params, "ts", hasCursor, cursorVal, cursorID)
+		page, err := app.FindRecordsByFilter("events", filter, "ts,id", rollupPageSize, 0, pageParams)
+		if err != nil {
+			return err
+		}
+		if len(page) == 0 {
+			break
+		}
+		rawRows += len(page)
+		rows := make([]EventRow, 0, len(page))
+		for _, r := range page {
+			rows = append(rows, EventRow{
+				EnvID:   r.GetString("env"),
+				Flag:    r.GetString("flag"),
+				Kind:    r.GetString("kind"),
+				Variant: r.GetString("variant"),
+				Version: r.GetInt("version"),
+				Ts:      r.GetDateTime("ts").Time(),
+			})
+		}
+		for _, b := range BuildRollups(rows) {
+			k := bucketKey{env: b.EnvID, flag: b.Flag, variant: b.Variant, version: b.Version}
+			agg, ok := byKey[k]
+			if !ok {
+				copy := b
+				byKey[k] = &copy
+				order = append(order, k)
+				continue
+			}
+			agg.Fetches += b.Fetches
+			agg.Exposures += b.Exposures
+		}
+		last := page[len(page)-1]
+		cursorVal = dateParam(last.GetDateTime("ts").Time())
+		cursorID = last.Id
+		hasCursor = true
+		if len(page) < rollupPageSize {
+			break
+		}
+	}
+	if rawRows == 0 {
+		return nil
+	}
+
+	col, err := app.FindCollectionByNameOrId("event_daily")
+	if err != nil {
+		return err
+	}
+	existing, err := app.FindRecordsByFilter("event_daily", "day >= {:d0} && day < {:d1}", "", 0, 0, dbx.Params{
+		"d0": dateParam(d0),
+		"d1": dateParam(d1),
+	})
+	if err != nil {
+		return err
+	}
+	for _, r := range existing {
+		if err := app.Delete(r); err != nil {
+			return err
+		}
+	}
+	hasFlagField := col.Fields.GetByName("flag") != nil
+	hasVersionField := col.Fields.GetByName("version") != nil
+	for _, k := range order {
+		b := byKey[k]
+		rec := core.NewRecord(col)
+		rec.Set("day", b.Day)
+		if b.EnvID != "" {
+			rec.Set("env", b.EnvID)
+		}
+		if hasFlagField && b.Flag != "" {
+			rec.Set("flag", b.Flag)
+		}
+		rec.Set("variant", b.Variant)
+		if hasVersionField {
+			rec.Set("version", b.Version)
+		}
+		rec.Set("fetches", b.Fetches)
+		rec.Set("exposures", b.Exposures)
+		if err := app.Save(rec); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// loadRollupState reads the singleton lastDay (zero when absent). A missing
+// collection (pre-migration test app) reads as zero so callers fail safe to
+// the legacy stats path rather than erroring.
+func loadRollupState(app core.App) (time.Time, error) {
+	if _, err := app.FindCollectionByNameOrId(rollupStateCollectionName); err != nil {
+		return time.Time{}, nil
+	}
+	recs, err := app.FindRecordsByFilter(rollupStateCollectionName, "key = {:key}", "", 1, 0, dbx.Params{"key": rollupStateKey})
+	if err != nil {
+		return time.Time{}, err
+	}
+	if len(recs) == 0 {
+		return time.Time{}, nil
+	}
+	return recs[0].GetDateTime("lastDay").Time(), nil
+}
+
+// saveRollupState persists lastDay as the singleton high-water mark.
+func saveRollupState(app core.App, lastDay time.Time) error {
+	col, err := app.FindCollectionByNameOrId(rollupStateCollectionName)
+	if err != nil {
+		return err
+	}
+	recs, err := app.FindRecordsByFilter(rollupStateCollectionName, "key = {:key}", "", 1, 0, dbx.Params{"key": rollupStateKey})
+	if err != nil {
+		return err
+	}
+	rec := core.NewRecord(col)
+	rec.Set("key", rollupStateKey)
+	if len(recs) > 0 {
+		rec = recs[0]
+	}
+	rec.Set("lastDay", DayBucket(lastDay))
+	return app.Save(rec)
+}
+
+// AddLateRollup folds one event's counts into event_daily when its day is at
+// or before the persisted high-water mark, i.e. when the day is already
+// rolled and its raw rows will never be read again. Ingest calls it inside
+// the same transaction as the raw save, so a backdated row is either part of
+// the day's rebuild or added here — never dropped between the two. Days past
+// the mark are left to EnsureRollups; unknown kinds are ignored, matching
+// BuildRollups.
+func AddLateRollup(app core.App, ev EventRow) error {
+	if ev.Ts.IsZero() || (ev.Kind != "fetch" && ev.Kind != "exposure") {
+		return nil
+	}
+	day := DayBucket(ev.Ts)
+	last, err := loadRollupState(app)
+	if err != nil || last.IsZero() || day.After(DayBucket(last)) {
+		return err
+	}
+	col, err := app.FindCollectionByNameOrId("event_daily")
+	if err != nil {
+		return err
+	}
+	filter := "day = {:day}"
+	params := dbx.Params{"day": dateParam(day)}
+	if ev.EnvID != "" {
+		filter += " && env = {:env}"
+		params["env"] = ev.EnvID
+	}
+	recs, err := app.FindRecordsByFilter("event_daily", filter, "", 0, 0, params)
+	if err != nil {
+		return err
+	}
+	var rec *core.Record
+	for _, r := range recs {
+		if r.GetString("env") == ev.EnvID &&
+			r.GetString("flag") == ev.Flag &&
+			r.GetString("variant") == ev.Variant &&
+			r.GetInt("version") == ev.Version {
+			rec = r
+			break
+		}
+	}
+	if rec == nil {
+		rec = core.NewRecord(col)
+		rec.Set("day", day)
+		if ev.EnvID != "" {
+			rec.Set("env", ev.EnvID)
+		}
+		if col.Fields.GetByName("flag") != nil && ev.Flag != "" {
+			rec.Set("flag", ev.Flag)
+		}
+		rec.Set("variant", ev.Variant)
+		if col.Fields.GetByName("version") != nil {
+			rec.Set("version", ev.Version)
+		}
+	}
+	if ev.Kind == "fetch" {
+		rec.Set("fetches", rec.GetInt("fetches")+1)
+	} else {
+		rec.Set("exposures", rec.GetInt("exposures")+1)
+	}
+	return app.Save(rec)
+}
+
+// EnsureRollups advances the persisted rollup high-water mark through every
+// completed UTC day from max(DayBucket(now-rawDays), lastDay+1) up to
+// DayBucket(now) exclusive. Each day commits its rollup and its lastDay
+// update before the next day starts, so an interrupted backfill resumes at
+// the first uncommitted day. It is a no-op once lastDay is yesterday, and
+// serialized in-process by rollupMu. On error the last committed day is
+// returned and the caller must abort before deleting anything.
+func EnsureRollups(app core.App, now time.Time) (time.Time, error) {
+	rollupMu.Lock()
+	defer rollupMu.Unlock()
+
+	last, err := loadRollupState(app)
+	if err != nil {
+		return time.Time{}, err
+	}
+	start := DayBucket(now.AddDate(0, 0, -configuredRawDays()))
+	if !last.IsZero() {
+		next := DayBucket(last).AddDate(0, 0, 1)
+		if next.After(start) {
+			start = next
+		}
+	}
+	end := DayBucket(now)
+	rolled := 0
+	for d := start; d.Before(end); d = d.AddDate(0, 0, 1) {
+		if err := app.RunInTransaction(func(txApp core.App) error {
+			if err := rollupDayFn(txApp, d); err != nil {
+				return err
+			}
+			return saveRollupState(txApp, d)
+		}); err != nil {
+			return last, err
+		}
+		last = d
+		rolled++
+		if rolled%7 == 0 {
+			log.Printf("purge: rollup backfill through %s (%d days)", d.Format("2006-01-02"), rolled)
+		}
+	}
+	return last, nil
+}
+
+// RollupsReady reports whether the persisted rollup high-water mark covers
+// every completed day (lastDay >= yesterday), i.e. stats may read history
+// from event_daily instead of falling back to raw events. Any read error
+// reads as not ready, keeping stats on the safe legacy path.
+func RollupsReady(app core.App, now time.Time) bool {
+	last, err := loadRollupState(app)
+	if err != nil {
+		return false
+	}
+	if last.IsZero() {
+		return false
+	}
+	yesterday := DayBucket(now).AddDate(0, 0, -1)
+	return !last.Before(yesterday)
+}
+
+// PurgeOlderThan deletes raw events with ts strictly before cutoff (rolling
+// up each doomed day first), then deletes event_daily rows with day strictly
+// before cutoff minus 60d (i.e. older than 90d when cutoff is now-30d). It
+// returns the total rows deleted (raw events + stale rollups).
+//
+// EnsureRollups runs first for the caller's now (cutoff + rawDays, the exact
+// inverse of the retention cutoff) and any error aborts with zero deletes.
 // Raw reads are cursor-paged over the indexed candidate set ordered by
-// (ts, id) with LIMIT purgePageSize: each page is rolled up (that page's
-// rows only, rollup-before-delete) and deleted in its own transaction, so
-// heap stays flat and the write lock is held per page, not per run. The
-// per-row ShouldDelete recheck runs on every row exactly as before, so the
-// delete set is unchanged; cutoff/retention math is unchanged.
+// (ts, id) with LIMIT purgePageSize; each page deletes in its own short
+// transaction. The first page that reaches a doomed day rolls that day up
+// first (unless event_daily already has rows for it), so heap stays flat,
+// the write lock is held per page, and a backdated day older than the
+// EnsureRollups window is never deleted uncounted.
 //
 // Crash semantic: per-page atomic + rerun converges. A mid-run crash leaves
-// committed pages on disk (rollup + deletes together, never one without
-// the other — the aborted page rolls back whole); the next run walks past
-// the survivors via the same cursor and finishes them, and already-rolled
-// rows are gone so counters never double-add. On error this returns
-// (0, err) even though earlier pages may already be committed — rerun to
-// converge. (Package-level CRASH SEMANTIC note rewrite rides with todo 3.)
+// committed pages on disk; the next run walks past the survivors via the
+// same cursor and finishes them. Rollups already written for a day are never
+// re-added, so counters never double-add. On error this returns (0, err)
+// even though earlier pages may already be committed — rerun to converge.
+
 func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
+	now := cutoff.AddDate(0, 0, configuredRawDays())
+	if _, err := EnsureRollups(app, now); err != nil {
+		return 0, err
+	}
+
 	n := 0
 	base, _ := eventPageParams(cutoff)
 	cutoffParam := dateParam(cutoff.UTC().Truncate(time.Millisecond))
 	var cursorVal, cursorID string
 	hasCursor := false
+	handledDays := map[string]bool{}
 	for {
 		params := dbx.Params{"cutoff": cutoffParam}
 		filter, params := pageFilter(base, params, "ts", hasCursor, cursorVal, cursorID)
@@ -417,36 +716,40 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 			break
 		}
 		var doomed []*core.Record
-		var doomedRows []EventRow
+		var doomedDays []time.Time
 		for _, r := range page {
 			ts := r.GetDateTime("ts").Time()
 			if !ShouldDelete(ts, cutoff) {
 				continue
 			}
 			doomed = append(doomed, r)
-			doomedRows = append(doomedRows, EventRow{
-				EnvID:   r.GetString("env"),
-				Flag:    r.GetString("flag"),
-				Kind:    r.GetString("kind"),
-				Variant: r.GetString("variant"),
-				Version: r.GetInt("version"),
-				Ts:      ts,
-			})
+			day := DayBucket(ts)
+			key := day.Format("2006-01-02")
+			if !handledDays[key] {
+				handledDays[key] = true
+				doomedDays = append(doomedDays, day)
+			}
 		}
 		last := page[len(page)-1]
 		cursorVal = dateParam(last.GetDateTime("ts").Time())
 		cursorID = last.Id
 		hasCursor = true
 		if len(doomed) > 0 {
-			if err := app.RunInTransaction(func(txApp core.App) error {
-				// Rollup BEFORE delete: no data-loss window beyond a crash
-				// (the aborted page rolls back whole — see Crash semantic).
-				// applyRollupBatch runs inside this page txn: its bucket
-				// count is bounded by the page's row count (<= purgePageSize),
-				// so the txn is never widened beyond the page.
-				if err := applyRollupBatch(txApp, BuildRollups(doomedRows)); err != nil {
-					return err
+			for _, day := range doomedDays {
+				exists, err := dayHasRollups(app, day)
+				if err != nil {
+					return 0, err
 				}
+				if exists {
+					continue
+				}
+				if err := app.RunInTransaction(func(txApp core.App) error {
+					return rollupDayFn(txApp, day)
+				}); err != nil {
+					return 0, err
+				}
+			}
+			if err := app.RunInTransaction(func(txApp core.App) error {
 				for _, r := range doomed {
 					if err := txApp.Delete(r); err != nil {
 						return err
@@ -523,13 +826,13 @@ func PurgeOlderThan(app core.App, cutoff time.Time) (deleted int, err error) {
 // sets with the same (ts,id)/(day,id) cursor paging and applies the same
 // exact predicates — and it never loads a whole collection into heap.
 //
-// Live-run delta: PurgeOlderThan rolls each doomed raw page BEFORE deleting
-// it, and its trailing phase then deletes stale daily rows — including
-// buckets just rolled stale in THIS same run. So when doomed raw rows
-// predate the rollup cutoff (older than 90d when cutoff is now-30d),
-// live == dry + #new-stale-buckets swept same-run; when doomed raw rows
-// fall inside the rollup window their buckets stay fresh and live == dry
-// exactly.
+// Live-run delta: PurgeOlderThan rolls a doomed day up once before its
+// first page is deleted (unless the day already has rollups), and its
+// trailing phase deletes stale daily rows — including buckets just rolled
+// stale in THIS same run. So when doomed raw rows predate the rollup cutoff
+// (older than 90d when cutoff is now-30d), live == dry + #new-stale-buckets
+// swept same-run; when doomed raw rows fall inside the rollup window their
+// buckets stay fresh and live == dry exactly.
 func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 	n := 0
 	eventBase, _ := eventPageParams(cutoff)
@@ -591,103 +894,6 @@ func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 	return n, nil
 }
 
-// upsertRollups adds buckets in purgePageSize sub-batches, each in its own
-// transaction, so a high-cardinality call never lands in one giant write
-// set. Callers already inside a page transaction use applyRollupBatch
-// directly so the page txn is never widened beyond the page.
-func upsertRollups(app core.App, buckets []Rollup) error {
-	for start := 0; start < len(buckets); start += purgePageSize {
-		end := start + purgePageSize
-		if end > len(buckets) {
-			end = len(buckets)
-		}
-		chunk := buckets[start:end]
-		if err := app.RunInTransaction(func(txApp core.App) error {
-			return applyRollupBatch(txApp, chunk)
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// applyRollupBatch adds each bucket's counts onto the matching event_daily
-// row — found per bucket with an indexed find on (day,env,flag,variant,version)
-// (day as a [midnight,midnight+24h) range, which is exactly the old
-// Format("2006-01-02") equality for any stored time-of-day; env and flag match
-// ”-or-NULL exactly like the old GetString comparison) — or creates the
-// row when absent. Re-running with the same buckets converges to one row
-// per key — the upsert key is idempotent even though counters add (see
-// CRASH SEMANTIC). Runs in the caller's transaction scope (a page txn via
-// PurgeOlderThan, or one sub-batch txn via upsertRollups) — it never opens
-// its own transaction, so it never widens the write set.
-func applyRollupBatch(app core.App, buckets []Rollup) error {
-	if len(buckets) == 0 {
-		return nil
-	}
-	col, err := app.FindCollectionByNameOrId("event_daily")
-	if err != nil {
-		return err
-	}
-	// The flag column is restored by migration; on a pre-restore DB it is
-	// absent, in which case every projected flag is "" and the predicate
-	// is a no-op — skip it so the upsert keeps working there too.
-	hasFlagField := col.Fields.GetByName("flag") != nil
-	for _, b := range buckets {
-		dayStart := DayBucket(b.Day)
-		dayEnd := dayStart.AddDate(0, 0, 1)
-		filter := []dbx.Expression{
-			dbx.NewExp("day >= {:d0} AND day < {:d1}", dbx.Params{
-				"d0": dateParam(dayStart),
-				"d1": dateParam(dayEnd),
-			}),
-			emptyOrNull("env", b.EnvID),
-			dbx.HashExp{"variant": b.Variant},
-		}
-		if hasFlagField {
-			filter = append(filter, emptyOrNull("flag", b.Flag))
-		}
-		recs, err := app.FindAllRecords("event_daily", filter...)
-		if err != nil {
-			return err
-		}
-		var match *core.Record
-		for _, r := range recs {
-			if r.GetInt("version") == b.Version {
-				match = r
-				break
-			}
-		}
-		hasVersionField := col.Fields.GetByName("version") != nil
-		if match == nil {
-			match = core.NewRecord(col)
-			match.Set("day", b.Day)
-			if b.EnvID != "" {
-				match.Set("env", b.EnvID)
-			}
-			if hasFlagField && b.Flag != "" {
-				match.Set("flag", b.Flag)
-			}
-			match.Set("variant", b.Variant)
-			if hasVersionField {
-				match.Set("version", b.Version)
-			}
-			match.Set("fetches", b.Fetches)
-			match.Set("exposures", b.Exposures)
-			if err := app.Save(match); err != nil {
-				return err
-			}
-			continue
-		}
-		match.Set("fetches", match.GetInt("fetches")+b.Fetches)
-		match.Set("exposures", match.GetInt("exposures")+b.Exposures)
-		if err := app.Save(match); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // Register mounts POST /api/v1/admin/maintenance/purge (superuser-only;
 // ?dry=1 reports without writing) and starts the daily 24h ticker that
 // purges raw events older than RawRetentionDays. Uses re.App / se.App
@@ -730,6 +936,10 @@ func purgeInterval() time.Duration {
 func dailyTicker(app core.App, stop <-chan struct{}) {
 	run := func(tag string) {
 		now := time.Now().UTC()
+		if _, err := EnsureRollups(app, now); err != nil {
+			log.Printf("purge: %s rollup run failed: %v", tag, err)
+			return
+		}
 		scrubbed, serr := ScrubIdentitiesOlderThan(app, ScrubCutoff(now))
 		if serr != nil {
 			log.Printf("purge: %s scrub run failed: %v", tag, serr)

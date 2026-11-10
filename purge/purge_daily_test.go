@@ -2,14 +2,10 @@
 //
 // RED-before: TestEventDailyDeletePathIsBounded FAILS on the pre-fix
 // purge.go (the stale event_daily loop uses FindAllRecords with
-// rollupRangeExpr inside ONE trailing transaction), and
-// TestUpsertBounded FAILS there too (upsertRollups runs its whole bucket
-// slice with no page bound, so a high-cardinality call lands in a single
-// unbounded write set). GREEN-after: stale daily rows page by (day, id)
-// with LIMIT purgePageSize (one txn per page, per-row day recheck,
-// partial-progress log per page), upsertRollups splits bucket slices into
-// purgePageSize sub-batches (never one giant txn), boundary-day rows are
-// kept, and reruns converge to 0.
+// rollupRangeExpr inside ONE trailing transaction). GREEN-after: stale
+// daily rows page by (day, id) with LIMIT purgePageSize (one txn per page,
+// per-row day recheck, partial-progress log per page), boundary-day rows
+// are kept, and reruns converge to 0.
 package purge
 
 import (
@@ -26,8 +22,7 @@ import (
 // TestEventDailyDeletePathIsBounded is the RED-before gate: the stale
 // event_daily delete path must page via FindRecordsByFilter sorted by
 // (day, id) — no FindAllRecords load of event_daily may remain on the
-// delete path. Per-bucket indexed finds inside upsertRollups stay allowed
-// (one bounded find per bucket of a bounded page).
+// delete path.
 func TestEventDailyDeletePathIsBounded(t *testing.T) {
 	body, err := os.ReadFile("purge.go")
 	if err != nil {
@@ -45,12 +40,6 @@ func TestEventDailyDeletePathIsBounded(t *testing.T) {
 	// single-txn FindAllRecords with rollupRangeExpr is the pre-fix shape.
 	if regexp.MustCompile(`FindAllRecords\(\s*"event_daily",\s*rollupRangeExpr`).Match(body) {
 		t.Fatalf("daily deletes still load-all via FindAllRecords+rollupRangeExpr in one txn (must page by (day,id) with LIMIT)")
-	}
-	// upsertRollups must bound its write set: without a purgePageSize
-	// chunk split, a high-cardinality call lands in one unbounded txn.
-	upsertFn := regexp.MustCompile(`(?s)func upsertRollups\(.*?\n}`).Find(body)
-	if len(upsertFn) == 0 || !regexp.MustCompile(`purgePageSize`).Match(upsertFn) {
-		t.Fatalf("upsertRollups must split buckets into purgePageSize sub-batches (never one unbounded txn)")
 	}
 }
 
@@ -231,68 +220,5 @@ func TestEventDailyEmpty(t *testing.T) {
 	deleted2, err := PurgeOlderThan(app, cutoff)
 	if err != nil || deleted2 != 0 {
 		t.Fatalf("rerun deleted = %d, err=%v; want 0", deleted2, err)
-	}
-}
-
-// TestUpsertBounded pins the upsert bound at high cardinality: 2500
-// distinct buckets (> purgePageSize) land as 2500 rows with one row per
-// key, and no single transaction carries the whole set — aborting the
-// second sub-batch leaves the first committed (strictly partial), and the
-// rerun converges without duplicating keys.
-func TestUpsertBounded(t *testing.T) {
-	app := parityTestApp(t)
-	base := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
-
-	const nBuckets = 2500
-	buckets := make([]Rollup, 0, nBuckets)
-	for i := 0; i < nBuckets; i++ {
-		// Distinct (day, variant) per bucket: days march back one per
-		// bucket and the variant carries the index, so every key is
-		// unique and no two buckets merge.
-		buckets = append(buckets, Rollup{
-			Day:     DayBucket(base.AddDate(0, 0, -i)),
-			EnvID:   "e9",
-			Variant: "v",
-			Version: i,
-			Fetches: 1,
-		})
-	}
-
-	var creates atomic.Int64
-	var failEnabled atomic.Bool
-	failEnabled.Store(true)
-	const failAfter = 2100 // past sub-batch 1 (bound 2000), inside sub-batch 2
-	app.OnRecordCreate("event_daily").BindFunc(func(e *core.RecordEvent) error {
-		if failEnabled.Load() && creates.Add(1) > failAfter {
-			return errors.New("upsert-bound-test: simulated mid-upsert crash")
-		}
-		return e.Next()
-	})
-
-	if err := upsertRollups(app, buckets); err == nil {
-		t.Fatal("aborted upsert succeeded, want simulated crash error")
-	}
-	// Sub-batch boundary pin: the first purgePageSize sub-batch commits in
-	// its own transaction while the aborted second sub-batch rolls back
-	// whole — exactly purgePageSize rows, never the 2100 autocommits the
-	// unbounded path would leave behind.
-	if committed := len(liveIDs(t, app, "event_daily")); committed != purgePageSize {
-		t.Fatalf("after abort: committed = %d rows, want exactly %d (first sub-batch only)", committed, purgePageSize)
-	}
-
-	failEnabled.Store(false)
-	if err := upsertRollups(app, buckets); err != nil {
-		t.Fatalf("rerun upsertRollups: %v", err)
-	}
-	rows := mustAllDaily(t, app)
-	if len(rows) != nBuckets {
-		t.Fatalf("event_daily rows = %d, want %d (one row per key, no duplicates)", len(rows), nBuckets)
-	}
-	// Fetches are 1 or 2 (re-rolled buckets add exactly once more), never
-	// 0 and never 3+ — the rerun converges per key without runaway adds.
-	for _, r := range rows {
-		if got := r.GetInt("fetches"); got < 1 || got > 2 {
-			t.Fatalf("bucket fetches = %d, want 1..2 (converges per key)", got)
-		}
 	}
 }
