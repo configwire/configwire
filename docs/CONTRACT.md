@@ -2,7 +2,7 @@
 
 ConfigWire-native wire. No external parity claims.
 
-> v0.2.0-rc.11 (released 2026-11-04) is bucket-only (since v0.2.0-rc.1).
+> Latest release: see `CHANGELOG.md` / GitHub Releases. Bucket-only since v0.2.0-rc.1.
 > Bucket (`?b=0-9999`) is the sole identity: a valid `?b=` wins verbatim.
 > Legacy `?userHash=`/`?uid=`/`?country=` plus event-body `userHash` and
 > event-body `userId` (any case, even null) are backward-compat shims only
@@ -161,10 +161,10 @@ through to defaults with `200`, never `400`.
   is the plain int string `"0"`-`"9999"`
   (`^(0|[1-9][0-9]{0,3})$`, range-checked; `"0"` valid,
   `"007"`/`"00"`/whitespace-padded/out-of-range not canonical).
-  Ref: `configwire/identity/bucket.go:12` (`ErrInvalidBucketMessage`),
-  `:17-36` (`IsCanonicalBucket`), `:41-53` (`ParseBucketParam`);
-  thin delegates at `configwire/fetch/fetch.go:194` (`ParseBucket`),
-  `configwire/ingest/handler.go:70` (`parseBucketCanonical`).
+  Ref: `configwire/identity/bucket.go` (`ErrInvalidBucketMessage`,
+  `IsCanonicalBucket`, `ParseBucketParam`);
+  thin delegates at `configwire/fetch/fetch.go` (`ParseBucket`),
+  `configwire/ingest/handler.go` (`parseBucketCanonical`).
 - Malformed (non-empty, non-canonical) `?b=` returns `400`
   (`invalid "b": send "0"-"9999".`); empty equals absent. `?uid=`
   is ignored and never wins: with both present a valid `?b=` still
@@ -211,7 +211,7 @@ through to defaults with `200`, never `400`.
 
 ## 2. Publish — `POST /api/v1/admin/env/{env}/publish`
 
-Ref: `configwire/releases/handler.go:71-75` (route + superuser-only), `:120-195` (handler).
+Ref: `configwire/releases/handler.go` (route + superuser-only, handler).
 Optional `?project=<projectId>` disambiguates a slug shared by
 several projects (`400` ambiguous without it); unambiguous slugs keep
 working without it. Ref: `configwire/envresolve/resolve.go`.
@@ -264,14 +264,14 @@ for one row and an array for 2+ rows. Percentage rollout is the
 ≈ 10%) and `between` (value `[lo,hi]` inclusive both ends); bucketed
 via `Bucket(?b=+seed)%10000` per-fetch, `seed` comes from the condition
 (`ctx.PercentileSeed` is always empty from fetch, so `seed` is required —
-missing/empty seed or bucket never matches). Ref: `configwire/eval/eval.go:40-43,285-310`.
+missing/empty seed or bucket never matches). Ref: `configwire/eval/eval.go`.
 
-Ref: `configwire/releases/snapshot.go:78-147` (shapes), `:304-399` (builder).
+Ref: `configwire/releases/snapshot.go` (shapes, builder).
 
 ETag rule: `etag = hex(sha256(version + ":" + snapshot))[:16]` over the
 canonical server-marshaled bytes. The version is hashed in, so a
 rollback row gets a fresh etag with byte-identical snapshots.
-Ref: `configwire/releases/snapshot.go:234-238`.
+Ref: `configwire/releases/snapshot.go`.
 
 Stale `baseVersion` then `409` with no write:
 
@@ -291,7 +291,7 @@ flag type, bad rule condition shape (unknown field/op, missing value
 key, bare `custom`, empty or over-10 condition array, non-object array
 entry), bad experiment weights (must sum to exactly 10000
 bps). Flag volume is unlimited: no per-project flag cap exists.
-Ref: `configwire/releases/snapshot.go:615-652`.
+Ref: `configwire/releases/snapshot.go`.
 
 ## 2a. Key minting — `POST /api/v1/admin/keys`
 
@@ -373,7 +373,7 @@ projects, `note` is free text):
 
 Empty body or malformed JSON then `400`. A `srcVersion` or
 `destBaseVersion` sent as a JSON string fails decoding then
-`400`. Ref: `configwire/releases/handler.go:114-134`.
+`400`. Ref: `configwire/releases/handler.go`.
 
 `destBaseVersion` must equal the dest env's current max, `0` on
 first promote to an empty dest.
@@ -391,7 +391,7 @@ as a normal clone with no special case.
 ETag rule: fresh on dest, `EtagFor(newVersion, srcBytes)` over
 the copied bytes, so a promoted row gets a new etag even with a
 byte-identical snapshot. Ref:
-`configwire/releases/snapshot.go:110-113`.
+`configwire/releases/snapshot.go`.
 
 - Unknown dest slug then `404` (`Unknown env.`); unknown src
   version in the src env then `404` (`Unknown release version.`).
@@ -485,8 +485,7 @@ Request:
   `phone`, `ip`, `deviceId`, `advertisingId`, `adid`, `idfa`, `idfv`,
   `androidId`, `serial`, `mac`, `imei`, case-insensitive) stay strictly rejected then `400`; errors name only the
   key, values are never logged. Ref:
-  `configwire/ingest/ingest.go:122-130` (denylist), `:175-205`
-  (strict reject).
+  `configwire/ingest/ingest.go` (denylist, strict reject).
 - 1..100 events per request (0 or over 100 then `400`).
 - Single event over 64KB or body over 128KB then `413`.
 - Rate (per-second):
@@ -502,7 +501,7 @@ Request:
   - Full buffer then `503`. Batch admission is all-or-nothing: a
   batch larger than the free space is refused with nothing queued, so a
   `503` retry resends exactly the batch with no duplicates.
-  Ref: `configwire/ingest/ingest.go:44-58`, `configwire/ingest/handler.go:124-126,164-168`.
+  Ref: `configwire/ingest/ingest.go`, `configwire/ingest/handler.go`.
 
 Success `202`:
 
@@ -527,17 +526,17 @@ Body errors `400`/`413` share the shape:
 
 Flush bound: buffered channel (cap 2048), flush every 1s or 500 rows;
 worst-case ingest lag about 1s plus write time (bounded at 2s).
-Ref: `configwire/ingest/ingest.go:25-28`.
+Ref: `configwire/ingest/ingest.go`.
 
 Flag-ID cache: `resolveFlagIDs` consults a process-local
 `(project, key) -> flags record ID` map before the indexed lookup, so
 each distinct hot key costs zero DB hits (one indexed
 `project = {:p} && key = {:k}` lookup per cold key at most).
-Ref: `configwire/ingest/flagcache.go:9-15` (header), `:53-84` (get/put),
-`configwire/ingest/handler.go:101-128` (`resolveFlagIDs`).
+Ref: `configwire/ingest/flagcache.go` (header, get/put),
+`configwire/ingest/handler.go` (`resolveFlagIDs`).
 
 - Cap 10000 entries, TTL 60s — same shape as the SDK-key fast cache,
-  separate map/mutex (never shared). Ref: `:27-34`.
+  separate map/mutex (never shared).
 - Unknown keys are negative-cached as `""` with the same TTL, so
   repeated unknown keys cost no DB hit; the event is stored with the
   flag relation unset (env-wide attribution, kind/variant preserved).
@@ -547,7 +546,7 @@ Ref: `configwire/ingest/flagcache.go:9-15` (header), `:53-84` (get/put),
   entry pre-commit). Create evicts the `(project, key)` entry so a
   previously-unknown key flips to the new flag ID immediately; update
   and delete additionally scan-evict by record ID to cover renames and
-  project moves. Ref: `configwire/ingest/flagcache_hooks.go:16-31`.
+  project moves. Ref: `configwire/ingest/flagcache_hooks.go`.
 - Project-scoped: the cache key is `projectID + "\x00" + key`, so the
   same key in two projects never shares an entry.
 - Cross-process convergence is bounded by one TTL (60s): after a flag
@@ -675,16 +674,16 @@ After auth the handler holds SSE long-lived:
 
 ## 7. Purge — `POST /api/v1/admin/maintenance/purge`
 
-Ref: `configwire/purge/purge.go:766-779` (`Register`), `:832-877`
-(`postPurge`), `:787-822` (daily ticker: scrub → purge → salt prune).
+Ref: `configwire/purge/purge.go` (`Register`, `postPurge`,
+daily ticker: scrub → purge → salt prune).
 Superuser-only.
 Cutoffs are dynamic: raw cutoff is `now - rawDays`, rollup cutoff is
 `now - rollupDays`, both read live from the retention singleton
 (defaults 30/90; see section 11). Identity scrub runs on its own
-48h horizon (`ScrubCutoff(now) = now - 48h`, `:62-67,195-199`),
-independent of the retention windows. Ref: `:77-100`
+48h horizon (`ScrubCutoff(now) = now - 48h`),
+independent of the retention windows. Ref: `configwire/purge/purge.go`
 (`configuredRawDays`, `configuredRollupDays`,
-`currentRollupExtraDays`), `:766` (manual route).
+`currentRollupExtraDays`), and the manual route.
 
 `?dry=` absent/`0`/`false` means live; `1`/`true` means dry-run
 (zero writes, same count); anything else (for example `abc`) then `400`.
@@ -803,7 +802,7 @@ Ref: [`configwire/dart`](https://github.com/configwire/dart) `lib/src/realtime.d
 Windows are tunable via superuser-only
 `GET/PUT /api/v1/admin/retention` (`{rawDays, rollupDays}`; each field
 optional on PUT, absent/null keeps the stored value). Ref:
-`configwire/retention/api.go:13-26` (routes), `:42-73` (handlers).
+`configwire/retention/api.go` (routes, handlers).
 
 | Knob | Default | Bounds | Enforced |
 | ---- | ------- | ------ | -------- |
@@ -816,9 +815,8 @@ they were built from). Env overrides at boot:
 (non-numeric falls back to the default); out-of-range or
 invariant-breaking env/DB values are clamped on load (bad knob falls
 back to its default, then `rollupDays` is raised to `rawDays`), never
-fatal on serve. Ref: `configwire/retention/retention.go:30-39`
-(defaults + bounds), `:79-94` (`ValidateConfig`), `:100-116`
-(`clampConfig`), `:68-77` (env), `:155-198` (`ensureLoaded`).
+fatal on serve. Ref: `configwire/retention/retention.go`
+(defaults + bounds, `ValidateConfig`, `clampConfig`, env, `ensureLoaded`).
 
 Cutoff is strictly-older-than
 (`ts` before cutoff deleted, exactly-equal kept, zero-ts kept).
@@ -840,7 +838,7 @@ and a clean re-run converges to `deleted: 0`. Ref: `configwire/purge/purge.go`
 ## 12. Cloud SSO (tenant side)
 
 Ref: `configwire/sso/sso.go` (routes, bodies, validation order),
-`configwire/main.go:492-514` (env wiring + fail-fast). Normative
+`configwire/main.go` (env wiring + fail-fast). Normative
 ticket format, TTL, and validation order live in repo-root
 `docs/sso-ticket.md` sections 1 and 4-5; the bodies below match its
 sections 6-7 exactly. On any mismatch that spec wins.
@@ -850,18 +848,18 @@ change for standalone deploys):
 
 - `CONFIGWIRE_AUTH_MODE=standard|sso` (default `standard`). `sso`
   match is case-insensitive, surrounding whitespace ignored; anything
-  else, including empty, is `standard`. Ref: `sso/sso.go:101-109`.
+  else, including empty, is `standard`. Ref: `sso/sso.go`.
 - `CONFIGWIRE_CLOUD_SSO_SECRET=<64-hex>` (32 bytes). Required in
   `sso` mode: missing or malformed fails fast at startup before any
   route serves. Set without `sso` mode: ignored with a log line.
-  Ref: `main.go:497-508`.
+  Ref: `main.go`.
 - `CONFIGWIRE_CLOUD_URL` (optional): dashboard URL surfaced as
   `cloudUrl` in the mode response for the managed notice link.
-  Ref: `sso/sso.go:486-495`.
+  Ref: `sso/sso.go`.
 
 ### 12a. Mode signal — `GET /api/v1/admin/auth/mode`
 
-Public, pre-auth. Ref: `sso/sso.go:482-483,486-495`.
+Public, pre-auth. Ref: `sso/sso.go`.
 
 Success `200` (default shape is exactly `{mode}`):
 
@@ -876,7 +874,7 @@ Success `200` (default shape is exactly `{mode}`):
 
 Public, Origin-checked, rate-limited like setup (same global `limits.CheckIP`
 middleware under `/api/v1/admin/` plus the per-route redeem bucket).
-Ref: `sso/sso.go:14-27,517-522`.
+Ref: `sso/sso.go`.
 
 Request:
 
@@ -886,7 +884,7 @@ Request:
 
 Empty body then `400` (`empty body: expected a JSON object.`);
 malformed JSON then `400` (`malformed JSON body: ...`).
-Ref: `sso/sso.go:529-532`.
+Ref: `sso/sso.go`.
 
 Success `200` (session issued with PocketBase
 `record.NewAuthToken()` semantics for the matched non-installer

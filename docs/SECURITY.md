@@ -67,7 +67,7 @@ binary plus operator procedure.
 
 ## 3. PII — bucket-only identity, tunable retention
 
-> v0.2.0-rc.11 (released 2026-11-04) is bucket-only (since v0.2.0-rc.1).
+> Latest release: see `CHANGELOG.md` / GitHub Releases. Bucket-only since v0.2.0-rc.1.
 > Bucket (`?b=0-9999`) is the sole identity: a valid `?b=` wins verbatim.
 > Legacy `userHash`/`uid`/`country` inputs plus event-body `userHash` and
 > event-body `userId` (any case, even null) are backward-compat
@@ -84,8 +84,7 @@ binary plus operator procedure.
   case-insensitive) then `400`. Errors name only
   the key, values are never logged. Clients send `?b=` plus `userHash`
   only, and even that is ignored at storage. Ref:
-  `configwire/ingest/ingest.go:122-130` (denylist), `:175-205`
-  (strict reject).
+  `configwire/ingest/ingest.go` (denylist, strict reject).
 - Identity is bucket-only, no derived fallback. Fetch takes a valid
   `?b=` when present (wins verbatim), else mints a fresh uniform bucket (`MintBucket`
   via `EffectiveBucket`) and evaluates on the mint; ingest takes a
@@ -126,7 +125,7 @@ binary plus operator procedure.
   (`email`, `phone`, `ip`, `deviceId`, `advertisingId`, `adid`,
   `idfa`, `idfv`, `androidId`, `serial`, `mac`, `imei`,
   case-insensitive) then `400`; values are never logged. Ref:
-  `configwire/fetch/fetch.go:90-105`.
+  `configwire/fetch/fetch.go`.
 - Server-side identity, when stored, is the bucket verbatim
   (or `""` on unattributed ingest rows): enough to join
   fetch/exposure rows, no raw identity involved.
@@ -298,8 +297,8 @@ binary plus operator procedure.
    in that order. Align backup rotation with the configured
   windows: backup zips are full dumps and a restore reintroduces
   rows the purge already deleted. Ref:
-  `configwire/retention/api.go:13-26`,
-  `configwire/retention/retention.go:30-39,79-116`,
+  `configwire/retention/api.go`,
+  `configwire/retention/retention.go`,
    `configwire/purge/purge.go` (cutoffs, scrub, ticker wiring,
    manual route).
 - Rollback/promote clone snapshots into NEW rows; releases are never

@@ -17,8 +17,8 @@ export CONFIGWIRE_CORS_ORIGIN=https://app.example.com
 ```
 
 Default is `Access-Control-Allow-Origin: *` (Flutter/web dev).
-Ref: `configwire/fetch/fetch.go:135` (`corsOrigin`), `configwire/stream/stream.go:52` (`corsOrigin`).
-Boot warns when unset (`configwire/main.go:465-466` (`main` boot warn, CORS unset)):
+Ref: `configwire/fetch/fetch.go` (`corsOrigin`), `configwire/stream/stream.go` (`corsOrigin`).
+Boot warns when unset (`configwire/main.go` (`main` boot warn, CORS unset)):
 
 ```text
 configwire: CONFIGWIRE_CORS_ORIGIN is unset, fetch CORS defaults to "*"; ...
@@ -47,8 +47,8 @@ export CONFIGWIRE_HSTS=31536000
 
 `export CONFIGWIRE_HSTS=31536000` stamps
 `Strict-Transport-Security: max-age=<n>; includeSubDomains` via
-`security.SetHeaders` (`configwire/security/security.go:43-48`,
-applied once at boot in `configwire/main.go:468` (`applyHSTSConfig` boot call));
+`security.SetHeaders` (`configwire/security/security.go`,
+applied once at boot in `configwire/main.go` (`applyHSTSConfig` boot call));
 unset/empty/invalid = no header (today's default, invalid logs one
 line naming only the env var). HSTS is opt-in on purpose:
 stamping it unconditionally would pin browsers to HTTPS that is not
@@ -63,7 +63,7 @@ cleartext behind whatever network carries them.
 export CONFIGWIRE_ADMIN_ALLOWED_IPS=203.0.113.8,198.51.100.0/24
 ```
 
-Knob lives at `configwire/limits/limits.go:346` (`adminAllowedIPsEnvName`); empty means allow all.
+Knob lives at `configwire/limits/limits.go` (`adminAllowedIPsEnvName`); empty means allow all.
 Denied IPs get `403` on every admin path (`/api/v1/admin/*` and
 `/api/collections/*`, where a superuser token alone grants full
 read/write). Tune later via the Admin UI Limits card or superuser-only
@@ -91,8 +91,8 @@ export CONFIGWIRE_ADMIN_PASSWORD=<8-72-chars>
 # compose passes both through (default empty)
 ```
 
-The opt-in claim guard (`configwire/account/account.go:97-115` (`loadSetupToken`,
-`setupTokenDenied`), 403-first in `postSetup` at `configwire/account/account.go:353-360`):
+The opt-in claim guard (`configwire/account/account.go` (`loadSetupToken`,
+`setupTokenDenied`), 403-first in `postSetup` at `configwire/account/account.go`):
 
 ```bash
 export CONFIGWIRE_SETUP_TOKEN=<your-setup-token>
@@ -117,9 +117,9 @@ export CONFIGWIRE_CLOUD_SSO_SECRET=<64-hex-secret>
 The secret must be exactly 64 hex chars decoding to 32 bytes —
 anything else is a fatal boot error, never a silent fallback.
 `sso` mode without it is a fatal boot error
-(`configwire/main.go:539` (`main` sso `log.Fatalf`)). Set in standard mode and the secret is
+(`configwire/main.go` (`main` sso `log.Fatalf`)). Set in standard mode and the secret is
 ignored with a boot log line. Ref:
-`configwire/sso/sso.go:63-68` (`EnvAuthMode`, `EnvSecret`).
+`configwire/sso/sso.go` (`EnvAuthMode`, `EnvSecret`).
 
 Skip it and the instance refuses to boot — loud, not silent.
 
@@ -136,12 +136,12 @@ export CONFIGWIRE_BACKUP_S3_ACCESS_KEY=<access-key>
 export CONFIGWIRE_BACKUP_S3_SECRET=<secret-key>
 ```
 
-Env names from `configwire/backups/env.go:21-43` (`CronEnvVar`–`S3SecretEnvVar`); full semantics in
+Env names from `configwire/backups/env.go` (`CronEnvVar`–`S3SecretEnvVar`); full semantics in
 [`BACKUPS.md`](BACKUPS.md) sections 2 and 4. Then align retention
 with the backup window: raw `events` default 30d, `event_daily`
 rollups default 90d, each tunable `1..1825` with
 `rollupDays >= rawDays` via `CONFIGWIRE_RAW_RETENTION_DAYS` /
-`CONFIGWIRE_ROLLUP_RETENTION_DAYS` (`configwire/retention/retention.go:74-75` (`loadDefaultsFromEnv`)).
+`CONFIGWIRE_ROLLUP_RETENTION_DAYS` (`configwire/retention/retention.go` (`loadDefaultsFromEnv`)).
 Backup zips are full dumps: a restore reintroduces rows the purge
 already deleted, so `cronMaxKeep` must cover the window you may need
 to restore. See `SECURITY.md` section 10 before any `migrate down`.
@@ -157,7 +157,7 @@ export CONFIGWIRE_PURGE=off
 
 MUST: exactly 1 process runs with `CONFIGWIRE_PURGE` enabled, every
 other process sets it to `off` (or `0`/`false`). The daily purge
-ticker (`configwire/purge/purge.go:699-706` (`purgeEnabled`), `708-721` (`Register`))
+ticker (`configwire/purge/purge.go` (`purgeEnabled`, `Register`))
 scrubs identities, rolls up raw events into `event_daily`, and prunes
 salts per process. Two tickers on the same DB roll up the same raw
 rows twice, double-counting `event_daily` fetches/exposures and racing
@@ -170,10 +170,10 @@ Skip it and nodes double-count rollups on every tick.
 
 MUST: in SSO mode behind more than one process, run a single redeem
 replica or pin `POST /api/v1/admin/sso/redeem` to one process with
-sticky sessions. The single-use nonce store (`configwire/sso/sso.go:265-277`
+sticky sessions. The single-use nonce store (`configwire/sso/sso.go`
 (`NonceCache`), 60s ticket TTL) and the redeem per-IP buckets
-(`configwire/sso/sso.go:308-315` (`RedeemPerIPLimit`, `RedeemPerIPWindow`),
-`317-323` (`redeemBucket` per-process memory)) are per-process memory,
+(`configwire/sso/sso.go` (`RedeemPerIPLimit`, `RedeemPerIPWindow`,
+`redeemBucket` per-process memory)) are per-process memory,
 not shared state. A replay or burst split across replicas within the
 60s window passes the `409` replay check and the 10/min/IP limit on
 each process independently.

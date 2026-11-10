@@ -82,13 +82,13 @@ and the [example](https://github.com/configwire/dart/tree/main/example).
 | `make serve`             | `go run . serve`                  |
 | `make migrate ARGS="up"` | `go run . migrate <args>`         |
 | `make test`              | `go build` + `go vet` + `go test` |
-| `make lint`              | `gofmt` check + `go vet`          |
+| `make lint`              | `gofmt` + `go vet` + doc refs     |
 | `make e2e`               | `bash scripts/e2e.sh`             |
 
 Ports: `8090` default serve · `8108` e2e (`scripts/e2e.sh`, do not reuse).
-CI (`.github/workflows/ci.yml`) runs build/vet/test + `make lint` on push/PR.
+CI is manual (`.github/workflows/ci.yml`, `workflow_dispatch`); run `make test` locally.
  
-Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (released 2026-10-25; latest v0.2.0-rc.11 — 2026-11-04): `?b=0-9999` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` (any casing) are accepted-but-ignored, never stored. Raw `events` 30d → rolled into `event_daily` (90d), both tunable `1..1825`
+Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (released 2026-10-25; latest release: see `CHANGELOG.md` / GitHub Releases): `?b=0-9999` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` (any casing) are accepted-but-ignored, never stored. Raw `events` 30d → rolled into `event_daily` (90d), both tunable `1..1825`
 via `PUT /api/v1/admin/retention`;
 stats past 30d answer `approximate:true` only when merged, exact otherwise. Rate limits: global 200 rps effective (min 200, burst 400 ceiling) per IP,
 fetch 100 / ingest 50 rps per key (`429` carries `Retry-After: 1`).

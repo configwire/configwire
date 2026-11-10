@@ -16,7 +16,7 @@ test:
 	go build ./... && go vet ./... && go test ./...
 
 lint:
-	test -z "$$(gofmt -l .)" && go vet ./...
+	test -z "$$(gofmt -l .)" && go vet ./... && bash scripts/check-doc-line-refs.sh
 
 e2e:
 	bash scripts/e2e.sh

@@ -1,7 +1,7 @@
 # ConfigWire Key Rotation Runbook (breaking `cw-` reissue)
 
 Why this exists: the SDK header is `X-ConfigWire-Key`
-(`configwire/ingest/ingest.go:47`) and keys carry the `cw-` prefix.
+(`configwire/ingest/ingest.go`) and keys carry the `cw-` prefix.
 Unknown, revoked, or env-mismatched keys answer `401` by design.
 Rotate with the steps below.
 
