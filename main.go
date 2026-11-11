@@ -40,6 +40,7 @@ import (
 	"github.com/configwire/configwire/sso"
 	"github.com/configwire/configwire/stats"
 	"github.com/configwire/configwire/stream"
+	"github.com/configwire/configwire/updatecheck"
 )
 
 // ConfigWire data-integrity hooks.
@@ -575,9 +576,11 @@ func main() {
 		})
 
 		// Public app metadata for the pre-auth login topbar.
-		// No auth by design (same as /healthz).
+		// No auth by design (same as /healthz). The updates flag mirrors
+		// the updatecheck gate so the console only offers the Console
+		// updates card when the operator enabled it.
 		se.Router.GET("/api/v1/meta", func(re *core.RequestEvent) error {
-			return re.JSON(200, map[string]string{"version": appVersion(), "assets": assets})
+			return re.JSON(200, map[string]any{"version": appVersion(), "assets": assets, "updates": updatecheck.Enabled()})
 		})
 
 		limits.Register(se)
@@ -615,6 +618,12 @@ func main() {
 		purge.Register(se)
 
 		account.Register(se)
+
+		// Manual opt-in update check (no background fetch): the admin UI
+		// calls POST /api/v1/admin/update-check explicitly, so CSP stays
+		// connect-src 'self'. Version mirrors /api/v1/meta.
+		updatecheck.Version = appVersion()
+		updatecheck.Register(se)
 
 		// First-superuser bootstrap from env; empty keeps setup UI at /.
 		// Fail-soft: skips and save errors log and boot continues.

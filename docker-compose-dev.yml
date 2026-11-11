@@ -17,6 +17,7 @@ services:
       # Empty keeps first-run setup at /.
       - CONFIGWIRE_ADMIN_EMAIL=${CONFIGWIRE_ADMIN_EMAIL:-}
       - CONFIGWIRE_ADMIN_PASSWORD=${CONFIGWIRE_ADMIN_PASSWORD:-}
+      - CONFIGWIRE_CHECK_UPDATES=1
     volumes:
       - cw-data:/app/pb_data
     restart: unless-stopped

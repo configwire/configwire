@@ -961,6 +961,44 @@ a secret (pre-backfill) answer `500`. Ticket TTL is 60s,
 non-negotiable; `?sso=` is stripped via `history.replaceState`
 right after redeem.
 
+### 12c. Update check — `POST /api/v1/admin/update-check`
+
+Superuser-only, opt-in. Ref: `updatecheck/updatecheck.go`.
+
+Gated by `CONFIGWIRE_CHECK_UPDATES=1` (exact match, read per
+request). Anything else answers `403` with no outbound network:
+
+```json
+{"message": "update checks disabled", "status": 403}
+```
+
+When enabled, the server does a one-shot fetch of the public
+releases list (5s timeout, no version sent) and answers:
+
+```json
+{"current": "v0.2.0", "latest": "v0.2.1", "update": true}
+```
+
+- `update` is true only when `latest` is non-empty, `current` is
+  non-dev, and `latest` is newer than `current`.
+- Upstream timeout/non-200/invalid JSON answers `502
+  {"message": "update check failed", "status": 502}.
+- No background polling on the server: the fetch happens synchronously
+  inside the request. Successful fetches are cached for 10 minutes to
+  coalesce simultaneous checks (failures are never cached).
+- Console badge: the topbar restores the `update-pill` badge, sourced
+  from this endpoint instead of the browser calling GitHub (CSP stays
+  `connect-src 'self'`). `GET /api/v1/meta` gains an additive
+  `updates` boolean mirroring the gate; the Settings card "Console
+  updates" stays hidden until the flag reads true. The card holds a
+  per-browser "Automatic checks" switch (off by default, persisted in
+  `localStorage`): while on, the open console repeats the same `POST`
+  every 6 hours, skipping hidden tabs. While off, the badge reads
+  "Check for updates" and a click runs one check; while on, a badge
+  click follows the Releases link. Dev builds keep the badge hidden.
+- Privacy: each explicit or auto check leaks the server IP + timestamp
+  to GitHub. Default posture (gate off, switch off) leaks nothing.
+
 ## 14. Audit log
 
 Superuser-only, read-only view of the durable admin audit trail. The

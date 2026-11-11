@@ -1481,28 +1481,243 @@
   };
 })();
 
-/* ConfigWire topbar version — same-origin /api/v1/meta only; the fallback
- * markup keeps vdev. #cw-update is a static link to GitHub Releases, so the
- * admin browser never calls a third party. */
+/* ConfigWire topbar version + update badge — same-origin only, so the admin
+ * browser never calls a third party (CSP connect-src stays 'self').
+ * #cw-version fills from GET /api/v1/meta. #cw-update restores the
+ * update-pill badge: with the Settings "Automatic checks" switch on it
+ * shows update <tag> / latest exactly like the old badge (one same-origin
+ * POST /api/v1/admin/update-check on load and every 6 hours); with the
+ * switch off it reads "Check for updates" and a click runs one check.
+ * Per-browser opt-in (localStorage, default off); hidden-tab ticks are
+ * skipped; dev builds and servers with update checks disabled
+ * (CONFIGWIRE_CHECK_UPDATES unset, surfaced as updates:false in
+ * /api/v1/meta or a 403 from update-check) keep the badge hidden. The
+ * badge stays hidden until /api/v1/meta confirms checks are enabled,
+ * so a disabled server never flashes the trigger. */
 (function () {
   "use strict";
+  var AUTO_MS = 6 * 60 * 60 * 1000;
+  var AUTO_KEY = "cw.autoUpdateCheck";
+  var autoOn = false;
+  var devBuild = false;
+  var updatesKnown = false;
+  var updatesDisabled = false;
+  var checking = false;
+  var checkDone = false;
+  function isDevTag(tag) {
+    var t = String(tag || "").trim().toLowerCase();
+    return !t || t === "dev" || t === "vdev";
+  }
+  function readAuto() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage.getItem) return false;
+      return localStorage.getItem(AUTO_KEY) === "1";
+    } catch (e) { return false; }
+  }
+  function writeAuto(on) {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage.setItem) return;
+      if (on) localStorage.setItem(AUTO_KEY, "1");
+      else localStorage.removeItem(AUTO_KEY);
+    } catch (e) { /* private mode: toggle lasts this page load only */ }
+  }
+  function badge() {
+    try { return document.getElementById("cw-update"); } catch (e) { return null; }
+  }
+  function hideBadge(el) {
+    if (!el) return;
+    try { el.setAttribute("hidden", ""); } catch (e) { /* stub-safe */ }
+    el.hidden = true;
+  }
+  function showBadge(el) {
+    if (!el) return;
+    try { el.removeAttribute("hidden"); } catch (e) { /* stub-safe */ }
+    el.hidden = false;
+  }
+  function paint(el, text, label, current) {
+    el.textContent = text;
+    el.title = label;
+    try { el.setAttribute("aria-label", label); } catch (e) { /* stub-safe */ }
+    try {
+      if (!el.classList) return;
+      if (current) el.classList.add("is-current");
+      else el.classList.remove("is-current");
+    } catch (e) { /* stub-safe */ }
+    showBadge(el);
+  }
+  function showTrigger(el) {
+    if (!el) return;
+    paint(el, "Check for updates", "Check for updates now — runs one same-origin update check", false);
+  }
+  function setStatus(msg, tone) {
+    try {
+      var s = document.getElementById("auto-update-result");
+      if (!s) return;
+      s.textContent = msg;
+      if (!s.classList) return;
+      s.classList.remove("is-ok");
+      s.classList.remove("is-warn");
+      if (tone) s.classList.add(tone);
+    } catch (e) { /* settings card absent in some shells */ }
+  }
   function updateVersion() {
     var el = document.getElementById("cw-version");
-    if (!el) return;
     try {
       fetch("/api/v1/meta", { headers: { "Accept": "application/json" } })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
-          if (d && typeof d.version === "string" && d.version) {
+          if (el && d && typeof d.version === "string" && d.version) {
             el.textContent = d.version;
+            if (isDevTag(d.version)) {
+              devBuild = true;
+              hideBadge(badge());
+            }
+          }
+          updatesKnown = true;
+          if (d && "updates" in d && !d.updates) {
+            updatesDisabled = true;
+            hideBadge(badge());
+          } else if (!checking && !checkDone) {
+            // Fail-open (old servers/meta failures); skip when a check ran
+            // so a late meta never clobbers its paint.
+            renderMode();
+          }
+          if (d && d.updates) {
+            try {
+              var card = document.getElementById("console-updates-card");
+              if (card) {
+                card.removeAttribute("hidden");
+                card.hidden = false;
+              }
+            } catch (e) { /* stub-safe */ }
           }
         })
-        .catch(function () { /* keep fallback silently */ });
+        .catch(function () {
+          if (!updatesKnown) {
+            updatesKnown = true;
+            if (!checking && !checkDone) renderMode();
+          }
+        });
     } catch (e) { /* keep fallback silently */ }
+  }
+  function runCheck() {
+    var el = badge();
+    if (!el || checking || devBuild || updatesDisabled) return;
+    checking = true;
+    try {
+      fetch("/api/v1/admin/update-check", { method: "POST", headers: { "Accept": "application/json" } })
+        .then(function (r) {
+          if (r.status === 401) { // logged out: ON stays hidden, OFF keeps its trigger
+            if (autoOn) hideBadge(el);
+            else showTrigger(el);
+            return null;
+          }
+          if (r.status === 403) {
+            updatesKnown = true;
+            updatesDisabled = true;
+            hideBadge(el);
+            setStatus("Update checks are disabled on this server.", "is-warn");
+            return { handled: true };
+          }
+          return r.ok ? r.json() : null;
+        })
+        .then(function (d) {
+          if (!d || d.handled) {
+            if (!d && !autoOn) showTrigger(el);
+            else if (!d) hideBadge(el);
+            return;
+          }
+          if (typeof d.latest !== "string" || !d.latest || isDevTag(d.current)) {
+            if (!autoOn) showTrigger(el);
+            else hideBadge(el);
+            return;
+          }
+          if (d.update) {
+            paint(el, "update " + d.latest,
+              "New version available: " + d.latest + " (current " + d.current + ") — open releases", false);
+            setStatus("Update available: " + d.latest + " (current " + d.current + ").", "is-warn");
+          } else {
+            paint(el, "latest",
+              "ConfigWire is up to date (current " + d.current + ") — open releases", true);
+            setStatus("Up to date (current " + d.current + ").", "is-ok");
+          }
+        })
+        .catch(function () {
+          if (!autoOn) showTrigger(el);
+          /* ON stays hidden on failure: silent like the old badge */
+        })
+        .then(function () { checking = false; checkDone = true; }, function () { checking = false; checkDone = true; });
+    } catch (e) { checking = false; /* keep fallback silently */ }
+  }
+  function stopAuto() {
+    try {
+      if (window.__cwAutoUpdateTimer) {
+        clearInterval(window.__cwAutoUpdateTimer);
+        window.__cwAutoUpdateTimer = null;
+      }
+    } catch (e) { /* never break the shell */ }
+  }
+  function startAuto() {
+    stopAuto();
+    try {
+      window.__cwAutoUpdateTimer = setInterval(function () {
+        if (document.hidden) return;
+        runCheck();
+      }, AUTO_MS);
+    } catch (e) { /* timers unavailable: badge clicks still work */ }
+  }
+  function setSwitch(sw, on) {
+    try { sw.setAttribute("aria-checked", on ? "true" : "false"); } catch (e) { /* stub-safe */ }
+  }
+  function renderMode() {
+    var el = badge();
+    if (!el) return;
+    if (devBuild || updatesDisabled) { hideBadge(el); return; }
+    if (!updatesKnown) { hideBadge(el); return; }
+    if (!autoOn) showTrigger(el);
+    else hideBadge(el);
+  }
+  function wireUpdates() {
+    var el = badge();
+    autoOn = readAuto();
+    if (el) {
+      el.addEventListener("click", function (ev) {
+        if (autoOn || updatesDisabled) return; // original behavior: follow the Releases link
+        if (ev && ev.preventDefault) ev.preventDefault();
+        runCheck();
+      });
+      renderMode();
+    }
+    var sw = null;
+    try { sw = document.getElementById("auto-update-switch"); } catch (e) { sw = null; }
+    if (sw) {
+      setSwitch(sw, autoOn);
+      sw.addEventListener("click", function () {
+        autoOn = !autoOn;
+        writeAuto(autoOn);
+        setSwitch(sw, autoOn);
+        if (autoOn) {
+          startAuto();
+          renderMode();
+          runCheck();
+          setStatus("Automatic checks on — this browser checks every 6 hours.");
+        } else {
+          stopAuto();
+          renderMode();
+          setStatus("Automatic checks off.");
+        }
+      });
+    }
+    if (autoOn) {
+      startAuto();
+      runCheck();
+    }
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", updateVersion);
+    document.addEventListener("DOMContentLoaded", wireUpdates);
   } else {
     updateVersion();
+    wireUpdates();
   }
 })();

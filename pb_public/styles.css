@@ -34,7 +34,7 @@
  *   dirty tracking: tr.is-unpublished/.is-deleted, .rule-item.is-unpublished/.is-deleted, .exp-card.is-unpublished/.is-deleted,
  *   .folder.is-unpublished/.is-deleted, section.card.is-dirty/.has-unpublished, #unpublished-list,
  *   #publish-hint.is-dirty, #sidebar-nav a .badge.unpublished,
- *   topbar version: #cw-version/#cw-update/.topbar-release-link */
+ *   topbar update check: #cw-version/#cw-update/.update-pill */
 :root {
   color-scheme: dark;
   --bg: #141922;
@@ -468,19 +468,6 @@ a.brand:focus-visible {
   display: none;
 }
 
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-@media (max-width: 640px) {
-  .topbar-actions {
-    gap: 0;
-  }
-}
-
 .status-pill {
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -512,19 +499,48 @@ a.brand:focus-visible {
   border-radius: 4px;
 }
 
-.topbar-release-link {
-  color: var(--accent-hover);
+.update-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid rgba(var(--warn-rgb), 0.45);
+  background: rgba(var(--warn-rgb), 0.1);
+  color: var(--warn);
+  border-radius: 999px;
+  padding: 2px 8px;
   text-decoration: none;
-  border-radius: 4px;
+  white-space: nowrap;
 }
 
-.topbar-release-link:hover {
-  text-decoration: underline;
+.update-pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex-shrink: 0;
+  animation: cw-update-pulse 2s infinite;
 }
 
-.topbar-release-link:focus-visible {
-  outline: 1px solid var(--accent);
+.update-pill:hover {
+  border-color: var(--warn);
+}
+
+.update-pill.is-current {
+  border-color: rgba(var(--mint-rgb), 0.35);
+  background: rgba(var(--mint-rgb), 0.08);
+  color: var(--mint);
+}
+
+.update-pill.is-current::before {
+  background: var(--mint);
+}
+
+.update-pill:focus-visible {
+  outline: 1px solid var(--warn);
   outline-offset: 2px;
 }
 
@@ -2008,10 +2024,67 @@ button.log-chip:focus-visible {
   background: var(--danger);
 }
 
+/* Console-updates status pill (Settings card): same metrics as the
+ * ip-status-pill above, mint = up to date, amber = update available or
+ * checks disabled. Empty until the first status line, so it takes no
+ * space on a fresh card. */
+#auto-update-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: var(--space-3) 0 0;
+  padding: 4px 12px;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+#auto-update-result:empty {
+  display: none;
+}
+
+#auto-update-result::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-dim);
+  flex-shrink: 0;
+}
+
+#auto-update-result.is-ok {
+  border-color: rgba(var(--mint-rgb), 0.35);
+  background: rgba(var(--mint-rgb), 0.08);
+  color: var(--mint);
+}
+
+#auto-update-result.is-ok::before {
+  background: var(--mint);
+}
+
+#auto-update-result.is-warn {
+  border-color: rgba(var(--warn-rgb), 0.45);
+  background: rgba(var(--warn-rgb), 0.1);
+  color: var(--warn);
+}
+
+#auto-update-result.is-warn::before {
+  background: var(--warn);
+  animation: cw-update-pulse 2s infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
 
   #admin-current-ip.ip-status-pill::before,
-  #admin-current-country.ip-status-pill::before {
+  #admin-current-country.ip-status-pill::before,
+  #auto-update-result.is-warn::before {
     animation: none;
   }
 }

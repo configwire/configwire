@@ -278,7 +278,22 @@ binary plus operator procedure.
     'self' 'unsafe-inline'`, `img-src 'self' data:`, and `connect-src
     'self'`. The admin browser never calls a third party; the topbar
     GitHub link is a static anchor, so no GitHub API/rate-limit traffic
-    originates from the console.
+    originates from the console. The only exception is the explicit
+    opt-in `POST /api/v1/admin/update-check` (superuser-only, gated by
+    `CONFIGWIRE_CHECK_UPDATES=1`, default off). The topbar restores the
+    `update-pill` badge, but sourced from that endpoint instead of the
+    browser calling GitHub; `GET /api/v1/meta` carries an `updates`
+    flag so the Settings card "Console updates" only renders while the
+    gate is on. The card holds a per-browser "Automatic checks" switch
+    (off by default, 6-hour cadence, hidden tabs skipped); while the
+    switch is off the badge reads "Check for updates" and a click runs
+    one check, while on it shows update/latest exactly like the old
+    badge. Each check makes
+    the *server* do a one-shot fetch of the public releases list
+    (successes cached 10 minutes to coalesce simultaneous checks).
+    That fetch leaks the server IP + timestamp to GitHub (no version
+    is sent); with the gate off and the switch off no outbound request
+    ever happens. There is no server-side background polling.
 - Container surface: release images run as non-root UID/GID `10001` and
   build with PocketBase's `no_ui` tag, so the PocketBase dashboard is not
   shipped (the `/_/` path falls through to the ConfigWire SPA shell and
