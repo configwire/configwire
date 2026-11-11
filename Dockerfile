@@ -35,17 +35,23 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Alpine 3.24 is the current supported minor; pinned by index digest so a
 # tag move cannot silently change the runtime base.
 FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates su-exec
 RUN addgroup -S -g 10001 configwire \
     && adduser -S -D -H -u 10001 -G configwire configwire
 WORKDIR /app
 RUN mkdir -p /app/pb_data && chown -R 10001:10001 /app
 COPY --chown=10001:10001 --from=builder /out/configwire ./
 COPY --chown=10001:10001 pb_public ./pb_public
+COPY --chown=root:root entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 VOLUME ["/app/pb_data"]
 EXPOSE 8090
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget --no-verbose --tries=1 --spider http://localhost:8090/healthz || exit 1
-USER 10001:10001
+# No USER line on purpose: the entrypoint starts as root so it can chown a
+# legacy root-owned /app/pb_data volume (pre-non-root images ran as root),
+# then drops to 10001:10001 via su-exec before execing the app. The chown
+# touches only the data volume, never the (possibly read-only) rootfs.
 # NOTE: 0.0.0.0 (not 127.0.0.1) so the port is reachable outside the container.
 # Data dir defaults to ./pb_data locally; in-container it is /app/pb_data.
-ENTRYPOINT ["./configwire", "serve", "--http=0.0.0.0:8090", "--dir=/app/pb_data"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["./configwire", "serve", "--http=0.0.0.0:8090", "--dir=/app/pb_data"]

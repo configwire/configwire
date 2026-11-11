@@ -22,7 +22,7 @@ external DB. Admin UI ships as static files.
 docker run -d \
   --name configwire \
   --restart unless-stopped \
-  --read-only --tmpfs /tmp --cap-drop ALL \
+  --read-only --tmpfs /tmp --cap-drop ALL --cap-add CHOWN \
   -p 8090:8090 \
   -v cw-data:/app/pb_data \
   ghcr.io/configwire/configwire:latest
@@ -32,8 +32,11 @@ curl -s http://localhost:8090/healthz
 ```
 
 The image runs as non-root UID/GID `10001`; only `/app/pb_data` (volume)
-and `/tmp` (tmpfs) are writable. If you bind-mount a host directory
-instead of a named volume, `chown -R 10001:10001 <dir>` it first.
+and `/tmp` (tmpfs) are writable. Upgrading from a pre-non-root release
+(rc.12 or older): the entrypoint auto-fixes a legacy root-owned volume on
+first boot (needs the `CHOWN` cap above — keep it when you
+copy the flags). If you bind-mount a host directory instead of a named
+volume, `chown -R 10001:10001 <dir>` it first.
 
 Or via Compose (see [`docker-compose.yml`](docker-compose.yml)):
 

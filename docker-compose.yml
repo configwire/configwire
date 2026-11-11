@@ -32,6 +32,8 @@ services:
       - /tmp
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
     security_opt:
       - no-new-privileges:true
     stop_grace_period: 20s
