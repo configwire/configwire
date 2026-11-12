@@ -151,6 +151,37 @@ func TestFlagKeyTakenConcurrentDoubleCreateOneWinner(t *testing.T) {
 	}
 }
 
+// Loader scoping (verified read-only, 2026-11-12): CW.state.flags IS
+// pre-scoped by project in the loader path. flags.js loadFlags fetches
+// with a server-side filter '(project="{pid}")' AND applies a strict
+// client-side filter 'f.project === pid' before assigning
+// CW.state.flags (groups get the same treatment). So the JS duplicate
+// guard must still filter by project explicitly
+// ('.project === CW.state.projectId') to stay correct if it ever runs
+// against merged/unscoped state (e.g. CW.drafts.mergedFlags()), and it
+// uses exact '===' post-trim comparison with no case folding, matching
+// the server hook (main.go checkFlagKeyTaken: indexed
+// 'project = {:p} && key = {:k}' filter; SQLite '=' is BINARY, so the
+// (project, key) uniqueness check is case-sensitive — 'Foo' vs 'foo'
+// are distinct keys). Guard design decision: JS mirrors the server with
+// exact case-sensitive '===' + project filter, no toLowerCase.
+// TestFlagKeyCaseBehavior pins the case-sensitive outcome: 'Foo' and
+// 'foo' coexist in the same project.
+func TestFlagKeyCaseBehavior(t *testing.T) {
+	app := envGuardTestApp(t)
+	pid := seedProject(t, app, "flag-unique-case")
+	seedFlag(t, app, pid, "Foo")
+	if err := saveFlagWithKey(app, pid, "foo"); err != nil {
+		t.Fatalf("case-variant flag key refused: %v (server is case-sensitive, want allowed)", err)
+	}
+	if n := countProjectKeyFlags(t, app, pid, "Foo"); n != 1 {
+		t.Fatalf("%d rows for (project,Foo), want exactly 1", n)
+	}
+	if n := countProjectKeyFlags(t, app, pid, "foo"); n != 1 {
+		t.Fatalf("%d rows for (project,foo), want exactly 1", n)
+	}
+}
+
 // TestCheckFlagKeyShapeFiresFirst pins hook order: an empty key is
 // rejected by shape validation before the uniqueness pre-check runs.
 func TestCheckFlagKeyShapeFiresFirst(t *testing.T) {

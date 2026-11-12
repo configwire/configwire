@@ -648,6 +648,55 @@
     try { renderUnpublishedList(); updatePublishNavBadge(); updateDirtyHighlights(); } catch (e5) { /* best-effort */ }
   }
 
+  // IS-4 row highlight: marks the failing unpublished row with a single
+  // apply-conflict class plus a data-apply-conflict marker, matched on
+  // its data-unpublished-kind/id attrs. Applied AFTER rerenderMerged
+  // (fail() re-renders first, boot.js applyFailed highlights second), so
+  // the mark is DOM-only: the next renderUnpublishedList rebuild drops
+  // it, which is exactly when the offending draft was edited/discarded.
+  function highlightApplyConflict(err) {
+    try {
+      if (!err || !err.draftKind || err.draftKey == null) return false;
+      var list = CW.$("unpublished-list");
+      if (!list || typeof list.innerHTML !== "string") return false;
+      var needle = '<li data-unpublished-kind="' + CW.esc(err.draftKind) +
+        '" data-unpublished-id="' + CW.esc(err.draftKey) + '"';
+      var html = list.innerHTML;
+      var at = html.indexOf(needle);
+      if (at < 0) return false;
+      var end = html.indexOf(">", at);
+      if (end < 0) return false;
+      var tag = html.slice(at, end);
+      if (tag.indexOf("apply-conflict") >= 0) return true;
+      var inject = ' data-apply-conflict="1"';
+      if (tag.indexOf(' class="') >= 0) {
+        list.innerHTML = html.slice(0, at) + tag.replace(' class="', ' class="apply-conflict ') + html.slice(end);
+      } else {
+        list.innerHTML = html.slice(0, end) + inject + ' class="apply-conflict"' + html.slice(end);
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // IS-4 failure display: names the conflicting key plus the kept-draft
+  // count in #publish-result and highlights the failing unpublished row.
+  // Returns true only for FLAG_CREATE; every other error falls through
+  // to the generic publish-result message in boot.js applyFailed.
+  function renderApplyFailure(err) {
+    try {
+      if (!err || err.code !== "FLAG_CREATE") return false;
+      var ckey = (err.draftLabel != null) ? String(err.draftLabel) : "";
+      var kept = (err.kept != null) ? err.kept : countDrafts();
+      var res = CW.$("publish-result");
+      if (res) {
+        res.textContent = "Publish stopped at duplicate flag key \"" + ckey +
+          "\" (" + kept + " drafts kept). Edit or discard the highlighted row, then publish again.";
+      }
+      highlightApplyConflict(err);
+      return true;
+    } catch (e) { return false; }
+  }
+
   // applyRunning guards direct invocations (e.g. window.cwAdmin.
   // applyDrafts): the UI-level CW.state.applying flag is set by callers
   // BEFORE calling, so it cannot guard the function itself. A concurrent
@@ -673,6 +722,18 @@
         " (step " + stepNo + "/" + total + "). " + kept + " drafts kept.");
       err.draftKind = s.kind;
       err.draftLabel = s.label;
+      // IS-4 identity contract: the failing step's bucket key rides on
+      // err.draftKey so the conflict row targets precisely
+      // (data-unpublished-id === bucket key for every kind), and for a
+      // FLAG_CREATE the conflicting flag key rides on err.draftLabel —
+      // normally the step label already, body.key only as fallback so a
+      // label-less staged create still names the key, never the temp id.
+      err.draftKey = s.key;
+      if (name === "FLAG_CREATE" && s.kind === "flag") {
+        var cbody = s.entry && s.entry.body ? s.entry.body : null;
+        var ckey = cbody ? cbody.key : null;
+        if (ckey != null && String(ckey) !== "") err.draftLabel = String(ckey);
+      }
       err.step = stepNo;
       err.total = total;
       err.status = status;
@@ -1123,6 +1184,8 @@
   CW.unpublishedSummary = unpublishedSummary;
   CW.renderUnpublishedList = renderUnpublishedList;
   CW.applyDrafts = applyDrafts;
+  CW.highlightApplyConflict = highlightApplyConflict;
+  CW.renderApplyFailure = renderApplyFailure;
   CW.setApplying = setApplying;
   CW.updatePublishNavBadge = updatePublishNavBadge;
   CW.updateDirtyHighlights = updateDirtyHighlights;

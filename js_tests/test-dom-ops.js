@@ -529,6 +529,133 @@ test("saveFlag: leading-digit key is rejected inline, stages nothing", async fun
   assert.equal(h.CW.drafts.hasDrafts(), true);
 });
 
+test("saveFlag: create dup_key against live flags blocks with zero side effects", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  h.CW.state.flags = [
+    { id: "f1", key: "dup_key", type: "bool", defaultValue: false, project: "p1" },
+    { id: "f9", key: "other_proj", type: "bool", defaultValue: false, project: "p2" },
+  ];
+  var before = h.CW.unpublishedSummary().total;
+  var cleaned = 0, refreshed = 0, closed = 0;
+  var origClean = h.CW.markFormClean, origRefresh = h.CW.drafts.refreshDraftChrome;
+  var dlg = el("flag-dialog"), origClose = dlg.close, origOpen = dlg.open;
+  h.CW.markFormClean = function () { cleaned++; };
+  h.CW.drafts.refreshDraftChrome = function () { refreshed++; };
+  dlg.open = true; dlg.close = function () { closed++; };
+  var ret;
+  try {
+    setVal("flag-id", ""); setVal("flag-key", "dup_key"); setVal("flag-description", "");
+    setVal("flag-type", "bool"); setVal("flag-default", "false"); setVal("flag-group", "");
+    ret = await h.CW.saveFlag();
+  } finally {
+    h.CW.markFormClean = origClean; h.CW.drafts.refreshDraftChrome = origRefresh;
+    dlg.close = origClose; dlg.open = origOpen;
+  }
+  assert.equal(ret, undefined);
+  assert.ok(el("flag-result").textContent.indexOf("dup_key") >= 0);
+  assert.equal(h.CW.drafts.hasDrafts(), false);
+  assert.equal(h.CW.unpublishedSummary().total, before);
+  assert.equal(cleaned, 0);
+  assert.equal(refreshed, 0);
+  assert.equal(closed, 0);
+  assert.equal(h.fetchCalls.length, 0);
+});
+
+test("saveFlag: create dup_key against a staged create blocks, bucket keeps one entry", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  h.CW.drafts.draftStage("flag", {
+    op: "create",
+    body: { key: "dup_key", type: "bool", defaultValue: false, project: "p1" },
+    label: "dup_key",
+  });
+  var stagedKeys = Object.keys(h.CW.state.drafts.flag);
+  assert.equal(stagedKeys.length, 1);
+  var before = h.CW.unpublishedSummary().total;
+  setVal("flag-id", ""); setVal("flag-key", "dup_key"); setVal("flag-description", "");
+  setVal("flag-type", "bool"); setVal("flag-default", "false"); setVal("flag-group", "");
+  assert.equal(await h.CW.saveFlag(), undefined);
+  assert.ok(el("flag-result").textContent.indexOf("dup_key") >= 0);
+  assert.deepEqual(Object.keys(h.CW.state.drafts.flag), stagedKeys);
+  assert.equal(h.CW.unpublishedSummary().total, before);
+  assert.equal(h.fetchCalls.length, 0);
+});
+
+test("saveFlag: create dup_key against a pending delete blocks, delete entry kept", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  h.CW.state.flags = [
+    { id: "f1", key: "dup_key", type: "bool", defaultValue: false, project: "p1" },
+  ];
+  h.CW.drafts.draftStage("flag", { op: "delete", body: {}, baseId: "f1", label: "dup_key deleted" });
+  var before = h.CW.unpublishedSummary().total;
+  setVal("flag-id", ""); setVal("flag-key", "dup_key"); setVal("flag-description", "");
+  setVal("flag-type", "bool"); setVal("flag-default", "false"); setVal("flag-group", "");
+  assert.equal(await h.CW.saveFlag(), undefined);
+  assert.ok(el("flag-result").textContent.indexOf("dup_key") >= 0);
+  assert.deepEqual(Object.keys(h.CW.state.drafts.flag), ["f1"]);
+  assert.equal(h.CW.state.drafts.flag.f1.op, "delete");
+  assert.equal(h.CW.unpublishedSummary().total, before);
+  assert.equal(h.fetchCalls.length, 0);
+});
+
+test("saveFlag: rename f2 to dup_key blocks, keeping own key stages", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  h.CW.state.flags = [
+    { id: "f1", key: "dup_key", type: "bool", defaultValue: false, project: "p1" },
+    { id: "f2", key: "mine", type: "bool", defaultValue: false, project: "p1" },
+  ];
+  setVal("flag-id", "f2"); setVal("flag-key", "dup_key"); setVal("flag-description", "");
+  setVal("flag-type", "bool"); setVal("flag-default", "false"); setVal("flag-group", "");
+  assert.equal(await h.CW.saveFlag(), undefined);
+  assert.ok(el("flag-result").textContent.indexOf("dup_key") >= 0);
+  assert.equal(h.CW.drafts.hasDrafts(), false);
+  assert.equal(h.fetchCalls.length, 0);
+  // Keeping its own key is allowed and stages the update (flags.js saveFlag).
+  setVal("flag-key", "mine"); setVal("flag-description", "changed");
+  var out = await h.CW.saveFlag();
+  assert.deepEqual(plain(out), { status: 200, data: {} });
+  assert.equal(h.CW.state.drafts.flag.f2.op, "update");
+  assert.equal(h.CW.state.drafts.flag.f2.body.key, "mine");
+});
+
+test("saveFlag: ' Dup_Key ' trims to a taken key; case variants stay allowed", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  h.CW.state.flags = [
+    { id: "f1", key: "Dup_Key", type: "bool", defaultValue: false, project: "p1" },
+  ];
+  setVal("flag-id", ""); setVal("flag-key", " Dup_Key "); setVal("flag-description", "");
+  setVal("flag-type", "bool"); setVal("flag-default", "false"); setVal("flag-group", "");
+  assert.equal(await h.CW.saveFlag(), undefined);
+  assert.ok(el("flag-result").textContent.indexOf("Dup_Key") >= 0);
+  assert.equal(h.CW.drafts.hasDrafts(), false);
+  // Exact === is case-sensitive (server parity): "dup_key" is a free key.
+  setVal("flag-key", "dup_key");
+  var out = await h.CW.saveFlag();
+  assert.deepEqual(plain(out), { status: 200, data: {} });
+  var keys = Object.keys(h.CW.state.drafts.flag);
+  assert.equal(keys.length, 1);
+  assert.equal(h.CW.state.drafts.flag[keys[0]].body.key, "dup_key");
+});
+
+test("saveFlag: same key in another project does not block", async function () {
+  reset();
+  h.CW.state.projectId = "p1";
+  h.CW.state.flags = [
+    { id: "f9", key: "shared", type: "bool", defaultValue: false, project: "p2" },
+  ];
+  setVal("flag-id", ""); setVal("flag-key", "shared"); setVal("flag-description", "");
+  setVal("flag-type", "bool"); setVal("flag-default", "false"); setVal("flag-group", "");
+  var out = await h.CW.saveFlag();
+  assert.deepEqual(plain(out), { status: 200, data: {} });
+  var keys = Object.keys(h.CW.state.drafts.flag);
+  assert.equal(keys.length, 1);
+  assert.equal(h.CW.state.drafts.flag[keys[0]].body.key, "shared");
+});
+
 test("deleteFlag/moveFlag: local-only drafts resolving {status:200}", async function () {
   reset();
   h.CW.state.flags = [{ id: "f1", key: "k1", type: "bool", defaultValue: false }];

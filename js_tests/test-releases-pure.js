@@ -248,6 +248,61 @@ test("remapGroupRef: dangling draft-group-9 passes through (only tempMap hits re
   h.CW.drafts.draftClearAll();
 });
 
+test("FLAG_CREATE 400: err names key, drafts kept, publish-result names key, row highlighted", async function () {
+  reset();
+  // IS-4 push-time race: the local guard passed, but the server answers
+  // 400 "flag key already exists for this project" on the create POST.
+  var dupTempKey = h.CW.drafts.draftStage("flag", {
+    op: "create", body: { key: "dup_key", type: "bool", defaultValue: false, project: "p1" }, label: "dup_key",
+  });
+  h.CW.drafts.draftStage("flag", {
+    op: "create", body: { key: "other", type: "bool", defaultValue: false, project: "p1" }, label: "other",
+  });
+  var calls = [];
+  h.CW.apiMut = function (method, path, body) {
+    calls.push({ method: method, path: path, body: body });
+    if (method === "POST" && path === "/api/collections/flags/records" &&
+        body && body.key === "dup_key") {
+      return Promise.resolve({ status: 400, data: { message: "flag key already exists for this project" } });
+    }
+    return Promise.resolve({ status: 201, data: { id: "live-x" } });
+  };
+  var err = null;
+  try {
+    await h.CW.applyDrafts();
+  } catch (e) { err = e; }
+  // Machine identity only: code, label, kept count (releases.js fail path).
+  assert.ok(err instanceof Error);
+  assert.equal(err.code, "FLAG_CREATE");
+  assert.equal(err.draftKind, "flag");
+  assert.equal(err.draftLabel, "dup_key");
+  assert.equal(err.draftKey, dupTempKey);
+  assert.equal(err.kept, 2);
+  assert.equal(calls.length, 1); // stopped at the failing step
+  assert.equal(h.CW.drafts.hasDrafts(), true); // success-only consumeDraft untouched
+  // Display path (boot.js applyFailed delegates here on FLAG_CREATE):
+  // names the key + kept count, highlights the offending row. Assert
+  // machine values (key, count, selectors, class, data-*) only.
+  assert.equal(h.CW.renderApplyFailure(err), true);
+  var resText = h.elementsById["publish-result"].textContent;
+  assert.ok(resText.indexOf("dup_key") >= 0, "publish-result names key: " + resText);
+  assert.ok(resText.indexOf("2") >= 0, "publish-result names kept count: " + resText);
+  var html = h.elementsById["unpublished-list"].innerHTML;
+  assert.ok(html.indexOf('data-unpublished-kind="flag"') >= 0, "flag row present");
+  assert.ok(html.indexOf('data-unpublished-id="' + dupTempKey + '"') >= 0, "conflict row targeted");
+  assert.ok(html.indexOf("apply-conflict") >= 0, "conflict row carries marker class");
+  assert.ok(html.indexOf('data-apply-conflict="1"') >= 0, "conflict row carries data marker");
+  // Non-conflict errors fall through: helper returns false, text untouched.
+  h.elementsById["publish-result"].textContent = "sentinel";
+  assert.equal(h.CW.renderApplyFailure({ code: "FLAG_UPDATE", draftLabel: "x", kept: 1 }), false);
+  assert.equal(h.elementsById["publish-result"].textContent, "sentinel");
+  // The mark is DOM-only: the next list re-render drops it.
+  h.CW.renderUnpublishedList();
+  assert.ok(h.elementsById["unpublished-list"].innerHTML.indexOf("apply-conflict") < 0,
+    "re-render clears the conflict mark");
+  h.CW.drafts.draftClearAll();
+});
+
 test("no fetch performed by any pure-releases path", function () {
   assert.equal(h.fetchCalls.length, 0);
 });

@@ -279,6 +279,37 @@
     return key.length >= 1 && key.length <= 128 && FLAG_KEY_RE.test(key);
   }
 
+  // Duplicate-key guard (exact === post-trim, case-sensitive like the server
+  // hook in main.go:289-311): scans the merged local set, same project only.
+  // Tombstoned (_draftDeleted) rows are skipped here but their keys stay
+  // reserved until publish — the raw-bucket pass below counts pending deletes
+  // as taken. Staged creates (temp ids) are included via mergedFlags.
+  function isFlagKeyTaken(key, excludeId) {
+    var pid = CW.state.projectId;
+    var list = CW.drafts ? CW.drafts.mergedFlags() : (CW.state.flags || []);
+    var byId = {};
+    var i, f;
+    for (i = 0; i < list.length; i++) {
+      f = list[i];
+      if (!f || f.id === undefined || f.id === null || f.id === "") continue;
+      byId[String(f.id)] = f;
+      if (f._draftDeleted) continue;
+      if (f.key !== key || f.project !== pid) continue;
+      if (excludeId && String(f.id) === String(excludeId)) continue;
+      return true;
+    }
+    var bucket = (CW.state.drafts && CW.state.drafts.flag) || {};
+    for (var k in bucket) {
+      if (!Object.prototype.hasOwnProperty.call(bucket, k)) continue;
+      var e = bucket[k];
+      if (!e || e.op !== "delete") continue;
+      if (excludeId && String(k) === String(excludeId)) continue;
+      var t = byId[String(k)];
+      if (t && t.key === key && t.project === pid) return true;
+    }
+    return false;
+  }
+
   function saveFlag(ev) {
     if (ev) ev.preventDefault();
     var id = CW.$("flag-id").value;
@@ -289,6 +320,15 @@
       var keyMsg = "Key must start with a letter or _, then letters/digits/_/./-, max 128 chars.";
       CW.$("flag-result").textContent = keyMsg;
       CW.toast(keyMsg);
+      return Promise.resolve();
+    }
+    // Self-keep (key unchanged from the merged row) introduces no duplicate,
+    // so only creates and renames consult the guard.
+    var isRename = !id || CW.flagKeyById(id) !== key;
+    if (isRename && isFlagKeyTaken(key, id || null)) {
+      var dupMsg = "Flag key \"" + key + "\" already exists in this project.";
+      CW.$("flag-result").textContent = dupMsg;
+      CW.toast(dupMsg);
       return Promise.resolve();
     }
     var body = {

@@ -1160,6 +1160,16 @@
         try {
           if (CW.drafts && CW.drafts.persistDrafts) CW.drafts.persistDrafts();
         } catch (e) { /* kept in memory */ }
+        // IS-4 push-time race: a server 400 on flag create names the
+        // conflicting key plus the kept-draft count and highlights the
+        // offending unpublished row (fail() already re-rendered the list,
+        // so the highlight lands after rerenderMerged and survives until
+        // the next list re-render on edit/discard).
+        if (err && err.code === "FLAG_CREATE" && CW.renderApplyFailure) {
+          try {
+            if (CW.renderApplyFailure(err)) return;
+          } catch (e2) { /* fall through to generic message */ }
+        }
         CW.$("publish-result").textContent = (err && err.message) || "Publish failed.";
       }
       var applied = null;

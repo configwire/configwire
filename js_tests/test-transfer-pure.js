@@ -916,6 +916,80 @@ test("importTransferSnapshot of an identical snapshot stages nothing", function 
   assert.equal(h.CW.drafts.hasDrafts(), false);
 });
 
+test("validateTransferSnapshot rejects exact-duplicate flag keys and stages nothing", function () {
+  reset();
+  seedLive();
+  var snap = {
+    flags: [
+      { key: "keep", type: "bool", default: false, group: "", rules: [], experiments: [] },
+      { key: "dup", type: "bool", default: false, group: "", rules: [], experiments: [] },
+      { key: "dup", type: "bool", default: true, group: "", rules: [], experiments: [] },
+    ],
+  };
+  var out = plain(h.CW.validateTransferSnapshot(snap));
+  assert.equal(out.ok, false, "[keep, dup, dup] rejected whole-file");
+  assert.ok(out.error.indexOf('"dup"') >= 0, "error names the duplicated key");
+  assert.ok(out.error.indexOf('"keep"') < 0, "non-duplicated key not named");
+  // Whole-file block (boot.js validate-fail path): import never runs.
+  assert.equal(h.CW.drafts.hasDrafts(), false, "zero drafts staged");
+});
+
+test("validateTransferSnapshot names every duplicated key", function () {
+  reset();
+  var snap = {
+    flags: [
+      { key: "a", type: "bool", default: false, group: "", rules: [], experiments: [] },
+      { key: "b", type: "string", default: "x", group: "", rules: [], experiments: [] },
+      { key: "a", type: "bool", default: true, group: "", rules: [], experiments: [] },
+      { key: "b", type: "string", default: "y", group: "", rules: [], experiments: [] },
+      { key: "solo", type: "bool", default: false, group: "", rules: [], experiments: [] },
+    ],
+  };
+  var out = plain(h.CW.validateTransferSnapshot(snap));
+  assert.equal(out.ok, false);
+  assert.ok(out.error.indexOf('"a"') >= 0, "first duplicated key named");
+  assert.ok(out.error.indexOf('"b"') >= 0, "second duplicated key named");
+  assert.ok(out.error.indexOf('"solo"') < 0, "non-duplicated key not named");
+  assert.equal(h.CW.drafts.hasDrafts(), false, "zero drafts staged");
+});
+
+test("importTransferSnapshot routes a snapshot key matching live merged flags to update", function () {
+  reset();
+  seedLive();
+  var snap = {
+    flags: [
+      { key: "keep", type: "bool", default: true, group: "G1", rules: [], experiments: [] },
+    ],
+  };
+  assert.deepEqual(plain(h.CW.validateTransferSnapshot(snap)), { ok: true });
+  var counts = plain(h.CW.importTransferSnapshot(snap));
+  assert.equal(counts.flagsUpdated, 1, "live match stages an update");
+  assert.equal(counts.flagsCreated, 0, "no create for a live key");
+  assert.equal(h.CW.state.drafts.flag.f1.op, "update");
+  assert.equal(h.CW.state.drafts.flag.f1.body.defaultValue, true);
+});
+
+test("importTransferSnapshot merges a repeated fresh key via update-on-temp-id (no second create)", function () {
+  reset();
+  seedLive();
+  var snap = {
+    flags: [
+      { key: "fresh", type: "bool", default: false, group: "", rules: [], experiments: [] },
+      { key: "fresh", type: "bool", default: true, group: "", rules: [], experiments: [] },
+    ],
+  };
+  // validateTransferSnapshot rejects this whole-file; call import directly to
+  // prove the staging loop itself cannot stage two creates for one key.
+  var counts = plain(h.CW.importTransferSnapshot(snap));
+  assert.equal(counts.flagsCreated, 1, "one create for the fresh key");
+  assert.equal(counts.flagsUpdated, 1, "repeat merges as an update");
+  var creates = Object.keys(h.CW.state.drafts.flag).filter(function (k) {
+    return h.CW.state.drafts.flag[k].op === "create";
+  });
+  assert.equal(creates.length, 1, "a single staged create");
+  assert.equal(h.CW.state.drafts.flag[creates[0]].body.defaultValue, true, "second row merged into the staged create");
+});
+
 test("no fetch performed by any pure-transfer path", function () {
   assert.equal(h.fetchCalls.length, 0);
 });

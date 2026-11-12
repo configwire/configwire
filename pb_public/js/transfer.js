@@ -476,6 +476,20 @@
         if (ferr) return { ok: false, error: ferr };
       }
     }
+    // Whole-file duplicate-key guard: snapshot flag keys are never trimmed
+    // (the shape regex above rejects whitespace), so exact === match is the
+    // full check — no normalization. Names every duplicated key.
+    var seenKeys = [];
+    var dupKeys = [];
+    for (i = 0; i < flags.length; i++) {
+      var dk = flags[i] && flags[i].key;
+      if (dupKeys.indexOf(dk) >= 0) continue;
+      if (seenKeys.indexOf(dk) >= 0) dupKeys.push(dk);
+      else seenKeys.push(dk);
+    }
+    if (dupKeys.length) {
+      return { ok: false, error: "Duplicate flag key(s): " + dupKeys.map(function (k) { return JSON.stringify(k); }).join(", ") + "." };
+    }
     for (i = 0; i < topExps.length; i++) {
       var e = topExps[i];
       if (!isObject(e)) return { ok: false, error: "Experiment " + i + " must be an object." };
@@ -571,6 +585,16 @@
       if (hasOwn(byKey, f.key) && hasOwn(keyToId, f.key)) {
         var stagedFlag = stage("flag", { op: "update", body: body, baseId: keyToId[f.key], label: f.key });
         if (stagedFlag == null) continue;
+        counts.flagsUpdated++;
+      } else if (hasOwn(keyToId, f.key)) {
+        // Repeat of a key already staged earlier in this same snapshot.
+        // Defense-in-depth: validateTransferSnapshot rejects duplicate keys
+        // whole-file, so this is unreachable via the dialog path (boot.js).
+        // Merge via update-on-temp-id (draftStage folds an update into a
+        // staged create) so one key can never stage two creates; counted as
+        // an update, not skipped, to reflect the staged merge.
+        var restaged = stage("flag", { op: "update", body: body, baseId: keyToId[f.key], label: f.key });
+        if (restaged == null) continue;
         counts.flagsUpdated++;
       } else {
         var created = stage("flag", { op: "create", body: body, label: f.key });
