@@ -1635,6 +1635,93 @@ section[aria-labelledby="logs"] .limits-footer {
   margin: var(--space-3) 0 0;
 }
 
+/* Audit card (dedicated #/p/audit screen): same table/footer idioms as the
+ * Logs card, with a roomier filter row, header, cells, and footer gap.
+ * Scoped to #audit-card only — shared .inline-form/table/.limits-footer
+ * rules above stay untouched. Renderer contract (audit.js renderAudit):
+ * 7 columns (#, Time, Actor, Action, Target, Status, Detail); Time uses
+ * span.log-created (nowrap, local time, UTC on hover, same as Logs). */
+#audit-card #audit-filter-form {
+  gap: var(--space-3);
+  row-gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+#audit-card #audit-filter-form label {
+  gap: 7px;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+#audit-card #audit-filter-form label:has(#audit-actor),
+#audit-card #audit-filter-form label:has(#audit-target-id) {
+  flex: 2 1 180px;
+}
+
+#audit-card #audit-filter-form input,
+#audit-card #audit-filter-form select {
+  width: 100%;
+  min-width: 0;
+}
+
+#audit-card #audit-filter-form button[type="submit"] {
+  flex: none;
+}
+
+#audit-card table {
+  min-width: 880px;
+}
+
+#audit-card th,
+#audit-card td {
+  padding: 10px 12px;
+  vertical-align: top;
+}
+
+#audit-card thead th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  white-space: nowrap;
+}
+
+#audit-card th:nth-child(1),
+#audit-card td:nth-child(1) {
+  width: 52px;
+}
+
+#audit-card th:nth-child(2),
+#audit-card td:nth-child(2),
+#audit-card th:nth-child(6),
+#audit-card td:nth-child(6) {
+  white-space: nowrap;
+}
+
+#audit-card .log-created-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+#audit-card .audit-actor-cell,
+#audit-card .audit-action-cell,
+#audit-card .audit-target-cell,
+#audit-card .log-msg-cell {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+#audit-card .audit-action-cell {
+  white-space: nowrap;
+}
+
+#audit-card td[colspan] {
+  padding: 24px 12px;
+  color: var(--muted);
+}
+
+#audit-card .limits-footer {
+  margin-top: var(--space-4);
+}
+
 /* ---- Logs table rich cells (logs.js messageCellHtml/createdCellHtml):
  * method badge + mono path on top, meta chips below; project pill,
  * reason/status/key chips mirror the .badge pill idiom. Created shows

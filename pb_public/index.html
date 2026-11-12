@@ -54,6 +54,7 @@
     </nav>
     <div class="sidebar-foot">
       <a id="logs-nav-link" href="#/p/logs" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11" /><path d="M2.5 8h11" /><path d="M2.5 12.5h11" /></svg><span>Logs</span></a>
+      <a id="audit-nav-link" href="#/p/audit" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2.5" width="10" height="13" rx="1.5" /><path d="M6 2.5V1.5h4v1" /><path d="M6 7.5l1.2 1.2L10 6" /></svg><span>Audit</span></a>
       <a id="settings-nav-link" href="#/p/settings" class="sidebar-settings"><svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="1.8"/><path d="M8 2.2 9.65 4.03 12.1 3.9 11.97 6.35 13.8 8l-1.83 1.65.13 2.45-2.45-.13L8 13.8l-1.65-1.83L3.9 12.1l.13-2.45L2.2 8l1.83-1.65L3.9 3.9l2.45.13L8 2.2Z"/></svg><span>Settings</span></a>
       <button id="logout-btn" type="button" class="btn ghost" hidden>Log out</button>
     </div>
@@ -453,6 +454,40 @@
                 <button id="logs-next" type="button" class="btn secondary">Next</button>
               </div>
               <p id="logs-result" role="status"></p>
+            </section>
+          </div>
+        </section>
+        <section id="view-audit" aria-label="Audit" hidden>
+          <div class="settings-grid">
+            <section class="card" id="audit-card" aria-labelledby="audit">
+              <h2 id="audit">Audit</h2>
+              <p class="muted">Admin action trail, read-only.</p>
+              <form id="audit-filter-form" class="inline-form" aria-label="Audit filters">
+                <label for="audit-action">Action <select id="audit-action" aria-label="Action filter"><option value="">Any</option><option value="setup.claim">setup.claim</option><option value="session.login">session.login</option><option value="session.login_failed">session.login_failed</option><option value="session.logout">session.logout</option><option value="account.create">account.create</option><option value="account.password">account.password</option><option value="account.delete">account.delete</option><option value="release.publish">release.publish</option><option value="release.rollback">release.rollback</option><option value="release.promote">release.promote</option><option value="key.mint">key.mint</option><option value="key.revoke">key.revoke</option><option value="key.unrevoke">key.unrevoke</option><option value="key.update">key.update</option><option value="key.delete">key.delete</option><option value="limits.update">limits.update</option><option value="retention.update">retention.update</option><option value="log_settings.update">log_settings.update</option><option value="purge.run">purge.run</option><option value="sso.redeem">sso.redeem</option></select></label>
+                <label for="audit-actor">Actor <input id="audit-actor" type="text" aria-label="Actor filter"></label>
+                <label for="audit-target-type">Target type <select id="audit-target-type" aria-label="Target type filter"><option value="">Any</option><option value="account">account</option><option value="environment">environment</option><option value="sdk_key">sdk_key</option><option value="flag">flag</option><option value="rule">rule</option><option value="experiment">experiment</option><option value="project">project</option><option value="backup">backup</option><option value="settings">settings</option><option value="maintenance">maintenance</option></select></label>
+                <label for="audit-target-id">Target id <input id="audit-target-id" type="text" aria-label="Target id filter"></label>
+                <label for="audit-status">Status <select id="audit-status" aria-label="Status filter"><option value="">Any</option><option value="200">200</option><option value="400">400</option><option value="401">401</option><option value="403">403</option><option value="404">404</option><option value="409">409</option><option value="429">429</option><option value="500">500</option></select></label>
+                <label for="audit-since">Since <select id="audit-since" aria-label="Since filter"><option value="7d">7d</option><option value="30d" selected>30d</option><option value="90d">90d</option><option value="365d">365d</option><option value="all">all</option></select></label>
+                <label for="audit-perpage">Per page <select id="audit-perpage" aria-label="Rows per page"><option value="10">10</option><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></label>
+                <button type="submit" class="btn secondary">Filter</button>
+              </form>
+              <div class="table-wrap">
+              <table aria-label="Audit trail">
+                <thead>
+                  <tr><th>#</th><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Status</th><th>Detail</th></tr>
+                </thead>
+                <tbody id="audit-list" aria-label="Audit entries">
+                </tbody>
+              </table>
+              </div>
+              <div class="limits-footer">
+                <button id="audit-prev" type="button" class="btn secondary">Prev</button>
+                <label class="logs-page-pick">Page <select id="audit-page" aria-label="Page"></select></label>
+                <span id="audit-page-info" role="status"></span>
+                <button id="audit-next" type="button" class="btn secondary">Next</button>
+              </div>
+              <p id="audit-result" role="status"></p>
             </section>
           </div>
         </section>
@@ -1012,6 +1047,7 @@
   <script src="/js/json-editor.js"></script>
   <script src="/js/limits.js"></script>
   <script src="/js/logs.js"></script>
+<script src="/js/audit.js"></script>
   <script src="/js/backups.js"></script>
   <script src="/js/boot.js"></script>
   <script src="/js/update.js"></script>

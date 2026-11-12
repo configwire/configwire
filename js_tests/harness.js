@@ -32,6 +32,7 @@ var FULL_ORDER = Object.freeze([
   "json-editor.js",
   "limits.js",
   "logs.js",
+  "audit.js",
   "backups.js",
   "boot.js",
   "update.js",

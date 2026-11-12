@@ -29,6 +29,13 @@
       else if (lrest.charAt(0) === "/") lanchor = lrest.slice(1);
       return { view: "logs", id: "", anchor: lanchor };
     }
+    if (h === "#/p/audit" || h.indexOf("#/p/audit#") === 0 || h.indexOf("#/p/audit/") === 0) {
+      var aurest = h.slice("#/p/audit".length);
+      var auanchor = "";
+      if (aurest.charAt(0) === "#") auanchor = aurest.slice(1);
+      else if (aurest.charAt(0) === "/") auanchor = aurest.slice(1);
+      return { view: "audit", id: "", anchor: auanchor };
+    }
     if (h.indexOf("#/p/") === 0) {
       var rest = h.slice("#/p/".length);
       var anchor = "";
@@ -60,6 +67,7 @@
     var mods = ["flags", "releases", "keys", "stats", "project-settings"];
     var settingsLink = CW.$("settings-nav-link");
     var logsLink = CW.$("logs-nav-link");
+    var auditLink = CW.$("audit-nav-link");
     var logoutBtn = CW.$("logout-btn");
     if (!(CW.isAuthed && CW.isAuthed())) {
       nav.setAttribute("aria-hidden", "true");
@@ -69,6 +77,7 @@
       }
       nav.style.display = "none";
       if (logsLink) { logsLink.hidden = true; logsLink.style.display = "none"; }
+      if (auditLink) { auditLink.hidden = true; auditLink.style.display = "none"; }
       if (settingsLink) { settingsLink.hidden = true; settingsLink.style.display = "none"; }
       if (logoutBtn) { logoutBtn.hidden = true; logoutBtn.style.display = "none"; }
       return;
@@ -79,6 +88,13 @@
       var logsActive = CW.state.view === "logs";
       if (logsActive) logsLink.setAttribute("aria-current", "page");
       else if (logsLink.removeAttribute) logsLink.removeAttribute("aria-current");
+    }
+    if (auditLink) {
+      auditLink.hidden = false;
+      auditLink.style.display = "";
+      var auditActive = CW.state.view === "audit";
+      if (auditActive) auditLink.setAttribute("aria-current", "page");
+      else if (auditLink.removeAttribute) auditLink.removeAttribute("aria-current");
     }
     if (settingsLink) {
       settingsLink.hidden = false;
@@ -99,7 +115,7 @@
         if (CW.applySsoUiGating) CW.applySsoUiGating();
       }
     } catch (e) { /* best-effort */ }
-    var showNav = !!CW.state.projectId && (CW.state.view === "detail" || CW.state.view === "settings" || CW.state.view === "account" || CW.state.view === "logs");
+    var showNav = !!CW.state.projectId && (CW.state.view === "detail" || CW.state.view === "settings" || CW.state.view === "account" || CW.state.view === "logs" || CW.state.view === "audit");
     if (!showNav) {
       nav.setAttribute("aria-hidden", "true");
       for (var i = 0; i < links.length; i++) {
@@ -132,10 +148,12 @@
     var account = CW.$("view-account");
     var settings = CW.$("view-settings");
     var logs = CW.$("view-logs");
+    var audit = CW.$("view-audit");
     if (home) home.hidden = name !== "home";
     if (detail) detail.hidden = name !== "detail";
     if (settings) settings.hidden = name !== "settings" && name !== "account";
     if (logs) logs.hidden = name !== "logs";
+    if (audit) audit.hidden = name !== "audit";
     if (account) account.hidden = true;
     syncSidebar();
   }
@@ -628,6 +646,13 @@
     if (CW.loadLogs) CW.loadLogs(1).catch(function () { /* inline in logs card */ });
   }
 
+  function showAudit() {
+    clearStaleAllScope();
+    showView("audit");
+    try { if (CW.isSsoMode && CW.isSsoMode() && CW.applySsoUiGating) CW.applySsoUiGating(); } catch (e) { /* best-effort */ }
+    if (CW.loadAudit) CW.loadAudit(1).catch(function () { /* inline in audit card */ });
+  }
+
   function route() {
     if (!(CW.isAuthed && CW.isAuthed())) return;
     var r = parseHash();
@@ -635,6 +660,8 @@
       showSettings();
     } else if (r.view === "logs") {
       showLogs();
+    } else if (r.view === "audit") {
+      showAudit();
     } else if (r.view === "account") {
       showSettings();
     } else if (r.view === "detail" && r.id && projectById(r.id)) {
@@ -680,6 +707,7 @@
   CW.showAccount = showAccount;
   CW.showSettings = showSettings;
   CW.showLogs = showLogs;
+  CW.showAudit = showAudit;
   CW.openProject = openProject;
   CW.route = route;
 })();

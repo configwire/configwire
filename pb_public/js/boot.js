@@ -736,6 +736,12 @@
     });
     CW.on("logs-prev", "click", function () { if (CW.pageLogs) CW.pageLogs(-1); });
     CW.on("logs-next", "click", function () { if (CW.pageLogs) CW.pageLogs(1); });
+    CW.on("audit-filter-form", "submit", function (ev) {
+      if (CW.filterAudit) return CW.filterAudit(ev);
+      ev.preventDefault();
+    });
+    CW.on("audit-prev", "click", function () { if (CW.pageAudit) CW.pageAudit(-1); });
+    CW.on("audit-next", "click", function () { if (CW.pageAudit) CW.pageAudit(1); });
     CW.on("logs-refresh", "click", function () { if (CW.refreshLogs) CW.refreshLogs(); });
     CW.on("backup-create-form", "submit", CW.createBackup);
     CW.on("backup-upload-btn", "click", CW.triggerBackupUpload);

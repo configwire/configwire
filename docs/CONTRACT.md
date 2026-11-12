@@ -1057,9 +1057,15 @@ Action set (v1): `setup.claim`, `session.login`,
 `purge.run`, `sso.redeem`.
 
 Retention runs with the daily ticker and the manual
-`POST /api/v1/admin/maintenance/purge` route (whose response gains
-the additive `auditLogs` count); rows strictly older than the
-configured window are deleted page by page.
+`POST /api/v1/admin/maintenance/purge` route (whose response gains the
+additive `auditLogs` count); rows strictly older than the configured
+window are deleted page by page.
+
+In-console viewer: the dedicated Audit screen (`#/p/audit`, sidebar
+Audit entry) hosts the card whose filters map 1:1 to the query params
+(50 rows per page by default; action/target-type/status are fixed-set
+selects, actor/target-id stay text); row detail renders inline,
+truncated, with the full JSON kept in the row title.
 
 ## History
 
