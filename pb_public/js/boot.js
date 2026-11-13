@@ -558,11 +558,11 @@
     CW.on("env-bar", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var menuBtn = null;
-      if (t && t.closest) menuBtn = t.closest("[data-env-menu]");
-      else if (t && t.getAttribute && t.getAttribute("data-env-menu") != null) menuBtn = t;
+      if (t && t.closest) menuBtn = t.closest("[data-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-menu") != null) menuBtn = t;
       if (menuBtn) {
         var wrap = menuBtn.parentNode;
-        var menu = wrap && wrap.querySelector ? wrap.querySelector(".env-menu") : null;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".menu") : null;
         if (menu) {
           var willOpen = menu.hidden;
           closeEnvMenu();
@@ -595,11 +595,11 @@
     CW.on("flags-head-actions", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var menuBtn = null;
-      if (t && t.closest) menuBtn = t.closest("[data-flags-menu]");
-      else if (t && t.getAttribute && t.getAttribute("data-flags-menu") != null) menuBtn = t;
+      if (t && t.closest) menuBtn = t.closest("[data-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-menu") != null) menuBtn = t;
       if (menuBtn) {
         var wrap = menuBtn.parentNode;
-        var menu = wrap && wrap.querySelector ? wrap.querySelector(".flags-menu") : null;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".menu") : null;
         if (menu) {
           var willOpen = menu.hidden;
           closeFlagsHeadMenu();
@@ -608,7 +608,7 @@
         }
         return;
       }
-      var item = t && t.closest ? t.closest('.flags-menu button[role="menuitem"]') : null;
+      var item = t && t.closest ? t.closest('.menu button[role="menuitem"]') : null;
       if (item) closeFlagsHeadMenu();
     });
     CW.on("group-add-btn", "click", function () { CW.promptCreateGroup().catch(CW.toastErr); });
@@ -653,11 +653,11 @@
     CW.on("flag-experiments-list", "click", function (ev) {
       var t = ev.target;
       var menuBtn = null;
-      if (t && t.closest) menuBtn = t.closest("[data-exp-menu]");
-      else if (t && t.getAttribute && t.getAttribute("data-exp-menu")) menuBtn = t;
+      if (t && t.closest) menuBtn = t.closest("[data-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-menu")) menuBtn = t;
       if (menuBtn) {
         var wrap = menuBtn.parentNode;
-        var menu = wrap && wrap.querySelector ? wrap.querySelector(".exp-menu") : null;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".menu") : null;
         if (menu) {
           var willOpen = menu.hidden;
           closeExpMenus();
@@ -666,7 +666,7 @@
         }
         return;
       }
-      var inMenu = t && t.closest ? t.closest(".exp-menu") : null;
+      var inMenu = t && t.closest ? t.closest(".menu") : null;
       var delBtn = t && t.closest ? t.closest("[data-delete-experiment]") : null;
       var editBtn = t && t.closest ? t.closest("[data-edit-experiment]") : null;
       if (!delBtn && t && t.getAttribute && t.getAttribute("data-delete-experiment")) delBtn = t;
@@ -787,87 +787,26 @@
       });
     });
 
-    function closeFlagMenus(except) {
-      var box = document.getElementById("flag-folders");
+    function closeMenus(rootId, except) {
+      var box = document.getElementById(rootId);
       if (!box || !box.querySelectorAll) return;
-      var wraps = box.querySelectorAll(".flag-menu-wrap");
+      var wraps = box.querySelectorAll(".menu-wrap");
       for (var i = 0; i < wraps.length; i++) {
-        var menu = wraps[i].querySelector ? wraps[i].querySelector(".flag-menu") : null;
-        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-flag-menu]") : null;
+        var menu = wraps[i].querySelector ? wraps[i].querySelector(".menu") : null;
+        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-menu]") : null;
         if (!menu || menu === except) continue;
         menu.hidden = true;
         if (btn) btn.setAttribute("aria-expanded", "false");
       }
     }
 
-    function closeExpMenus(except) {
-      var box = document.getElementById("flag-experiments-list");
-      if (!box || !box.querySelectorAll) return;
-      var wraps = box.querySelectorAll(".exp-menu-wrap");
-      for (var i = 0; i < wraps.length; i++) {
-        var menu = wraps[i].querySelector ? wraps[i].querySelector(".exp-menu") : null;
-        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-exp-menu]") : null;
-        if (!menu || menu === except) continue;
-        menu.hidden = true;
-        if (btn) btn.setAttribute("aria-expanded", "false");
-      }
-    }
-
-    function closeRuleMenus(except) {
-      var box = document.getElementById("flag-rules-list");
-      if (!box || !box.querySelectorAll) return;
-      var wraps = box.querySelectorAll(".rule-menu-wrap");
-      for (var i = 0; i < wraps.length; i++) {
-        var menu = wraps[i].querySelector ? wraps[i].querySelector(".rule-menu") : null;
-        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-rule-menu]") : null;
-        if (!menu || menu === except) continue;
-        menu.hidden = true;
-        if (btn) btn.setAttribute("aria-expanded", "false");
-      }
-    }
-
-    function closeEnvMenu(except) {
-      var bar = document.getElementById("env-bar");
-      if (!bar || !bar.querySelectorAll) return;
-      var wraps = bar.querySelectorAll(".env-menu-wrap");
-      for (var i = 0; i < wraps.length; i++) {
-        var menu = wraps[i].querySelector ? wraps[i].querySelector(".env-menu") : null;
-        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-env-menu]") : null;
-        if (!menu || menu === except) continue;
-        menu.hidden = true;
-        if (btn) btn.setAttribute("aria-expanded", "false");
-      }
-    }
-
-    function closeHeadMenus(except) {
-      closeFlagsHeadMenu(except);
-    }
-
-    function closeFlagsHeadMenu(except) {
-      var box = document.getElementById("flags-head-actions");
-      if (!box || !box.querySelectorAll) return;
-      var wraps = box.querySelectorAll(".flags-menu-wrap");
-      for (var i = 0; i < wraps.length; i++) {
-        var menu = wraps[i].querySelector ? wraps[i].querySelector(".flags-menu") : null;
-        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-flags-menu]") : null;
-        if (!menu || menu === except) continue;
-        menu.hidden = true;
-        if (btn) btn.setAttribute("aria-expanded", "false");
-      }
-    }
-
-    function closeReleaseMenus(except) {
-      var box = document.getElementById("release-list");
-      if (!box || !box.querySelectorAll) return;
-      var wraps = box.querySelectorAll(".release-menu-wrap");
-      for (var i = 0; i < wraps.length; i++) {
-        var menu = wraps[i].querySelector ? wraps[i].querySelector(".release-menu") : null;
-        var btn = wraps[i].querySelector ? wraps[i].querySelector("[data-release-menu]") : null;
-        if (!menu || menu === except) continue;
-        menu.hidden = true;
-        if (btn) btn.setAttribute("aria-expanded", "false");
-      }
-    }
+    function closeFlagMenus(except) { closeMenus("flag-folders", except); }
+    function closeExpMenus(except) { closeMenus("flag-experiments-list", except); }
+    function closeRuleMenus(except) { closeMenus("flag-rules-list", except); }
+    function closeEnvMenu(except) { closeMenus("env-bar", except); }
+    function closeReleaseMenus(except) { closeMenus("release-list", except); }
+    function closeHeadMenus(except) { closeFlagsHeadMenu(except); }
+    function closeFlagsHeadMenu(except) { closeMenus("flags-head-actions", except); }
 
     function flagRowClick(ev) {
       var t = ev.target;
@@ -924,11 +863,11 @@
     CW.on("flag-folders", "click", function (ev) {
       var t = ev.target;
       var menuBtn = null;
-      if (t && t.closest) menuBtn = t.closest("[data-flag-menu]");
-      else if (t && t.getAttribute && t.getAttribute("data-flag-menu")) menuBtn = t;
+      if (t && t.closest) menuBtn = t.closest("[data-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-menu")) menuBtn = t;
       if (menuBtn) {
         var wrap = menuBtn.parentNode;
-        var menu = wrap && wrap.querySelector ? wrap.querySelector(".flag-menu") : null;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".menu") : null;
         if (menu) {
           var willOpen = menu.hidden;
           closeFlagMenus();
@@ -937,7 +876,7 @@
         }
         return;
       }
-      var inMenu = t && t.closest ? t.closest(".flag-menu") : null;
+      var inMenu = t && t.closest ? t.closest(".menu") : null;
       if (inMenu) {
         var itemBtn = t.closest("[data-flag-rules],[data-flag-experiments],[data-edit-flag],[data-delete-flag]");
         flagRowClick(ev);
@@ -965,7 +904,7 @@
     });
     document.addEventListener("click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
-      var inside = t && t.closest ? (t.closest(".flag-menu-wrap") || t.closest(".flags-menu-wrap") || t.closest(".head-menu-wrap") || t.closest(".exp-menu-wrap") || t.closest(".release-menu-wrap") || t.closest(".env-menu-wrap") || t.closest(".rule-menu-wrap")) : null;
+      var inside = t && t.closest ? t.closest(".menu-wrap") : null;
       if (!inside) { closeFlagMenus(); closeFlagsHeadMenu(); closeHeadMenus(); closeExpMenus(); closeReleaseMenus(); closeEnvMenu(); closeRuleMenus(); }
     });
     document.addEventListener("keydown", function (ev) {
@@ -975,11 +914,11 @@
     CW.on("flag-rules-list", "click", function (ev) {
       var t = ev.target;
       var menuBtn = null;
-      if (t && t.closest) menuBtn = t.closest("[data-rule-menu]");
-      else if (t && t.getAttribute && t.getAttribute("data-rule-menu")) menuBtn = t;
+      if (t && t.closest) menuBtn = t.closest("[data-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-menu")) menuBtn = t;
       if (menuBtn) {
         var wrap = menuBtn.parentNode;
-        var menu = wrap && wrap.querySelector ? wrap.querySelector(".rule-menu") : null;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".menu") : null;
         if (menu) {
           var willOpen = menu.hidden;
           closeRuleMenus();
@@ -988,7 +927,7 @@
         }
         return;
       }
-      var inMenu = t && t.closest ? t.closest(".rule-menu") : null;
+      var inMenu = t && t.closest ? t.closest(".menu") : null;
       var delBtn = t && t.closest ? t.closest("[data-delete-flag-rule]") : null;
       var editBtn = t && t.closest ? t.closest("[data-edit-flag-rule]") : null;
       if (!delBtn && t && t.getAttribute && t.getAttribute("data-delete-flag-rule")) delBtn = t;
@@ -1060,11 +999,11 @@
     CW.on("release-list", "click", function (ev) {
       var t = ev && ev.target ? ev.target : null;
       var menuBtn = null;
-      if (t && t.closest) menuBtn = t.closest("[data-release-menu]");
-      else if (t && t.getAttribute && t.getAttribute("data-release-menu")) menuBtn = t;
+      if (t && t.closest) menuBtn = t.closest("[data-menu]");
+      else if (t && t.getAttribute && t.getAttribute("data-menu")) menuBtn = t;
       if (menuBtn) {
         var wrap = menuBtn.parentNode;
-        var menu = wrap && wrap.querySelector ? wrap.querySelector(".release-menu") : null;
+        var menu = wrap && wrap.querySelector ? wrap.querySelector(".menu") : null;
         if (menu) {
           var willOpen = menu.hidden;
           closeReleaseMenus();
@@ -1073,7 +1012,7 @@
         }
         return;
       }
-      var inMenu = t && t.closest ? t.closest(".release-menu") : null;
+      var inMenu = t && t.closest ? t.closest(".menu") : null;
       var viewId = null;
       if (t) {
         if (t.closest) {
@@ -1248,7 +1187,7 @@
   // is stashed to data-cw-title on show and restored on hide, so no
   // double tooltip. aria-label is never touched; the bubble carries
   // role="tooltip". A fixed-position singleton sidesteps select::after
-  // (pseudo-elements never render on <select>) and .flag-menu clipping.
+  // (pseudo-elements never render on <select>) and .menu clipping.
   (function initCwTip() {
     var TIP_ID = "cw-tip";
     var tip = null;

@@ -575,12 +575,12 @@
           if (pos === "sticky" || pos === "fixed") off += bar.getBoundingClientRect().height || 0;
         }
       });
-      // Sticky project header (#view-detail .detail-head, position:sticky)
+      // Sticky project header (#view-detail .page-head.is-sticky, position:sticky)
       // floats over section cards in detail view — same live-measure
       // pattern as above. Hidden views report height 0, so this is a
       // no-op outside detail.
       try {
-        var dh = document.querySelector ? document.querySelector("#view-detail .detail-head") : null;
+        var dh = document.querySelector ? document.querySelector("#view-detail .page-head") : null;
         if (dh && dh.getBoundingClientRect) {
           var dpos = "";
           if (window.getComputedStyle) dpos = window.getComputedStyle(dh).position || "";

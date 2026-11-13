@@ -105,7 +105,7 @@
             <button type="submit" class="btn primary">Create account</button>
           </form>
           <p id="setup-error" role="alert" hidden></p>
-          <p id="setup-result" role="status" hidden></p>
+          <p id="setup-result" class="status-line" role="status" hidden></p>
         </div>
       </section>
 
@@ -118,53 +118,53 @@
       </section>
 
       <section id="admin-section" hidden>
-        <section id="view-home" aria-label="Projects" hidden>
-          <div class="card home-head">
+        <section id="view-home" class="page" aria-label="Projects" hidden>
+          <div class="card page-head">
             <div>
               <h2>Projects</h2>
             </div>
-            <div class="home-head-actions">
-              <label class="home-range" for="home-since"><select id="home-since" aria-label="Date range"><option value="1d">Last 24 hours</option><option value="2d">Last 48 hours</option><option value="7d" selected>Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 3 months</option></select></label>
+            <div class="page-head-actions">
+              <label class="range-field" for="home-since"><select id="home-since" aria-label="Date range"><option value="1d">Last 24 hours</option><option value="2d">Last 48 hours</option><option value="7d" selected>Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 3 months</option></select></label>
             </div>
           </div>
-          <p id="project-result" role="status"></p>
+          <p id="project-result" class="status-line" role="status"></p>
           <div id="project-grid" class="project-grid" role="list" aria-label="Projects"></div>
           <p id="project-empty" class="muted" hidden>No projects yet.</p>
         </section>
 
-        <section id="view-detail" aria-label="Project detail" hidden>
-          <div class="card detail-head">
+        <section id="view-detail" class="page" aria-label="Project detail" hidden>
+          <div class="card page-head is-sticky">
             <button id="back-to-projects" type="button" class="btn ghost">&larr; Projects</button>
             <h2 id="detail-project-name">Project</h2>
             <button id="refresh-scope" type="button" class="btn secondary" title="Refresh all — reload projects, flags, releases, keys and stats" aria-label="Refresh all"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg></button>
           </div>
 
-          <div class="grid">
+          <div class="page-grid">
             <section class="card" aria-labelledby="flags">
               <div class="card-head">
                 <h2 id="flags">Flags</h2>
-                <div class="card-actions" id="flags-head-actions"><button id="flag-add-btn" type="button" class="btn primary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Flag</span></button><button id="group-add-btn" type="button" class="btn secondary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Group</span></button><span class="flags-menu-wrap"><button type="button" class="flags-menu-btn" data-flags-menu aria-haspopup="menu" aria-expanded="false" aria-label="More flag actions">&#8942;</button><div class="flags-menu" role="menu" hidden><button id="transfer-export-btn" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v9"/><path d="M4.5 7.5 8 11l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Export</span></button><button id="transfer-import-btn" type="button" role="menuitem"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Import</span></button></div></span></div>
+                <div class="card-actions" id="flags-head-actions"><button id="flag-add-btn" type="button" class="btn primary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Flag</span></button><button id="group-add-btn" type="button" class="btn secondary"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Group</span></button><span class="menu-wrap"><button type="button" class="menu-btn" data-menu aria-haspopup="menu" aria-expanded="false" aria-label="More flag actions">&#8942;</button><div class="menu" role="menu" hidden><button id="transfer-export-btn" type="button" role="menuitem" class="menu-item"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v9"/><path d="M4.5 7.5 8 11l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Export</span></button><button id="transfer-import-btn" type="button" role="menuitem" class="menu-item"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Import</span></button></div></span></div>
               </div>
               <div id="flag-folders">
                 <p class="muted">Loading…</p>
               </div>
             </section>
 
-            <section class="scope-group scope-group-env" aria-labelledby="env-group-title">
-              <div class="scope-group-head">
-                <h2 id="env-group-title" class="scope-group-title">Environment: <span id="env-group-name">env</span></h2>
+            <section class="section-group section-group-env" aria-labelledby="env-group-title">
+              <div class="section-group-head">
+                <h2 id="env-group-title" class="section-group-title">Environment: <span id="env-group-name">env</span></h2>
               </div>
-              <p class="scope-group-sub muted">Releases, keys, stats follow this environment.</p>
+              <p class="section-group-sub muted">Releases, keys, stats follow this environment.</p>
               <div id="env-bar" class="card scope" aria-label="Environment scope">
                 <label>Environment
                   <select id="env-select" aria-label="Environment"></select>
                 </label>
-                <span class="env-menu-wrap">
-                  <button type="button" class="env-menu-btn" data-env-menu aria-haspopup="menu" aria-expanded="false" aria-label="Environment actions">&#8942;</button>
-                  <div class="env-menu" role="menu" hidden>
-                    <button type="button" role="menuitem" data-env-add><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add</span></button>
-                    <button type="button" role="menuitem" data-env-rename><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg><span>Rename</span></button>
-                    <button type="button" role="menuitem" data-env-delete><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4M5 4l.7 9.5h4.6L11 4"/></svg><span>Delete</span></button>
+                <span class="menu-wrap">
+                  <button type="button" class="menu-btn" data-menu aria-haspopup="menu" aria-expanded="false" aria-label="Environment actions">&#8942;</button>
+                  <div class="menu" role="menu" hidden>
+                    <button type="button" role="menuitem" class="menu-item" data-env-add><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg><span>Add</span></button>
+                    <button type="button" role="menuitem" class="menu-item" data-env-rename><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11.5 2.5l2 2L5 13l-2.5.5L3 11z"/></svg><span>Rename</span></button>
+                    <button type="button" role="menuitem" class="menu-item is-danger" data-env-delete><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4M5 4l.7 9.5h4.6L11 4"/></svg><span>Delete</span></button>
                   </div>
                 </span>
                 <p id="env-result" role="status"></p>
@@ -174,7 +174,7 @@
                 <div class="card-head">
                   <h2 id="releases">Releases</h2>
                 </div>
-                <ul id="release-list" aria-label="Releases">
+                <ul id="release-list" class="list" aria-label="Releases">
                   <li>Loading…</li>
                 </ul>
                 <hr>
@@ -190,7 +190,7 @@
                     <button type="button" id="transfer-draft-view-btn" class="btn secondary" hidden>View changes</button>
                     <button type="button" id="discard-unpublished" class="btn ghost" disabled>Discard drafts</button>
                   </form>
-                  <p id="publish-result" role="status"></p>
+                  <p id="publish-result" class="status-line" role="status"></p>
                 </div>
               </section>
 
@@ -198,7 +198,7 @@
                 <div class="card-head">
                   <h2 id="keys">SDK keys</h2>
                 </div>
-                <ul id="key-list" aria-label="SDK keys">
+                <ul id="key-list" class="list" aria-label="SDK keys">
                   <li>Loading…</li>
                 </ul>
                 <div class="sub-card">
@@ -208,7 +208,7 @@
                     <label>Ingest limit (req/s) <input id="key-ingest-rps" type="number" min="1" max="10000" placeholder="Global 50/s"></label>
                     <button type="submit" class="btn primary">Create key</button>
                   </form>
-                  <p id="key-result" role="status"></p>
+                  <p id="key-result" class="status-line" role="status"></p>
                   <div id="key-once" hidden>
                     <p><strong>Shown once — copy now:</strong></p>
                     <code id="key-once-value"></code>
@@ -236,11 +236,11 @@
             </section>
           </div>
 
-          <section id="project-settings" class="scope-group scope-group-settings" aria-labelledby="project-settings-title">
-            <div class="scope-group-head">
-              <h2 id="project-settings-title" class="scope-group-title">Settings</h2>
+          <section id="project-settings" class="section-group section-group-settings" aria-labelledby="project-settings-title">
+            <div class="section-group-head">
+              <h2 id="project-settings-title" class="section-group-title">Settings</h2>
             </div>
-            <p class="scope-group-sub muted">Rename this project, or delete it along with all its data.</p>
+            <p class="section-group-sub muted">Rename this project, or delete it along with all its data.</p>
             <div class="settings-zone-box">
               <div class="settings-row">
                 <div class="settings-row-text">
@@ -259,13 +259,13 @@
             </div>
           </section>
         </section>
-        <section id="view-settings" aria-label="Settings" hidden>
-          <div class="settings-grid">
+        <section id="view-settings" class="page" aria-label="Settings" hidden>
+          <div class="page-grid">
             <div class="card" id="account-card" aria-labelledby="account">
               <div class="card-head">
                 <h2 id="account">Admins</h2>
               </div>
-              <ul id="account-list" aria-label="Admin accounts">
+              <ul id="account-list" class="list" aria-label="Admin accounts">
                 <li>Loading…</li>
               </ul>
               <h3>New admin</h3>
@@ -275,13 +275,13 @@
                     minlength="8"></label>
                 <button type="submit" class="btn primary">Create admin</button>
               </form>
-              <p id="account-result" role="status"></p>
+              <p id="account-result" class="status-line" role="status"></p>
             </div>
             <div class="card" aria-labelledby="settings-global">
               <div class="card-head">
                 <h2 id="settings-global">Admin access</h2>
               </div>
-              <form id="settings-admin-form" aria-label="Admin allowlist">
+              <form id="settings-admin-form" class="form-stack" aria-label="Admin allowlist">
                 <div class="limit-field">
                   <label for="admin-allowed-ips">Allowed IPs</label>
                   <input id="admin-allowed-ips" type="text" placeholder="e.g. 203.0.113.7, 198.51.100.0/24">
@@ -309,7 +309,7 @@
                   <h2 id="limits">Rate limits</h2>
                 </div>
               <p class="muted">Per-second limits. Over budget returns 429.</p>
-              <form id="limits-form" aria-label="Rate limits">
+              <form id="limits-form" class="form-stack" aria-label="Rate limits">
                 <div class="limit-grid">
                   <div class="limit-field">
                     <label for="limit-global">Global</label>
@@ -343,24 +343,24 @@
                 <h2 id="console-updates">Console updates</h2>
               </div>
               <p class="muted">Check this console against new ConfigWire releases.</p>
-              <div class="log-switch-row">
+              <div class="switch-row">
                 <span id="auto-update-label">Automatic checks (this browser, every 6 hours)</span>
-                <button type="button" id="auto-update-switch" class="log-switch" role="switch" aria-checked="false" aria-labelledby="auto-update-label" title="Check for updates automatically every 6 hours"><span class="log-switch-knob" aria-hidden="true"></span></button>
+                <button type="button" id="auto-update-switch" class="switch" role="switch" aria-checked="false" aria-labelledby="auto-update-label" title="Check for updates automatically every 6 hours"><span class="switch-knob" aria-hidden="true"></span></button>
               </div>
               <p class="muted"><small>Each check asks this server, which fetches the public releases list once (results shared for 10 minutes). The fetch reveals this server's IP and time to GitHub.</small></p>
               <p id="auto-update-result" role="status"></p>
             </section>
-            <section class="scope-group scope-group-backups" aria-labelledby="backups">
-              <div class="scope-group-head">
-                <h2 id="backups" class="scope-group-title">Backups</h2>
+            <section class="section-group section-group-backups" aria-labelledby="backups">
+              <div class="section-group-head">
+                <h2 id="backups" class="section-group-title">Backups</h2>
               </div>
-              <p class="scope-group-sub muted">Snapshot files, auto backup schedule, one-click restore, and the S3 backup target.</p>
+              <p class="section-group-sub muted">Snapshot files, auto backup schedule, one-click restore, and the S3 backup target.</p>
               <section class="card" aria-labelledby="backup-files">
                <div class="card-head">
                  <h2 id="backup-files">Backup files</h2>
                  <div class="card-actions"><button id="backup-upload-btn" type="button" class="btn secondary" title="Upload a .zip backup file (staged without restoring)" aria-label="Upload backup"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 11V2"/><path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M2.5 11v2.5h11V11"/></svg><span>Upload</span></button><input id="backup-upload-file" type="file" accept=".zip,application/zip" hidden></div>
                </div>
-                <ul id="backup-list" aria-label="Backups">
+                <ul id="backup-list" class="list" aria-label="Backups">
                   <li>Loading…</li>
                 </ul>
                 <hr>
@@ -371,7 +371,7 @@
                       maxlength="128" placeholder="auto" title="Lowercase letters, digits, _ or -, ending in .zip"></label>
                   <button type="submit" class="btn primary">Create backup</button>
                 </form>
-                <p id="backup-result" role="status"></p>
+                <p id="backup-result" class="status-line" role="status"></p>
               </section>
               <section class="card" aria-labelledby="backup-schedule">
                 <div class="card-head">
@@ -388,12 +388,12 @@
                   <button type="submit" class="btn primary">Save schedule</button>
                   <p id="backup-schedule-cron-hint" class="muted"></p>
                 </form>
-                <p id="backup-schedule-result" role="status"></p>
+                <p id="backup-schedule-result" class="status-line" role="status"></p>
               </section>
               <section class="card" aria-labelledby="backups-s3">
                 <div class="card-head">
                   <h2 id="backups-s3">S3 backup target</h2>
-                  <div class="card-actions"><button type="button" id="backup-s3-switch" class="backup-s3-switch" role="switch" aria-checked="false" aria-label="S3 storage enabled" title="Toggle S3 storage"><span class="backup-s3-switch-knob" aria-hidden="true"></span></button></div>
+                  <div class="card-actions"><button type="button" id="backup-s3-switch" class="switch" role="switch" aria-checked="false" aria-label="S3 storage enabled" title="Toggle S3 storage"><span class="switch-knob" aria-hidden="true"></span></button></div>
                 </div>
                 <hr>
                 <div class="backup-s3-head">
@@ -421,17 +421,17 @@
                   </div>
                   </div>
                 </form>
-                <p id="backup-s3-result" role="status"></p>
+                <p id="backup-s3-result" class="status-line" role="status"></p>
               </section>
             </section>
           </div>
         </section>
-        <section id="view-logs" aria-label="Logs" hidden>
-          <div class="settings-grid">
+        <section id="view-logs" class="page" aria-label="Logs" hidden>
+          <div class="page-grid">
             <section class="card" aria-labelledby="logs">
                 <div class="card-head">
                   <h2 id="logs">Logs</h2>
-                  <div class="card-actions"><button type="button" id="logs-refresh" class="head-menu-btn logs-refresh-btn" title="Refresh logs" aria-label="Refresh logs"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg></button><span class="head-menu-wrap"><button type="button" id="log-settings-open" class="head-menu-btn logs-refresh-btn" aria-haspopup="dialog" aria-label="Log settings" title="Log settings"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="1.8"/><path d="M8 2.2 9.65 4.03 12.1 3.9 11.97 6.35 13.8 8l-1.83 1.65.13 2.45-2.45-.13L8 13.8l-1.65-1.83L3.9 12.1l.13-2.45L2.2 8l1.83-1.65L3.9 3.9l2.45.13L8 2.2Z"/></svg></button></span></div>
+                  <div class="card-actions"><button type="button" id="logs-refresh" class="icon-btn" title="Refresh logs" aria-label="Refresh logs"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 1.8v3h-3"/></svg></button><button type="button" id="log-settings-open" class="icon-btn" aria-haspopup="dialog" aria-label="Log settings" title="Log settings"><svg class="menu-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="1.8"/><path d="M8 2.2 9.65 4.03 12.1 3.9 11.97 6.35 13.8 8l-1.83 1.65.13 2.45-2.45-.13L8 13.8l-1.65-1.83L3.9 12.1l.13-2.45L2.2 8l1.83-1.65L3.9 3.9l2.45.13L8 2.2Z"/></svg></button></div>
                 </div>
               <form id="logs-filter-form" class="inline-form" aria-label="Log filters">
                 <label for="logs-level">Level <select id="logs-level" aria-label="Level filter"><option value="">Any</option><option value="0">DEBUG</option><option value="1">INFO</option><option value="2">WARN</option><option value="3">ERROR</option></select></label>
@@ -440,7 +440,7 @@
               </form>
               <div id="logs-active-filters" class="log-active-filters" hidden></div>
               <div class="table-wrap">
-              <table aria-label="Logs">
+              <table class="table-logs" aria-label="Logs">
                 <thead>
                   <tr><th>#</th><th>Level</th><th>Message</th><th>Created</th></tr>
                 </thead>
@@ -454,17 +454,17 @@
                 <span id="logs-page-info" role="status"></span>
                 <button id="logs-next" type="button" class="btn secondary">Next</button>
               </div>
-              <p id="logs-result" role="status"></p>
+              <p id="logs-result" class="status-line" role="status"></p>
             </section>
           </div>
         </section>
-        <section id="view-audit" aria-label="Audit" hidden>
-          <div class="settings-grid">
+        <section id="view-audit" class="page" aria-label="Audit" hidden>
+          <div class="page-grid">
             <section class="card" id="audit-card" aria-labelledby="audit">
               <div class="card-head">
-                <h2 id="logs">Audit</h2>
+                <h2 id="audit">Audit</h2>
               </div>
-              <form id="audit-filter-form" class="inline-form" aria-label="Audit filters">
+              <form id="audit-filter-form" class="inline-form audit-filters" aria-label="Audit filters">
                 <label for="audit-action">Action <select id="audit-action" aria-label="Action filter"><option value="">Any</option><option value="setup.claim">setup.claim</option><option value="session.login">session.login</option><option value="session.login_failed">session.login_failed</option><option value="session.logout">session.logout</option><option value="account.create">account.create</option><option value="account.password">account.password</option><option value="account.delete">account.delete</option><option value="release.publish">release.publish</option><option value="release.rollback">release.rollback</option><option value="release.promote">release.promote</option><option value="key.mint">key.mint</option><option value="key.revoke">key.revoke</option><option value="key.unrevoke">key.unrevoke</option><option value="key.update">key.update</option><option value="key.delete">key.delete</option><option value="limits.update">limits.update</option><option value="retention.update">retention.update</option><option value="log_settings.update">log_settings.update</option><option value="purge.run">purge.run</option><option value="sso.redeem">sso.redeem</option></select></label>
                 <label for="audit-actor">Actor <input id="audit-actor" type="text" aria-label="Actor filter"></label>
                 <label for="audit-target-type">Target type <select id="audit-target-type" aria-label="Target type filter"><option value="">Any</option><option value="account">account</option><option value="environment">environment</option><option value="sdk_key">sdk_key</option><option value="flag">flag</option><option value="rule">rule</option><option value="experiment">experiment</option><option value="project">project</option><option value="backup">backup</option><option value="settings">settings</option><option value="maintenance">maintenance</option></select></label>
@@ -475,7 +475,7 @@
                 <button type="submit" class="btn secondary">Filter</button>
               </form>
               <div class="table-wrap">
-              <table aria-label="Audit trail">
+              <table class="table-audit" aria-label="Audit trail">
                 <thead>
                   <tr><th>#</th><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Status</th><th>Detail</th></tr>
                 </thead>
@@ -489,11 +489,11 @@
                 <span id="audit-page-info" role="status"></span>
                 <button id="audit-next" type="button" class="btn secondary">Next</button>
               </div>
-              <p id="audit-result" role="status"></p>
+              <p id="audit-result" class="status-line" role="status"></p>
             </section>
           </div>
         </section>
-        <section id="view-account" aria-label="Account management (legacy alias)" hidden>
+        <section id="view-account" class="page" aria-label="Account management (legacy alias)" hidden>
         </section>
         <dialog id="cw-dialog" role="alertdialog" aria-labelledby="cw-dialog-title"
           aria-describedby="cw-dialog-message">
@@ -508,7 +508,7 @@
           </div>
         </dialog>
         <dialog id="project-dialog" aria-labelledby="project-dialog-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="project-dialog-title">Add project</h3>
             </div>
@@ -524,10 +524,10 @@
               <button type="button" id="project-dialog-cancel" class="btn ghost">Cancel</button>
             </div>
           </form>
-          <p id="project-dialog-result" role="status"></p>
+          <p id="project-dialog-result" class="status-line" role="status"></p>
         </dialog>
         <dialog id="experiment-dialog" aria-labelledby="experiment-dialog-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="experiment-dialog-title">Add experiment</h3>
             </div>
@@ -537,7 +537,7 @@
             <input id="exp-id" type="hidden" value="">
             <input id="exp-flag-select" type="hidden" value="">
             <label>Name <input id="exp-name" type="text" required spellcheck="false"></label>
-            <label>Seed <span style="display:flex;gap:8px;align-items:center;"><span class="field-info field-info-inside" style="flex:1;"><input id="exp-seed" type="text" required spellcheck="false" placeholder="auto-generated 16-char hex" style="flex:1;width:100%;" aria-describedby="exp-seed-info"><button type="button" id="exp-seed-info-btn" class="btn ghost field-info-btn field-info-btn-inside" aria-label="About the seed field" aria-describedby="exp-seed-info" aria-expanded="false">ⓘ</button><span id="exp-seed-info" class="field-info-bubble" role="tooltip">Seed is required and can be any text. It's combined with the user ID so each user randomly gets one of the variants, and always gets the same one.</span></span><button type="button" id="exp-seed-regen" class="btn ghost" aria-label="Regenerate seed" title="Regenerate seed" style="flex-shrink:0;width:32px;height:32px;padding:0;">↻</button></span></label>
+            <label>Seed <span class="field-inline"><span class="field-info field-info-inside"><input id="exp-seed" type="text" required spellcheck="false" placeholder="auto-generated 16-char hex" aria-describedby="exp-seed-info"><button type="button" id="exp-seed-info-btn" class="btn ghost field-info-btn field-info-btn-inside" aria-label="About the seed field" aria-describedby="exp-seed-info" aria-expanded="false">ⓘ</button><span id="exp-seed-info" class="field-info-bubble" role="tooltip">Seed is required and can be any text. It's combined with the user ID so each user randomly gets one of the variants, and always gets the same one.</span></span><button type="button" id="exp-seed-regen" class="btn ghost btn-icon" aria-label="Regenerate seed" title="Regenerate seed">↻</button></span></label>
             <div class="rule-builder" aria-label="Variant builder">
               <h4>Variants</h4>
               <p class="muted">Weights sum to 100%. Last auto-fills.</p>
@@ -598,10 +598,10 @@
               <button type="button" id="experiment-reset" class="btn ghost">Clear</button>
             </div>
           </form>
-          <p id="experiment-result" role="status"></p>
+          <p id="experiment-result" class="status-line" role="status"></p>
         </dialog>
         <dialog id="flag-dialog" aria-labelledby="flag-dialog-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="flag-dialog-title">Add flag</h3>
             </div>
@@ -641,16 +641,16 @@
               <button type="button" id="flag-reset" class="btn ghost">Clear</button>
             </div>
           </form>
-          <p id="flag-result" role="status"></p>
+          <p id="flag-result" class="status-line" role="status"></p>
         </dialog>
         <dialog id="key-limits-dialog" aria-labelledby="key-limits-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="key-limits-title">Edit key limits</h3>
             </div>
             <button type="button" id="key-limits-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
-          <form id="key-limits-form" aria-label="Edit key limits">
+          <form id="key-limits-form" class="form-stack" aria-label="Edit key limits">
             <input id="key-limits-id" type="hidden" value="">
             <label>Fetch limit (req/s) <input id="key-limits-fetch" type="number" min="1" max="10000"
                 placeholder="Global"></label>
@@ -661,28 +661,28 @@
               <button type="button" id="key-limits-cancel" class="btn ghost">Cancel</button>
             </div>
           </form>
-          <p id="key-limits-result" role="status"></p>
+          <p id="key-limits-result" class="status-line" role="status"></p>
         </dialog>
         <dialog id="log-settings-dialog" aria-labelledby="log-settings-dialog-title">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="log-settings-dialog-title">Log settings</h3>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-              <button type="button" id="log-enabled" class="log-switch" role="switch" aria-checked="false" aria-label="Capture logs" title="Toggle log capture"><span class="log-switch-knob" aria-hidden="true"></span></button>
+            <div class="dialog-head-actions">
+              <button type="button" id="log-enabled" class="switch" role="switch" aria-checked="false" aria-label="Capture logs" title="Toggle log capture"><span class="switch-knob" aria-hidden="true"></span></button>
             </div>
           </div>
-          <form id="log-settings-form" aria-label="Log settings">
+          <form id="log-settings-form" class="form-stack-lg" aria-label="Log settings">
             <p class="muted">When off, the server stops recording new entries.</p>
             <div id="log-settings-cards">
             <div class="log-settings-card" id="log-admin-settings-card">
-              <div class="log-switch-row"><span>Log admin requests</span><button type="button" id="log-admin-requests" class="log-switch" role="switch" aria-checked="false" aria-label="Log admin requests" title="Toggle admin-request audit capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+              <div class="switch-row"><span>Log admin requests</span><button type="button" id="log-admin-requests" class="switch" role="switch" aria-checked="false" aria-label="Log admin requests" title="Toggle admin-request audit capture"><span class="switch-knob" aria-hidden="true"></span></button></div>
               <p class="muted">When on, every admin API request is recorded.</p>
               <div id="log-admin-settings-body">
                 <div class="log-settings-group">
-                  <div class="log-switch-row"><span>Success lines</span><button type="button" id="log-admin-success" class="log-switch" role="switch" aria-checked="true" aria-label="Admin success lines" title="Toggle admin success-line capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+                  <div class="switch-row"><span>Success lines</span><button type="button" id="log-admin-success" class="switch" role="switch" aria-checked="true" aria-label="Admin success lines" title="Toggle admin success-line capture"><span class="switch-knob" aria-hidden="true"></span></button></div>
                   <p class="muted">When off, only failed admin requests are recorded.</p>
-                  <div class="log-switch-row"><span>Health checks</span><button type="button" id="log-admin-health" class="log-switch" role="switch" aria-checked="false" aria-label="Health checks" title="Toggle health-check capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+                  <div class="switch-row"><span>Health checks</span><button type="button" id="log-admin-health" class="switch" role="switch" aria-checked="false" aria-label="Health checks" title="Toggle health-check capture"><span class="switch-knob" aria-hidden="true"></span></button></div>
                   <p class="muted">When on, /healthz hits are recorded too.</p>
                 </div>
               </div>
@@ -690,7 +690,7 @@
             <div class="log-settings-card" id="log-settings-card">
               <h4>General settings</h4>
               <div class="log-settings-group">
-                <div class="log-switch-row"><span>Success lines</span><button type="button" id="log-success" class="log-switch" role="switch" aria-checked="true" aria-label="Success lines" title="Toggle success-line capture"><span class="log-switch-knob" aria-hidden="true"></span></button></div>
+                <div class="switch-row"><span>Success lines</span><button type="button" id="log-success" class="switch" role="switch" aria-checked="true" aria-label="Success lines" title="Toggle success-line capture"><span class="switch-knob" aria-hidden="true"></span></button></div>
                 <p class="muted">When off, only rejections are recorded.</p>
               </div>
             </div>
@@ -707,16 +707,16 @@
               <button type="button" id="log-settings-cancel" class="btn ghost">Cancel</button>
             </div>
           </form>
-          <p id="log-settings-result" role="status"></p>
+          <p id="log-settings-result" class="status-line" role="status"></p>
         </dialog>
         <dialog id="flag-rules-dialog" aria-labelledby="flag-rules-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="flag-rules-title">Rules for flag</h3>
             </div>
             <button type="button" id="flag-rules-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
-          <ul id="flag-rules-list" aria-label="Flag rules">
+          <ul id="flag-rules-list" class="list rule-list" aria-label="Flag rules">
             <li>Loading…</li>
           </ul>
           <div class="form-actions">
@@ -724,7 +724,7 @@
           </div>
         </dialog>
         <dialog id="rule-dialog" aria-labelledby="rule-dialog-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="rule-dialog-title">Add rule</h3>
             </div>
@@ -774,7 +774,7 @@
                   <button type="button" class="btn ghost rule-cond-remove" data-cond-remove aria-label="Remove condition" hidden>×</button>
                 </div>
               </div>
-              <div class="rule-builder-actions" style="margin-top:6px;">
+              <div class="rule-builder-actions">
                 <button type="button" id="flag-rules-add-cond" class="btn secondary rule-cond-add" aria-label="Add condition" title="Add condition">+</button>
               </div>
             </div>
@@ -801,22 +801,22 @@
               <button type="button" id="flag-rules-reset" class="btn ghost">Clear</button>
             </div>
           </form>
-          <p id="flag-rules-result" role="status"></p>
+          <p id="flag-rules-result" class="status-line" role="status"></p>
         </dialog>
         <dialog id="flag-experiments-dialog" aria-labelledby="flag-experiments-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="flag-experiments-title">Experiments for flag</h3>
             </div>
             <button type="button" id="flag-experiments-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
-          <ul id="flag-experiments-list" aria-label="Flag experiments">
+          <ul id="flag-experiments-list" class="list exp-list" aria-label="Flag experiments">
             <li>Loading…</li>
           </ul>
           <div class="form-actions">
             <button type="button" id="flag-experiments-add" class="btn primary">New experiment</button>
           </div>
-          <p id="flag-experiments-result" role="status"></p>
+          <p id="flag-experiments-result" class="status-line" role="status"></p>
         </dialog>
         <dialog id="json-editor-dialog" aria-labelledby="json-editor-title">
           <h3 id="json-editor-title">Edit JSON</h3>
@@ -830,7 +830,7 @@
           </div>
         </dialog>
         <dialog id="release-dialog" aria-labelledby="release-dialog-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="release-dialog-title">Release</h3>
             </div>
@@ -843,15 +843,15 @@
           </div>
         </dialog>
         <dialog id="transfer-export-dialog" aria-labelledby="transfer-export-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="transfer-export-title">Export flags</h3>
             </div>
             <button type="button" id="transfer-export-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <p class="muted">Merged flags, rules, experiments. Copy or download.</p>
-          <textarea id="transfer-export-text" rows="14" readonly spellcheck="false" style="width:100%"></textarea>
-          <p id="transfer-export-result" role="status"></p>
+          <textarea id="transfer-export-text" rows="14" readonly spellcheck="false"></textarea>
+          <p id="transfer-export-result" class="status-line" role="status"></p>
           <div class="dialog-actions">
             <button type="button" id="transfer-export-copy" class="btn secondary">Copy</button>
             <button type="button" id="transfer-export-download" class="btn secondary">Download</button>
@@ -860,7 +860,7 @@
           </div>
         </dialog>
         <dialog id="transfer-import-dialog" aria-labelledby="transfer-import-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="transfer-import-title">Import flags</h3>
             </div>
@@ -868,11 +868,11 @@
           </div>
           <p class="muted">Paste snapshot. Stages drafts; Publish ships them.</p>
           <p class="muted">Top-level experiments[] is deprecated — re-export nested-only.</p>
-          <textarea id="transfer-import-text" rows="14" spellcheck="false" placeholder='{"flags": [{"key": "my-flag", "experiments": [...]}]}' style="width:100%"></textarea>
+          <textarea id="transfer-import-text" rows="14" spellcheck="false" placeholder='{"flags": [{"key": "my-flag", "experiments": [...]}]}'></textarea>
           <div>
             <input id="transfer-import-file" type="file" accept="application/json,.json">
           </div>
-          <p id="transfer-import-result" role="status"></p>
+          <p id="transfer-import-result" class="status-line" role="status"></p>
           <div class="dialog-actions">
             <button type="button" id="transfer-import-stage" class="btn primary">Stage drafts</button>
             <span class="dialog-spacer"></span>
@@ -880,21 +880,21 @@
           </div>
         </dialog>
         <dialog id="transfer-diff-dialog" aria-labelledby="transfer-diff-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="transfer-diff-title">Draft snapshot</h3>
             </div>
             <button type="button" id="transfer-diff-close" class="btn ghost dialog-close" aria-label="Close dialog">×</button>
           </div>
           <p class="muted">Green added, red removed, amber changed.</p>
-          <div id="transfer-diff-detail"></div>
+          <div id="transfer-diff-detail" class="diff"></div>
           <div class="dialog-actions">
             <span class="dialog-spacer"></span>
             <button type="button" id="transfer-diff-ok" class="btn primary">Close</button>
           </div>
         </dialog>
         <dialog id="backup-schedule-helper-dialog" aria-labelledby="backup-schedule-helper-title">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px;">
+          <div class="dialog-head">
             <div>
               <h3 id="backup-schedule-helper-title">Build schedule</h3>
             </div>

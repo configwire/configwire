@@ -121,16 +121,16 @@
     var deleteIcon = svgOpen + '<path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.2a1 1 0 0 0 1 .8h4.6a1 1 0 0 0 1-.8L12 4"/><path d="M6.5 7v4"/><path d="M9.5 7v4"/></svg>';
     return '<tr' + rowClass + "><td>" + CW.esc(f.key) + badge + "</td><td>" + CW.esc(f.description || "") + "</td><td>" + CW.esc(f.type) + "</td>" +
       "<td><code>" + CW.esc(JSON.stringify(f.defaultValue)) + "</code></td>" +
-      '<td class="flag-actions-cell"><div class="flag-menu-wrap">' +
-      '<button type="button" class="flag-menu-btn" data-flag-menu="' + CW.esc(f.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(f.key) + '">&#8943;</button>' +
-      '<div class="flag-menu" role="menu" hidden>' +
-      '<button type="button" role="menuitem" data-edit-flag="' + CW.esc(f.id) + '">' + editIcon + "<span>edit</span></button>" +
-      '<button type="button" role="menuitem" data-delete-flag="' + CW.esc(f.id) + '">' + deleteIcon + "<span>delete</span></button>" +
+      '<td class="flag-actions-cell"><div class="menu-wrap">' +
+      '<button type="button" class="menu-btn" data-menu="' + CW.esc(f.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for ' + CW.esc(f.key) + '">&#8943;</button>' +
+      '<div class="menu" role="menu" hidden>' +
+      '<button type="button" role="menuitem" class="menu-item" data-edit-flag="' + CW.esc(f.id) + '">' + editIcon + "<span>edit</span></button>" +
+      '<button type="button" role="menuitem" class="menu-item is-danger" data-delete-flag="' + CW.esc(f.id) + '">' + deleteIcon + "<span>delete</span></button>" +
       '<select data-move-flag="' + CW.esc(f.id) + '" aria-label="Move ' + CW.esc(f.key) + ' to another group" data-cw-tip="Move ' + CW.esc(f.key) + ' to another group"' + moveDisabled + ">" +
       moveOpts + "</select>" +
-      '<span class="flag-menu-divider" aria-hidden="true"></span>' +
-      '<button type="button" role="menuitem" data-flag-rules="' + CW.esc(f.id) + '">' + rulesIcon + "<span>" + CW.esc(rulesLabel) + "</span>" + ruleDot + "</button>" +
-      '<button type="button" role="menuitem" data-flag-experiments="' + CW.esc(f.id) + '">' + expsIcon + "<span>" + CW.esc(expsLabel) + "</span>" + expDot + "</button>" +
+      '<span class="menu-divider" aria-hidden="true"></span>' +
+      '<button type="button" role="menuitem" class="menu-item" data-flag-rules="' + CW.esc(f.id) + '">' + rulesIcon + "<span>" + CW.esc(rulesLabel) + "</span>" + ruleDot + "</button>" +
+      '<button type="button" role="menuitem" class="menu-item" data-flag-experiments="' + CW.esc(f.id) + '">' + expsIcon + "<span>" + CW.esc(expsLabel) + "</span>" + expDot + "</button>" +
       "</div></div></td></tr>";
   }
 
@@ -477,11 +477,11 @@
         dialogConditionHTML(r.condition) +
         '<span class="rule-arrow" aria-hidden="true">→</span>' +
         dialogValueHTML(r.value) +
-        '<span class="rule-menu-wrap">' +
-        '<button type="button" class="rule-menu-btn" data-rule-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for rule P' + CW.esc(r.priority) + '">&#8942;</button>' +
-        '<div class="rule-menu" role="menu" hidden>' +
-        '<button type="button" role="menuitem" data-edit-flag-rule="' + CW.esc(r.id) + '">' + editIcon + "<span>edit</span></button>" +
-        '<button type="button" role="menuitem" data-delete-flag-rule="' + CW.esc(r.id) + '">' + deleteIcon + "<span>delete</span></button>" +
+        '<span class="menu-wrap">' +
+        '<button type="button" class="menu-btn" data-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for rule P' + CW.esc(r.priority) + '">&#8942;</button>' +
+        '<div class="menu" role="menu" hidden>' +
+        '<button type="button" role="menuitem" class="menu-item" data-edit-flag-rule="' + CW.esc(r.id) + '">' + editIcon + "<span>edit</span></button>" +
+        '<button type="button" role="menuitem" class="menu-item is-danger" data-delete-flag-rule="' + CW.esc(r.id) + '">' + deleteIcon + "<span>delete</span></button>" +
         "</div></span></li>";
     }).join("");
   }

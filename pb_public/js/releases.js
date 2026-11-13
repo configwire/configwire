@@ -30,14 +30,14 @@
       var exportIcon = svgOpen + '<path d="M8 2v9"/><path d="M4.5 7.5 8 11l3.5-3.5"/><path d="M2.5 11v2.5h11V11"/></svg>';
       var rollbackIcon = svgOpen + '<path d="M2.5 6.5h7a3 3 0 0 1 0 6H5"/><path d="M5.5 3.5 2.5 6.5l3 3"/></svg>';
       var promoteIcon = svgOpen + '<path d="M8 13V3"/><path d="M4.5 6.5 8 3l3.5 3.5"/><path d="M2.5 13h11"/></svg>';
-      var menu = '<span class="release-menu-wrap">' +
-        '<button type="button" class="release-menu-btn" data-release-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for release v' + CW.esc(r.version) + '">&#8943;</button>' +
-        '<div class="release-menu" role="menu" hidden>' +
-        '<button type="button" role="menuitem" data-view-release="' + CW.esc(r.id) + '">' + viewIcon + "<span>view</span></button>" +
-        '<button type="button" role="menuitem" data-export-release="' + CW.esc(r.id) + '">' + exportIcon + "<span>export</span></button>" +
-        '<button type="button" role="menuitem" data-promote-version="' + CW.esc(r.version) + '"' + noDestAttr + '>' + promoteIcon + "<span>Promote to…</span></button>" +
+      var menu = '<span class="menu-wrap">' +
+        '<button type="button" class="menu-btn" data-menu="' + CW.esc(r.id) + '" aria-haspopup="menu" aria-expanded="false" aria-label="Actions for release v' + CW.esc(r.version) + '">&#8943;</button>' +
+        '<div class="menu" role="menu" hidden>' +
+        '<button type="button" role="menuitem" class="menu-item" data-view-release="' + CW.esc(r.id) + '">' + viewIcon + "<span>view</span></button>" +
+        '<button type="button" role="menuitem" class="menu-item" data-export-release="' + CW.esc(r.id) + '">' + exportIcon + "<span>export</span></button>" +
+        '<button type="button" role="menuitem" class="menu-item" data-promote-version="' + CW.esc(r.version) + '"' + noDestAttr + '>' + promoteIcon + "<span>Promote to…</span></button>" +
         (idx === 0 ? "" :
-          '<button type="button" role="menuitem" data-rollback-version="' + CW.esc(r.version) + '">' + rollbackIcon + "<span>Rollback to v" +
+          '<button type="button" role="menuitem" class="menu-item" data-rollback-version="' + CW.esc(r.version) + '">' + rollbackIcon + "<span>Rollback to v" +
           CW.esc(r.version) + "</span></button>") +
         "</div></span>";
       if (idx === 0) {
@@ -946,7 +946,7 @@
     dlg.setAttribute("aria-labelledby", "promote-dialog-title");
     dlg.innerHTML =
       '<h3 id="promote-dialog-title">Promote to…</h3>' +
-      '<p id="promote-src-summary" role="status"></p>' +
+      '<p id="promote-src-summary" class="status-line" role="status"></p>' +
       '<form id="promote-form" method="dialog">' +
       '<label>Destination environment <select id="promote-dest-env"></select></label>' +
       '<label>Note (optional) <input id="promote-note" type="text" maxlength="500" placeholder="Short reason only, no emails or phone numbers"></label>' +
@@ -956,7 +956,7 @@
       '<button type="button" id="promote-cancel" class="btn ghost">Cancel</button>' +
       '<button type="submit" id="promote-submit" class="btn primary">Promote</button>' +
       "</div></form>" +
-      '<p id="promote-result" role="status"></p>';
+      '<p id="promote-result" class="status-line" role="status"></p>';
     if (document.body && document.body.appendChild) document.body.appendChild(dlg);
     function close() {
       try {
@@ -1144,7 +1144,7 @@
       if (CW.state.applying) return;
       if (btn.disabled) return;
       var v = btn.getAttribute("data-promote-version");
-      var menu = t.closest ? t.closest(".release-menu") : null;
+      var menu = t.closest ? t.closest(".menu") : null;
       if (menu) menu.hidden = true;
       openPromoteDialog(v);
     }

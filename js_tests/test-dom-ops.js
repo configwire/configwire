@@ -1086,7 +1086,7 @@ test("route: sidebar anchor lands below sticky topbar + detail header", function
   var realQS = h.document.querySelector;
   h.document.querySelector = function (sel) {
     if (sel === ".topbar") return topbar;
-    if (sel === "#view-detail .detail-head") return header;
+    if (sel === "#view-detail .page-head") return header;
     return null;
   };
   h.context.getComputedStyle = function (n) {
@@ -1102,7 +1102,7 @@ test("route: sidebar anchor lands below sticky topbar + detail header", function
     delete h.context.getComputedStyle;
     delete h.context.scrollTo;
   }
-  // 500 - (36 base + 64 topbar + 68 sticky detail-head) clears the header.
+  // 500 - (36 base + 64 topbar + 68 sticky page-head) clears the header.
   assert.deepEqual(scrolled, [[0, 332]]);
 });
 

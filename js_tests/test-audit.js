@@ -346,7 +346,7 @@ function selectBlock(html, id) {
 
 test("index.html hosts the Audit card in #view-audit with a sidebar link", function () {
   var html = indexHtml();
-  assert.ok(html.indexOf('<section id="view-audit" aria-label="Audit" hidden>') !== -1);
+  assert.ok(html.indexOf('<section id="view-audit" class="page" aria-label="Audit" hidden>') !== -1);
   assert.ok(html.indexOf('id="audit-nav-link"') !== -1);
   assert.ok(html.indexOf('href="#/p/audit"') !== -1);
   var logsStart = html.indexOf('id="view-logs"');
