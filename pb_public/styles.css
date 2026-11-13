@@ -2221,6 +2221,9 @@ button.log-chip:focus-visible {
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-soft);
   flex-wrap: wrap;
+  /* Keep text-only headers (e.g. Audit) as tall as icon-button headers
+   * (e.g. Logs): 28px .head-menu-btn + 12px padding + 1px border. */
+  min-height: calc(28px + var(--space-3) + 1px);
 }
 
 .card-actions {
@@ -2739,11 +2742,11 @@ a:focus-visible {
 
 .card-actions .head-menu-btn {
   width: 28px;
+  height: 28px;
   padding: 0;
   font-size: 16px;
   line-height: 1;
   letter-spacing: 0;
-  height: var(--input-h);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -2752,6 +2755,7 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .card-actions .head-menu-btn:hover {
@@ -2761,7 +2765,8 @@ a:focus-visible {
 }
 
 .card-actions .logs-refresh-btn {
-  width: var(--input-h);
+  width: 28px;
+  height: 28px;
 }
 
 .card-actions .head-menu {
