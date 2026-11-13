@@ -1722,6 +1722,22 @@ section[aria-labelledby="logs"] .limits-footer {
   margin-top: var(--space-4);
 }
 
+#view-logs .settings-grid > *,
+#view-audit .settings-grid > * {
+  min-width: 0;
+}
+
+#view-logs .card,
+#view-audit .card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+#view-logs .table-wrap,
+#view-audit .table-wrap {
+  max-width: 100%;
+}
+
 /* ---- Logs table rich cells (logs.js messageCellHtml/createdCellHtml):
  * method badge + mono path on top, meta chips below; project pill,
  * reason/status/key chips mirror the .badge pill idiom. Created shows
