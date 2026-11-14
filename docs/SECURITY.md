@@ -134,15 +134,19 @@ binary plus operator procedure.
 - Retention (enforced by the `configwire/purge` daily job + manual
   `POST /api/v1/admin/maintenance/purge`, superuser-only, plus the
   retention admin API; see `CONTRACT.md` sections 7 and 11):
-  - **raw `events` rows: default 30 days**, then rolled up and deleted;
-  - **daily `event_daily` rollups `(day, env, flag, variant, version)`: default 90 days**;
-  - both windows tunable `1..1825` days with the invariant
-    `rollupDays >= rawDays`; rollups carry counts only, no PII
-    survives past the raw window.
-  - `event_daily` is refreshed daily by the `EnsureRollups` walk (a
-    resumable `rollup_state.lastDay` high-water mark), not only when a
-    purge deletes raw rows; stats read completed days from it and only
-    today from raw `events`. A raw row that arrives with a `ts` on an
+  - **single retention knob `retentionDays`**: total event history, default
+    90 days, tunable `1..1825`;
+  - **raw `events` rows: up to 30 whole UTC days** (full detail; worst
+    case just under 31 days — deletion is day-granular), then rolled up
+    and deleted;
+  - **daily `event_daily` rollups `(day, env, flag, variant, version)`**:
+    cover any additional days beyond the 30-day raw window;
+  - when `retentionDays <= 30`, `event_daily` is empty and all reads are
+    raw-only; rollups carry counts only, no PII survives past the raw window.
+  - `event_daily` is refreshed daily by the `EnsureRollups` walk for days
+    outside the 30-day raw window (a resumable `rollup_state.lastDay`
+    high-water mark), not only when a purge deletes raw rows; stats read
+    completed rollup days from it and the raw window from raw `events`. A raw row that arrives with a `ts` on an
     already-rolled day is folded into that day's bucket by `AddLateRollup`
     in the same transaction as the raw save, so a backdated event is never
     dropped between the rollup and its high-water mark. Rows that were
@@ -331,19 +335,25 @@ binary plus operator procedure.
   wipe its environments, flags, rules, experiments, releases, keys,
   events, and rollups with no soft-delete. Deleting a project to
   "clean up" silently purges history.
-- Retention bounds are tunable, not fixed: raw `events` default 30
-  days, daily rollups default 90 days, each `1..1825` days with
-  `rollupDays >= rawDays`, via superuser-only
-  `GET/PUT /api/v1/admin/retention` (absent/null fields keep stored;
-  boot env `CONFIGWIRE_RAW_RETENTION_DAYS` /
-  `CONFIGWIRE_ROLLUP_RETENTION_DAYS`; out-of-range or
-   invariant-breaking values clamp on load, never fatal). Purge
-   cutoffs read the live config on every run (raw `now - rawDays`,
-    rollups `now - rollupDays`). Event identity (`bucket` plus
-    `country`)
-   scrubs on a separate 48h bound past `ts` (rows kept, counts
-   untouched, section 3); `event_daily` is refreshed daily by the
-   `EnsureRollups` walk (not only at purge), and the daily ticker plus the
+- Retention bounds are tunable, not fixed: a single `retentionDays`
+  knob sets total history (`1..1825`, default 90); raw `events` are kept
+  whole UTC days for up to 30 days and daily rollups cover any
+  additional days, via
+  superuser-only `GET/PUT /api/v1/admin/retention` (`retentionDays` is
+  the canonical input; the legacy `{rawDays, rollupDays}` pair is still
+  accepted as an advanced override with `rawDays` capped at 30). Boot
+  envs: `CONFIGWIRE_RETENTION_DAYS`, plus the legacy
+  `CONFIGWIRE_RAW_RETENTION_DAYS` / `CONFIGWIRE_ROLLUP_RETENTION_DAYS`
+  (raw is clamped to `min(30, rollup)`; a set-but-unparseable single knob
+  falls through to the legacy pair); out-of-range or
+  invariant-breaking values clamp on load, never fatal. Purge cutoffs
+  read the live config on every run (raw UTC-midnight cutoff
+  `DayBucket(now) - rawDays` where
+  `rawDays = min(30, retentionDays)`, rollups `now - rollupDays`). Event
+  identity (`bucket` plus `country`) scrubs on a separate 48h bound past
+  `ts` (rows kept, counts untouched, section 3); `event_daily` is
+  refreshed daily by the `EnsureRollups` walk for days outside the
+  30-day raw window (not only at purge), and the daily ticker plus the
    manual purge route run `EnsureRollups` → scrub → purge in that order.
    Align backup rotation with the configured
   windows: backup zips are full dumps and a restore reintroduces

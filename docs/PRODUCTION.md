@@ -138,18 +138,24 @@ export CONFIGWIRE_BACKUP_S3_SECRET=<secret-key>
 
 Env names from `configwire/backups/env.go` (`CronEnvVar`–`S3SecretEnvVar`); full semantics in
 [`BACKUPS.md`](BACKUPS.md) sections 2 and 4. Then align retention
-with the backup window: raw `events` default 30d, `event_daily`
-rollups default 90d, each tunable `1..1825` with
-`rollupDays >= rawDays` via `CONFIGWIRE_RAW_RETENTION_DAYS` /
-`CONFIGWIRE_ROLLUP_RETENTION_DAYS` (`configwire/retention/retention.go` (`loadDefaultsFromEnv`)).
-`event_daily` is refreshed every day by the rollup walk, not only when a
-purge deletes raw rows; stats read completed days from the rollups and
-only today from raw events. A raw row backdated into an already-rolled
-day is folded into that day's rollup at ingest, so the backfill boundary
-does not lose it. The one exception is a row already stored before this
-upgrade for a day older than the raw window: when `event_daily` already
-holds rows for that day it is not re-folded (the no-double-count choice),
-so keep backups across the upgrade. Keep backups
+with the backup window: raw `events` are kept whole UTC days for up to
+30 days (worst case just under 31 days — deletion is day-granular, see
+`CONTRACT.md` sections 7 and 11);
+`event_daily` rollups cover any additional retention up to 1825 days.
+Set the total window with `CONFIGWIRE_RETENTION_DAYS` (single knob) or
+use the advanced `CONFIGWIRE_RAW_RETENTION_DAYS` /
+`CONFIGWIRE_ROLLUP_RETENTION_DAYS` pair, where raw is capped at 30
+(`configwire/retention/retention.go`). When total retention is `<= 30d`,
+`event_daily` is empty and all reads are raw-only.
+`event_daily` is refreshed every day by the rollup walk for days outside
+the 30-day raw window, not only when a purge deletes raw rows; stats read
+completed rollup days from `event_daily` and the raw window from raw
+events. The 1d/2d windows are always hourly (raw end to end). A raw row
+backdated into an already-rolled day is folded into that day's rollup at
+ingest, so the backfill boundary does not lose it. The one exception is a
+row already stored before this upgrade for a day older than the raw
+window: when `event_daily` already holds rows for that day it is not
+re-folded (the no-double-count choice), so keep backups across the upgrade. Keep backups
 for the retention window you may need to restore.
 Admin actions are audited by default into `audit_log` for 365 days
 (`CONFIGWIRE_AUDIT_ENABLED`, `CONFIGWIRE_AUDIT_MAX_DAYS` clamped to

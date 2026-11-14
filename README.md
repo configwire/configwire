@@ -96,11 +96,9 @@ and the [example](https://github.com/configwire/dart/tree/main/example).
 Ports: `8090` default serve · `8108` e2e (`scripts/e2e.sh`, do not reuse).
 CI is manual (`.github/workflows/ci.yml`, `workflow_dispatch`); run `make test` locally.
  
-Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (released 2026-10-25; latest release: see `CHANGELOG.md` / GitHub Releases): `?b=0-9999` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` (any casing) are accepted-but-ignored, never stored. Raw `events` 30d → `event_daily` 90d, both tunable `1..1825` via
-`PUT /api/v1/admin/retention`. `event_daily` is refreshed daily (not only at
-purge): stats read completed days from the rollups and only today from raw
-events, so `approximate:true` appears whenever rollups contribute.
-`CONFIGWIRE_STATS_ROLLUPS=legacy` restores the old raw-window read. Admin actions land in the default-on `audit_log` (365d, `CONFIGWIRE_AUDIT_MAX_DAYS`) and are queryable at `GET /api/v1/admin/audit` (superuser-only). Rate limits: global 200 rps effective (min 200, burst 400 ceiling) per IP,
+Defaults worth knowing: bucket-only since `configwire server v0.2.0-rc.1` (released 2026-10-25; latest release: see `CHANGELOG.md` / GitHub Releases): `?b=0-9999` is the sole identity (valid wins verbatim; absent/empty never rejected; malformed non-empty stays `400`); `?userHash=`/`?uid=`/`?country=` plus event-body `userHash`/`userId` (any casing) are accepted-but-ignored, never stored. Raw `events` are kept for up to 30 whole UTC days (worst case just under 31 days — deletion is day-granular: a row's whole day must leave the window); daily `event_daily` rollups cover any additional retention up to 1825 days, set via a single `retentionDays` knob at
+`PUT /api/v1/admin/retention`. `event_daily` is refreshed daily for days outside the 30-day raw window (not only at purge): stats read completed rollup days from `event_daily` and the raw window from raw events. When total retention is `<= 30d`, `event_daily` is empty and stats reads raw-only. The 1d/2d windows are hourly (raw end to end) whenever the active raw window covers the requested days (true by default; only a shortened advanced `rawDays` override can drop 2d to daily), so `approximate:true` only appears when rollup days contribute.
+`CONFIGWIRE_STATS_ROLLUPS=legacy` keeps the raw-window stats read. Admin actions land in the default-on `audit_log` (365d, `CONFIGWIRE_AUDIT_MAX_DAYS`) and are queryable at `GET /api/v1/admin/audit` (superuser-only). Rate limits: global 200 rps effective (min 200, burst 400 ceiling) per IP,
 fetch 100 / ingest 50 rps per key (`429` carries `Retry-After: 1`).
 Details in [`docs/CONTRACT.md`](docs/CONTRACT.md) and [`docs/SECURITY.md`](docs/SECURITY.md).
 
