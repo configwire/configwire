@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -477,6 +478,58 @@ func TestOldTopLevelCompatSeedDecodes(t *testing.T) {
 	}
 	if err := releases.ValidateSnapshot(nested); err != nil {
 		t.Fatalf("nested seed must validate ok: %v", err)
+	}
+}
+
+// TestCheckDataDirWritable guards the rc.12 -> non-root upgrade path:
+// an unwritable pb_data must fail fast with the chown fix, never with a
+// bare SQLite error 8 from the migration loop.
+func TestCheckDataDirWritable(t *testing.T) {
+	if err := checkDataDirWritable(""); err == nil {
+		t.Fatal("empty dir should fail the preflight")
+	}
+	ok := t.TempDir()
+	if err := checkDataDirWritable(ok); err != nil {
+		t.Fatalf("writable temp dir should pass: %v", err)
+	}
+	nested := filepath.Join(t.TempDir(), "sub", "pb_data")
+	if err := checkDataDirWritable(nested); err != nil {
+		t.Fatalf("missing nested dir should be created and pass: %v", err)
+	}
+	if _, err := os.Stat(nested); err != nil {
+		t.Fatalf("nested dir was not created: %v", err)
+	}
+	// A regular file where the data dir should be cannot host WAL files.
+	f, err := os.CreateTemp(t.TempDir(), "notadir-*")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	f.Close()
+	if err := checkDataDirWritable(f.Name()); err == nil {
+		t.Fatal("file-as-dir should fail the preflight")
+	} else if !strings.Contains(strings.ToLower(err.Error()), "chown -r 10001:10001") {
+		t.Fatalf("preflight error should carry the chown fix, got %q", err)
+	}
+	// Existing data.db must open read-write: seed one then probe.
+	dbDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dbDir, "data.db"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed data.db: %v", err)
+	}
+	if err := checkDataDirWritable(dbDir); err != nil {
+		t.Fatalf("writable dir with seed db should pass: %v", err)
+	}
+}
+
+func TestSkipDataDirPreflight(t *testing.T) {
+	for _, argv := range [][]string{{"--help"}, {"-h"}, {"help"}, {"version"}, {"--version"}, {"serve", "--help"}} {
+		if !skipDataDirPreflight(argv) {
+			t.Fatalf("%v should skip the data-dir preflight", argv)
+		}
+	}
+	for _, argv := range [][]string{{"serve"}, {"serve", "--http=0.0.0.0:8090"}, {"migrate", "up"}} {
+		if skipDataDirPreflight(argv) {
+			t.Fatalf("%v should run the data-dir preflight", argv)
+		}
 	}
 }
 

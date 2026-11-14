@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase"
@@ -499,6 +500,72 @@ func printStartBanner(app *pocketbase.PocketBase, addr string) {
 	fmt.Printf("└─ Dashboard: %s\n", base+"/")
 }
 
+// ownerOf reports the uid:gid owner of path, or "unknown" when the stat
+// itself fails. Used only for the data-dir preflight message so an
+// unwritable volume tells the operator who owns what.
+func ownerOf(path string) string {
+	st, err := os.Stat(path)
+	if err != nil {
+		return "unknown"
+	}
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+		return strconv.Itoa(int(sys.Uid)) + ":" + strconv.Itoa(int(sys.Gid))
+	}
+	return "unknown"
+}
+
+// skipDataDirPreflight reports whether the invoked command never opens the
+// database, so a writability probe would be a false failure (e.g.
+// `--help` or `version` on a read-only rootfs).
+func skipDataDirPreflight(argv []string) bool {
+	for _, a := range argv {
+		base := strings.TrimSpace(a)
+		if base == "--help" || base == "-h" || base == "--version" || base == "-v" {
+			return true
+		}
+		if base == "help" || base == "version" {
+			return true
+		}
+	}
+	return false
+}
+
+// checkDataDirWritable probes the PocketBase data dir the same way SQLite
+// needs it: the directory must accept new files (WAL/SHM/journal) and an
+// existing data.db must open read-write. It creates the dir when missing
+// (fresh install) and always removes its probe file. A nil return means
+// the boot can proceed; a non-nil error carries the uid, the owners, and
+// the chown fix so callers never surface a bare SQLite error 8.
+func checkDataDirWritable(dir string) error {
+	if strings.TrimSpace(dir) == "" {
+		return errors.New("empty data dir")
+	}
+	uid, gid := os.Getuid(), os.Getgid()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("data dir %s is not writable by uid=%d gid=%d (owner %s): %v; fix: chown -R 10001:10001 %s (on the host for bind mounts)",
+			dir, uid, gid, ownerOf(dir), err, dir)
+	}
+	probe, err := os.CreateTemp(dir, ".writetest-*")
+	if err != nil {
+		return fmt.Errorf("data dir %s is not writable by uid=%d gid=%d (owner %s): %v; SQLite would fail with \"attempt to write a readonly database\"; fix: chown -R 10001:10001 %s (on the host for bind mounts)",
+			dir, uid, gid, ownerOf(dir), err, dir)
+	}
+	probe.Close()
+	os.Remove(probe.Name())
+	if db := filepath.Join(dir, "data.db"); func() bool {
+		_, err := os.Stat(db)
+		return err == nil
+	}() {
+		f, err := os.OpenFile(db, os.O_RDWR, 0)
+		if err != nil {
+			return fmt.Errorf("data file %s is not writable by uid=%d gid=%d (file owner %s, dir owner %s): %v; SQLite would fail with \"attempt to write a readonly database\"; fix: chown -R 10001:10001 %s (on the host for bind mounts)",
+				db, uid, gid, ownerOf(db), ownerOf(dir), err, dir)
+		}
+		f.Close()
+	}
+	return nil
+}
+
 func main() {
 	// HideStartBanner: PocketBase's own banner prints
 	// "Dashboard: <base>/_/" (its admin UI), but the ConfigWire
@@ -764,6 +831,18 @@ func main() {
 		printStartBanner(app, se.Server.Addr)
 		return nil
 	})
+
+	// Fail fast on an unwritable data dir (rc.12 root-owned volumes
+	// running as 10001): without this the boot loops on
+	// "failed to apply migration ... attempt to write a readonly
+	// database (8)". PocketBase already parsed --dir into
+	// app.DataDir() via eagerParseFlags, so probe exactly that dir.
+	if !skipDataDirPreflight(os.Args[1:]) {
+		if err := checkDataDirWritable(app.DataDir()); err != nil {
+			bootLog.Error("%v", err)
+			os.Exit(1)
+		}
+	}
 
 	if err := app.Start(); err != nil {
 		bootLog.Error("%v", err)

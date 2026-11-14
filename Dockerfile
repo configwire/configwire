@@ -51,6 +51,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD wget 
 # legacy root-owned /app/pb_data volume (pre-non-root images ran as root),
 # then drops to 10001:10001 via su-exec before execing the app. The chown
 # touches only the data volume, never the (possibly read-only) rootfs.
+# Needs CHOWN (one-time legacy fixup) + SETGID/SETUID (the su-exec drop
+# itself fails without them, even on a correctly-owned volume).
 # NOTE: 0.0.0.0 (not 127.0.0.1) so the port is reachable outside the container.
 # Data dir defaults to ./pb_data locally; in-container it is /app/pb_data.
 ENTRYPOINT ["/app/entrypoint.sh"]

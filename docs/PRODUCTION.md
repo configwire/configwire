@@ -208,7 +208,7 @@ UID/GID `10001` and supports a read-only root filesystem. Run it with:
 
 ```bash
 docker run -d --name configwire \
-  --read-only --tmpfs /tmp --cap-drop ALL --cap-add CHOWN \
+  --read-only --tmpfs /tmp --cap-drop ALL --cap-add CHOWN --cap-add SETGID --cap-add SETUID \
   --security-opt no-new-privileges \
   -p 8090:8090 -v cw-data:/app/pb_data \
   ghcr.io/configwire/configwire:latest
@@ -217,13 +217,22 @@ docker run -d --name configwire \
 - The process writes only under `/app/pb_data`; a named volume inherits
   `10001:10001`. A bind mount must be pre-owned:
   `mkdir -p /srv/cw-data && chown -R 10001:10001 /srv/cw-data`.
+  The three caps are the minimum: `CHOWN` for the one-time legacy-volume
+  fixup, `SETGID`/`SETUID` for the entrypoint's drop to UID `10001`
+  (without them even a correctly-owned volume fails to start).
 - Upgrading from rc.12 or older: the entrypoint auto-chowns a legacy
   root-owned volume on first boot (that is what `CHOWN`
   is for — dropping it re-breaks the upgrade with SQLite
-  "attempt to write a readonly database").
+  "attempt to write a readonly database"). The fixup checks the top dir
+  plus the `data.db*` ownership and probes writability
+  as UID 10001 (catching partial chowns, not just
+  the top dir) and fails fast with the `chown -R 10001:10001` fix when
+  it cannot repair; the binary itself preflights `--dir` before
+  migrations and exits with the same fix instead of looping on the
+  SQLite error.
 - [`docker-compose.yml`](../docker-compose.yml) applies the same flags;
   keep `read_only`, `tmpfs: /tmp`, `cap_drop: [ALL]`,
-  `cap_add: [CHOWN]`, and
+  `cap_add: [CHOWN, SETGID, SETUID]`, and
   `no-new-privileges` if you copy it.
 - The image builds with `GO_TAGS=no_ui`, so the PocketBase dashboard at
   `/_/` is not shipped. That path falls through to the ConfigWire SPA

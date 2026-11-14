@@ -22,7 +22,7 @@ external DB. Admin UI ships as static files.
 docker run -d \
   --name configwire \
   --restart unless-stopped \
-  --read-only --tmpfs /tmp --cap-drop ALL --cap-add CHOWN \
+  --read-only --tmpfs /tmp --cap-drop ALL --cap-add CHOWN --cap-add SETGID --cap-add SETUID \
   -p 8090:8090 \
   -v cw-data:/app/pb_data \
   ghcr.io/configwire/configwire:latest
@@ -32,10 +32,14 @@ curl -s http://localhost:8090/healthz
 ```
 
 The image runs as non-root UID/GID `10001`; only `/app/pb_data` (volume)
-and `/tmp` (tmpfs) are writable. Upgrading from a pre-non-root release
+and `/tmp` (tmpfs) are writable. The three caps are the minimum for the
+rc.12 upgrade: `CHOWN` for the one-time legacy-volume fixup, `SETGID`/`SETUID`
+for the entrypoint's drop to `10001` (without them even a correctly-owned
+volume fails to start). Upgrading from a pre-non-root release
 (rc.12 or older): the entrypoint auto-fixes a legacy root-owned volume on
-first boot (needs the `CHOWN` cap above — keep it when you
-copy the flags). If you bind-mount a host directory instead of a named
+first boot (keep the caps above when you
+copy the flags; the fixup probes writability as UID 10001 and fails fast
+with the host `chown` fix when it cannot repair). If you bind-mount a host directory instead of a named
 volume, `chown -R 10001:10001 <dir>` it first.
 
 Or via Compose (see [`docker-compose.yml`](docker-compose.yml)):
