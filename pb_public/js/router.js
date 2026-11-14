@@ -159,14 +159,18 @@
   }
 
   // Home sparkline helpers (pure, tested via node js_tests): series points
-  // carry {day, fetches, exposures}; merged values are per-day totals.
+  // carry {day, fetches, exposures} daily, or {day, hour, fetches,
+  // exposures} hourly for the 1d/2d ranges. Merged values keep the same
+  // grain so the home chart shows hours when the backend does.
 
   // Merge a list of stats series arrays into one SeriesPoint array,
-  // keyed by `day` string (union of days, sorted ascending YYYY-MM-DD
-  // lexicographic), summing fetches+exposures per day and merging
-  // versions maps by summing counts. Envs missing a day contribute zero.
+  // keyed by `hour` when present (hourly 1d/2d windows, RFC3339 UTC,
+  // lexicographic sort is chronological) else by `day` string (union of
+  // days, sorted ascending YYYY-MM-DD lexicographic), summing
+  // fetches+exposures per bucket and merging versions maps by summing
+  // counts. Envs missing a bucket contribute zero.
   function homeMergePoints(list) {
-    var byDay = {};
+    var byKey = {};
     var i, j;
     if (!list || !list.length) return [];
     for (i = 0; i < list.length; i++) {
@@ -174,14 +178,18 @@
       if (!s || !s.length) continue;
       for (j = 0; j < s.length; j++) {
         var p = s[j] || {};
+        var hour = p.hour !== undefined && p.hour !== null ? String(p.hour) : "";
         var day = p.day !== undefined && p.day !== null ? String(p.day) : "";
-        if (!day) continue;
+        var key = hour || day;
+        if (!key) continue;
         var f = Number(p.fetches) || 0;
         var e = Number(p.exposures) || 0;
         if (f < 0) f = 0;
         if (e < 0) e = 0;
-        var slot = byDay[day];
-        if (!slot) slot = byDay[day] = { day: day, fetches: 0, exposures: 0, versions: null };
+        var slot = byKey[key];
+        if (!slot) slot = byKey[key] = { day: day || key.slice(0, 10), hour: hour, fetches: 0, exposures: 0, versions: null };
+        if (!slot.day && day) slot.day = day;
+        if (hour && !slot.hour) slot.hour = hour;
         slot.fetches += f;
         slot.exposures += e;
         if (p.versions && typeof p.versions === "object") {
@@ -189,15 +197,17 @@
           Object.keys(p.versions).forEach(function (k) {
             var c = Number(p.versions[k]) || 0;
             if (c < 0) c = 0;
-            var key = String(k);
-            slot.versions[key] = (Number(slot.versions[key]) || 0) + c;
+            var vkey = String(k);
+            slot.versions[vkey] = (Number(slot.versions[vkey]) || 0) + c;
           });
         }
       }
     }
-    return Object.keys(byDay).sort().map(function (d) {
-      var slot = byDay[d];
-      return { day: slot.day, fetches: slot.fetches, exposures: slot.exposures, versions: slot.versions };
+    return Object.keys(byKey).sort().map(function (d) {
+      var slot = byKey[d];
+      var out = { day: slot.day, fetches: slot.fetches, exposures: slot.exposures, versions: slot.versions };
+      if (slot.hour) out.hour = slot.hour;
+      return out;
     });
   }
 
@@ -212,12 +222,18 @@
     });
   }
 
-  // Headline stability: the series runs through the current (partial)
+  // Headline stability: the daily series runs through the current (partial)
   // UTC day, so averaging it in drags the headline down every morning.
   // The headline averages the *complete* UTC days instead; the chart
-  // keeps the full series.
+  // keeps the full series. Hourly series (1d/2d) pass through untouched:
+  // the current hour is at most 1/25 of the window, and the headline for
+  // those ranges averages per-day (total / window days) elsewhere.
   function homeTrimPartialDay(points) {
     if (!points || !points.length) return [];
+    var first = points[0] || {};
+    if (first.hour !== undefined && first.hour !== null && String(first.hour) !== "") return points.slice();
+    var lastHourly = points[points.length - 1] || {};
+    if (lastHourly.hour !== undefined && lastHourly.hour !== null && String(lastHourly.hour) !== "") return points.slice();
     var today = "";
     try { today = new Date().toISOString().slice(0, 10); } catch (e) { today = ""; }
     var last = points[points.length - 1] || {};
@@ -280,8 +296,49 @@
     return Math.round(sum / n);
   }
 
-  // Home range selector (?since= param). Only backend-supported day-grain
-  // windows within 90d retention — no month/all-time/custom options.
+  // Hourly headline: 1d/2d windows show per-hour buckets, but the card
+  // still reports "avg daily events", so divide the hourly total by the
+  // window length in days instead of averaging per-hour buckets.
+  function homeIsHourlyPoints(points) {
+    if (!points || !points.length) return false;
+    for (var i = 0; i < points.length; i++) {
+      var p = points[i] || {};
+      if (p.hour !== undefined && p.hour !== null && String(p.hour) !== "") return true;
+    }
+    return false;
+  }
+
+  // Fallback only: the requested range may differ from the window the
+  // backend actually served (it clamps ?since= to the configured rollup
+  // retention), so callers should prefer the response's echo.sinceDays.
+  function homeWindowDays() {
+    var v = getHomeSince();
+    var m = /^(\d+)d$/.exec(String(v));
+    if (m) {
+      var n = parseInt(m[1], 10);
+      if (n >= 1) return n;
+    }
+    return 7;
+  }
+
+  function homeAverageForPoints(points, windowDays) {
+    if (!points || !points.length) return 0;
+    if (!homeIsHourlyPoints(points)) {
+      return homeDailyAverage(homePointsTotals(homeTrimPartialDay(points)));
+    }
+    var totals = homePointsTotals(points);
+    var sum = 0;
+    for (var i = 0; i < totals.length; i++) {
+      var v = Number(totals[i]) || 0;
+      if (v > 0) sum += v;
+    }
+    var days = (typeof windowDays === "number" && windowDays >= 1) ? windowDays : homeWindowDays();
+    return Math.round(sum / days);
+  }
+
+  // Home range selector (?since= param). Backend serves 1d/2d by hour
+  // and longer windows by day, all within 90d retention — no
+  // month/all-time/custom options.
   var homeSinceWhitelist = ["1d", "2d", "7d", "30d", "90d"];
   CW.homeSinceWhitelist = homeSinceWhitelist;
 
@@ -393,15 +450,18 @@
       var points = (hs && hs.points) || null;
       if (!points && hs && hs.values && hs.values.length && typeof hs.values[0] === "object") points = hs.values;
       var totals;
-      if (points && points.length) totals = homePointsTotals(homeTrimPartialDay(points));
+      if (points && points.length) totals = homeIsHourlyPoints(points) ? homePointsTotals(points) : homePointsTotals(homeTrimPartialDay(points));
       else totals = (hs && hs.values) || [];
       if (totals && totals.length && typeof totals[0] === "object") totals = homePointsTotals(totals);
-      var daily = (hs && typeof hs.daily === "number") ? hs.daily : homeDailyAverage(totals);
+      var daily;
+      if (hs && typeof hs.daily === "number") daily = hs.daily;
+      else if (points && points.length) daily = homeAverageForPoints(points, hs && hs.windowDays);
+      else daily = homeDailyAverage(totals);
       if (daily < 0) daily = 0;
       var label = (p.name || p.id) + ", average " + daily + " events per day";
       var chartHtml;
       if (typeof CW.renderSeries === "function") {
-        if (points && points.length) chartHtml = CW.renderSeries(points);
+        if (points && points.length) chartHtml = CW.renderSeries(points, homeIsHourlyPoints(points) ? "hour" : "day");
         else chartHtml = '<p class="muted stats-series-empty">No activity.</p>';
       } else if (totals && totals.length) {
         chartHtml = homeSparklineSVG((typeof totals[0] === "object") ? homePointsTotals(totals) : totals, { id: p.id });
@@ -492,18 +552,25 @@
         var url = "/api/v1/admin/env/" + encodeURIComponent(env.slug) +
           "/stats?since=" + encodeURIComponent(getHomeSince()) + "&project=" + encodeURIComponent(p.id);
         return CW.api(url).then(function (data) {
-          return (data && data.series) || [];
+          var sinceDays = (data && data.echo && Number(data.echo.sinceDays)) || 0;
+          return { series: (data && data.series) || [], sinceDays: sinceDays };
         }, function () { return null; });
       });
       return Promise.all(fetches).then(function (parts) {
         if (CW.scopeStale(gen)) return;
         var ok = [];
+        var windowDays = 0;
         for (var k = 0; k < parts.length; k++) {
-          if (parts[k]) ok.push(parts[k]);
+          if (parts[k]) {
+            ok.push(parts[k].series);
+            // The clamp is global (rollup retention), so every env echoes
+            // the same effective window; the first valid one wins.
+            if (windowDays < 1 && parts[k].sinceDays >= 1) windowDays = parts[k].sinceDays;
+          }
         }
         var merged = homeMergePoints(ok);
-        var avg = homeDailyAverage(homePointsTotals(homeTrimPartialDay(merged)));
-        CW.state.homeSeries[p.id] = { points: merged, values: merged, daily: avg };
+        var avg = homeAverageForPoints(merged, windowDays);
+        CW.state.homeSeries[p.id] = { points: merged, values: merged, daily: avg, windowDays: windowDays };
       });
     });
     return Promise.all(jobs).then(function () { /* best-effort: never reject */ },
@@ -698,6 +765,9 @@
   CW.homePointsTotals = homePointsTotals;
   CW.homeDailyAverage = homeDailyAverage;
   CW.homeTrimPartialDay = homeTrimPartialDay;
+  CW.homeIsHourlyPoints = homeIsHourlyPoints;
+  CW.homeWindowDays = homeWindowDays;
+  CW.homeAverageForPoints = homeAverageForPoints;
   CW.getHomeSince = getHomeSince;
   CW.setHomeSince = setHomeSince;
   CW.homeSparklineSVG = homeSparklineSVG;

@@ -25,6 +25,23 @@
     return s.slice(0, 5) || s;
   }
 
+  function fmtHour(d) {
+    var s = String(d == null ? "" : d);
+    var m = /T(\d{2}):(\d{2})/.exec(s);
+    if (m) return m[1] + ":" + m[2];
+    return fmtDay(s);
+  }
+
+  function fmtHourStamp(p) {
+    var hour = p && p.hour != null ? String(p.hour) : "";
+    if (!hour) return String((p && p.day) || "");
+    return fmtDay(hour) + " " + fmtHour(hour) + " UTC";
+  }
+
+  function isHourlyGrain(granularity) {
+    return String(granularity == null ? "" : granularity).toLowerCase() === "hour";
+  }
+
   function getMonotoneCubicSegments(pts, baseY) {
     var n = pts.length;
     if (n < 2) return [];
@@ -164,7 +181,7 @@
       '<strong class="stats-tip-val">' + CW.esc(String(val)) + "</strong></div>";
   }
 
-  function seriesTipHTML(p) {
+  function seriesTipHTML(p, hourly) {
     var f = Number(p && p.fetches) || 0;
     var e = Number(p && p.exposures) || 0;
     if (f < 0) f = 0;
@@ -173,7 +190,8 @@
     if (p && p.versions && typeof p.versions === "object") {
       ks = Object.keys(p.versions).sort(function (a, b) { return Number(a) - Number(b); });
     }
-    var out = '<div class="stats-tip-day">' + CW.esc(String((p && p.day) || "")) + "</div>";
+    var heading = hourly ? fmtHourStamp(p) : String((p && p.day) || "");
+    var out = '<div class="stats-tip-day">' + CW.esc(heading) + "</div>";
     out += tipRow("#3b82f6", "Fetches", f);
     ks.forEach(function (k, i) {
       var c = Number(p.versions[k]) || 0;
@@ -186,8 +204,9 @@
     return out;
   }
 
-  function renderSeries(series) {
+  function renderSeries(series, granularity) {
     lastGeom = null;
+    var hourly = isHourlyGrain(granularity);
     if (!series || !series.length) {
       return '<p class="muted stats-series-empty">No activity.</p>';
     }
@@ -197,6 +216,7 @@
       if (f < 0) f = 0;
       if (e < 0) e = 0;
       var day = p && p.day !== undefined && p.day !== null ? String(p.day) : "";
+      var hour = p && p.hour !== undefined && p.hour !== null ? String(p.hour) : "";
       var vers = {};
       var hasVer = false;
       if (p && p.versions && typeof p.versions === "object") {
@@ -207,7 +227,7 @@
           hasVer = true;
         });
       }
-      return { day: day, fetches: f, exposures: e, versions: hasVer ? vers : null };
+      return { day: day, hour: hour, fetches: f, exposures: e, versions: hasVer ? vers : null };
     });
     var vKeys = [];
     var seen = {};
@@ -272,8 +292,9 @@
     }).join("");
     // Long windows crowd adjacent day labels on narrow home cards
     // (seen as "07-18"/"07-25" overlap at 90d), so sparsify the tick
-    // step once the series outgrows a monthly view.
-    var step = n <= 7 ? 1 : (n > 60 ? 14 : 7);
+    // step once the series outgrows a monthly view. Hourly windows
+    // (25/49 points) tick every 6/12 hours instead.
+    var step = hourly ? (n <= 26 ? 6 : 12) : (n <= 7 ? 1 : (n > 60 ? 14 : 7));
     var xIdx = [];
     for (var xi = 0; xi < n; xi += step) xIdx.push(xi);
     // Trailing edge: appending the last day when it sits 1-3 days after
@@ -284,17 +305,21 @@
       if (n - 1 - xIdx[xIdx.length - 1] < 4) xIdx[xIdx.length - 1] = n - 1;
       else xIdx.push(n - 1);
     }
+    function tickLabel(p) {
+      return hourly ? fmtHour(p.hour || p.day) : fmtDay(p.day);
+    }
     var xLabels = xIdx.map(function (i) {
       var anchor = (i === 0 && n > 1) ? "start" : (i === n - 1 && n > 1) ? "end" : "middle";
       return '<text class="stats-x" x="' + r1(sx(i)) + '" y="' + (SERIES_H - 6) +
-        '" text-anchor="' + anchor + '">' + CW.esc(fmtDay(pts[i].day)) + "</text>";
+        '" text-anchor="' + anchor + '">' + CW.esc(tickLabel(pts[i])) + "</text>";
     }).join("");
-    var firstL = fmtDay(pts[0].day);
-    var lastL = fmtDay(pts[n - 1].day);
+    var firstL = hourly ? fmtHourStamp(pts[0]) : fmtDay(pts[0].day);
+    var lastL = hourly ? fmtHourStamp(pts[n - 1]) : fmtDay(pts[n - 1].day);
     var range = n === 1 ? firstL : firstL + " to " + lastL;
-    var aria = "Daily fetches and exposures for " + n + (n === 1 ? " day, " : " days, ") + range + ", peak " + max;
+    var grainWord = hourly ? (n === 1 ? "hour, " : "hours, ") : (n === 1 ? "day, " : "days, ");
+    var aria = (hourly ? "Hourly" : "Daily") + " fetches and exposures for " + n + " " + grainWord + range + ", peak " + max;
     if (vKeys.length) aria += ", versions " + vKeys.map(function (k) { return "v" + k; }).join(", ");
-    var dayWord = n === 1 ? " day" : " days";
+    var dayWord = hourly ? (n === 1 ? " hour" : " hours") : (n === 1 ? " day" : " days");
     var hoverX = r1(sx(0));
     seriesSeq++;
     var fetchGradId = "cw-stat-fetch-grad-" + seriesSeq;
@@ -339,7 +364,7 @@
       '<circle class="stats-dot-exposure" r="4" cx="' + hoverX + '" cy="' + r1(sy(pts[0].fetches + pts[0].exposures)) + '" visibility="hidden"></circle>' +
       '<rect class="stats-hit" x="' + SERIES_PAD_L + '" y="' + SERIES_PAD_T + '" width="' + plotW + '" height="' + plotH + '" fill="transparent"></rect>' +
       "</svg>";
-    lastGeom = { pts: pts, n: n, max: max };
+    lastGeom = { pts: pts, n: n, max: max, hourly: hourly };
     var verTotals = vKeys.map(function (vk) {
       var tot = 0;
       pts.forEach(function (p) { if (p.versions) tot += Number(p.versions[vk]) || 0; });
@@ -408,7 +433,7 @@
         dotE.setAttribute("cy", String(r1(hy(p.fetches + p.exposures))));
         dotE.setAttribute("visibility", "visible");
       }
-      tip.innerHTML = seriesTipHTML(p);
+      tip.innerHTML = seriesTipHTML(p, g.hourly);
       tip.hidden = false;
       if (tip.style) {
         var pct = x / SERIES_W * 100;
@@ -551,7 +576,8 @@
       var vSplit = vKeys.map(function (v) {
         return "v" + CW.esc(v) + ": " + CW.esc(perVersion[v]);
       }).join(", ") || "(no version data)";
-      var seriesHtml = renderSeries(data.series);
+      var grain = data.echo && data.echo.granularity;
+      var seriesHtml = renderSeries(data.series, grain);
       var verHtml = renderVerBars(perVersion, vKeys);
       html =
         '<div class="stats-counts">' +
