@@ -318,8 +318,7 @@ binary plus operator procedure.
   benchmark `BenchmarkStatsRollupRead` on a seeded 1M raw rows + 90 days
   of rollups measured p95 ≈ **10.65ms/op**, ~6.26MB/op on an M1 Pro
   (2026-11-10); the raw query is scoped to today, so it does not grow
-  with the 30-day raw window. `CONFIGWIRE_STATS_ROLLUPS=legacy` restores
-  the old raw-window read.
+  with the 30-day raw window.
 - Post-burst 30s at 100rps: 3001×`200`, 0×`429`, 0×`500` (no stuck state).
 - Runner: **k6** (`k6 --version` → v2.3.0; installed via brew for the
   gate). No `hey` fallback shipped — k6 was present.

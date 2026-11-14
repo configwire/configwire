@@ -24,8 +24,8 @@
 // idx_events_env_ts and idx_event_daily_env_ts / idx_event_daily_day. The
 // frozen Aggregate / AggregateRollups helpers re-apply the same predicates
 // in-Go, so the DB prefilter is a pure subset narrowing: identical results,
-// no full scan. CONFIGWIRE_STATS_ROLLUPS=legacy (or an incomplete rollup
-// backfill) widens the raw side to the historic raw-window horizon.
+// no full scan. An incomplete rollup backfill widens the raw side to the
+// historic raw-window horizon.
 // Short windows (1d/2d, the last 24/48 hours) read raw events end to end
 // and answer hourly series whenever the active raw window covers the
 // requested days (always true by default; the raw window is 30 days unless
@@ -35,7 +35,6 @@ package stats
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -198,7 +197,7 @@ func EffectiveSince(days int) string {
 // split point for the split actually used (today midnight on upgrade
 // paths where rollups cover through yesterday, the request cutoff for
 // hourly 1d/2d windows and raw-only policies, or
-// DayBucket(now-EffectiveRawDays) in the steady-state legacy window), so
+// DayBucket(now-EffectiveRawDays) in the steady-state fallback window), so
 // old clients keep parsing horizon untouched.
 // The optional flag (pass only for ?flag= requests) echoes back as
 // echo.flag; without it the key stays absent (no per-key entry).
@@ -229,32 +228,20 @@ func HorizonFor(now time.Time) time.Time {
 	return purge.DayBucket(now)
 }
 
-// LegacyHorizonFor returns the pre-rollup split used when stats cannot
-// trust event_daily (CONFIGWIRE_STATS_ROLLUPS=legacy or an incomplete
-// backfill): DayBucket(now - rawDays), i.e. the historic raw window.
+// LegacyHorizonFor returns the fallback split used when stats cannot
+// trust event_daily (an incomplete backfill): DayBucket(now - rawDays),
+// i.e. the historic raw window.
 // Raw events at/after this horizon are live; older history comes from
 // rollups exactly as before.
 func LegacyHorizonFor(now time.Time) time.Time {
 	return purge.DayBucket(now.AddDate(0, 0, -retention.GetConfig().EffectiveRawDays()))
 }
 
-// statsRollupsEnvVar selects the stats read path: "auto" (default, and the
-// fallback for invalid values) trusts completed-day rollups once the
-// backfill is ready; "legacy" always uses the pre-rollup raw window.
-const statsRollupsEnvVar = "CONFIGWIRE_STATS_ROLLUPS"
-
-// statsRollupsLegacy reports whether the operator forced the legacy read
-// path. Matching is case-insensitive and trimmed; anything other than
-// "legacy" (including "" and invalid values) means auto.
-func statsRollupsLegacy() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv(statsRollupsEnvVar)), "legacy")
-}
-
 // EventCutoffFor clamps the raw-events window to the live side of the
 // horizon: the later of the ?since= cutoff and the active horizon. The raw
-// side is therefore today's UTC midnight in auto mode, or DayBucket(now -
-// EffectiveRawDays) in legacy/fallback mode; purged history comes from rollups
-// exactly once either way.
+// side is therefore today's UTC midnight when rollups cover through
+// yesterday, or DayBucket(now - EffectiveRawDays) in fallback mode; purged
+// history comes from rollups exactly once either way.
 func EventCutoffFor(cutoff, horizon time.Time) time.Time {
 	if cutoff.After(horizon) {
 		return cutoff
@@ -456,7 +443,7 @@ func getStats(re *core.RequestEvent) error {
 		// (total retention <= 30d), read raw events end to end: one exact
 		// source, no rollup side, no approximation.
 		horizon = cutoff
-	} else if statsRollupsLegacy() || !purge.RollupsReady(re.App, now) {
+	} else if !purge.RollupsReady(re.App, now) {
 		// Steady state under the raw-floor walk: rollups only exist below
 		// the raw-window boundary, so the split is that boundary and the
 		// whole raw window reads from raw events. (RollupsReady can only

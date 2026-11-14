@@ -1,12 +1,9 @@
-// Stats read-path tests for the completed-day rollup split: auto mode
-// reads today from raw events and past days from event_daily, the legacy
-// kill switch reproduces the historic raw-window numbers, and an
+// Stats read-path tests for the completed-day rollup split: ready state
+// reads today from raw events and past days from event_daily, and an
 // incomplete backfill falls back safely.
 package stats
 
 import (
-	"encoding/json"
-	"reflect"
 	"testing"
 	"time"
 
@@ -255,69 +252,6 @@ func TestStatsAutoReadsTodayRawAndCompletedDayRollups(t *testing.T) {
 	perVersion, _ := body["perVersion"].(map[string]any)
 	if perVersion["1"] != float64(2) || perVersion["2"] != float64(1) {
 		t.Errorf("perVersion = %v, want 1:2 2:1", perVersion)
-	}
-}
-
-// TestStatsLegacyModeParity pins CONFIGWIRE_STATS_ROLLUPS=legacy to the
-// historic numbers: identical raw seed + matching rollups produce the same
-// totals/series in legacy and auto mode, while legacy reports no rollup
-// contribution and stays exact.
-func TestStatsLegacyModeParity(t *testing.T) {
-	seed := func(t *testing.T) *rollupStatsApp {
-		f := newRollupStatsApp(t)
-		now := time.Now().UTC()
-		today := purge.DayBucket(now)
-		f.markReady(t, now)
-		for i := 0; i < 6; i++ {
-			day := today.AddDate(0, 0, -i)
-			f.seedRaw(t, "exp_bool", "fetch", "", 1, day.Add(9*time.Hour))
-			f.seedRaw(t, "exp_bool", "exposure", "control", 0, day.Add(10*time.Hour))
-			if i > 0 {
-				f.seedRollup(t, day, "exp_bool", "control", 1, 1, 1)
-			}
-		}
-		return f
-	}
-
-	autoApp := seed(t)
-	_, autoBody := callStats(t, autoApp.app, "?since=90d&flag=exp_bool")
-
-	legacyApp := seed(t)
-	t.Setenv(statsRollupsEnvVar, "  LeGaCy  ")
-	_, legacyBody := callStats(t, legacyApp.app, "?since=90d&flag=exp_bool")
-
-	if autoBody["fetches"] != legacyBody["fetches"] ||
-		autoBody["exposures"] != legacyBody["exposures"] ||
-		autoBody["total"] != legacyBody["total"] {
-		t.Fatalf("legacy totals = %v/%v/%v, auto = %v/%v/%v; want parity",
-			legacyBody["fetches"], legacyBody["exposures"], legacyBody["total"],
-			autoBody["fetches"], autoBody["exposures"], autoBody["total"])
-	}
-	if !reflect.DeepEqual(autoBody["perVariant"], legacyBody["perVariant"]) ||
-		!reflect.DeepEqual(autoBody["perVersion"], legacyBody["perVersion"]) {
-		t.Errorf("legacy perVariant/perVersion = %v/%v, auto = %v/%v; want parity",
-			legacyBody["perVariant"], legacyBody["perVersion"], autoBody["perVariant"], autoBody["perVersion"])
-	}
-	autoSeries, _ := json.Marshal(autoBody["series"])
-	legacySeries, _ := json.Marshal(legacyBody["series"])
-	if string(autoSeries) != string(legacySeries) {
-		t.Errorf("legacy series != auto series\nlegacy: %s\nauto:   %s", legacySeries, autoSeries)
-	}
-
-	autoEvents, autoRollups := sourcesOf(t, autoBody)
-	legacyEvents, legacyRollups := sourcesOf(t, legacyBody)
-	if autoRollups != 10 || legacyRollups != 0 {
-		t.Errorf("sources.rollups auto/legacy = %v/%v, want 10/0", autoRollups, legacyRollups)
-	}
-	if autoEvents != 2 || legacyEvents != 12 {
-		t.Errorf("sources.events auto/legacy = %v/%v, want 2/12", autoEvents, legacyEvents)
-	}
-	if autoBody["approximate"] != true || legacyBody["approximate"] != false {
-		t.Errorf("approximate auto/legacy = %v/%v, want true/false", autoBody["approximate"], legacyBody["approximate"])
-	}
-	legacyHorizon := LegacyHorizonFor(time.Now().UTC()).Format(time.RFC3339)
-	if got := echoOf(t, legacyBody)["rollupHorizon"]; got != legacyHorizon {
-		t.Errorf("legacy rollupHorizon = %v, want %v", got, legacyHorizon)
 	}
 }
 

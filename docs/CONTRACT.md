@@ -637,12 +637,10 @@ Success `200`:
   window covers them. Completed rollup
   days are refreshed daily by the rollup walk, not only at purge time
   (section 7).
-- `CONFIGWIRE_STATS_ROLLUPS=auto|legacy` (default `auto`, case-insensitive
-  and trimmed; any invalid value means `auto`). Both modes use the same
-  steady-state split: `horizon = DayBucket(now - rawDays)` (where
+- Read split: `horizon = DayBucket(now - rawDays)` (where
   `rawDays` is `EffectiveRawDays`: the stored `rawDays` override when valid,
   otherwise `min(30, retentionDays)`) with history below it read from
-  `event_daily` and the raw window from raw events. `auto` may widen to
+  `event_daily` and the raw window from raw events. Stats may widen to
   today-midnight (`horizon = DayBucket(now)`) when the rollup state
   predates the raw-floor model (`rollup_state.lastDay >= yesterday`,
   upgrades only); otherwise it uses the boundary split, so stats never
