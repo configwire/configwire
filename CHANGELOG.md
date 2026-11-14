@@ -3,6 +3,39 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.13 — 2026-11-15
+
+### Added
+
+- Audit trail, on by default: admin actions (logins, accounts, publishes, keys, settings, purge, SSO, and console changes to flags, rules, experiments, projects, environments, backups) are saved to an append-only `audit_log` and readable at `GET /api/v1/admin/audit` (superuser-only, filterable, 50 rows per page). Kept for 365 days; `CONFIGWIRE_AUDIT_ENABLED` and `CONFIGWIRE_AUDIT_MAX_DAYS` change that at boot. Passwords, tokens, full SDK keys, and snapshots are never stored.
+- Audit screen in the console with the same filters.
+- Opt-in update checks: `POST /api/v1/admin/update-check` answers `{current, latest, update}` only when `CONFIGWIRE_CHECK_UPDATES=1` (otherwise `403`, no outbound call). The console badge uses it instead of calling GitHub, and Settings gets a "Console updates" card with an optional 6-hour auto-check.
+- Daily rollups: days outside the active raw window are summarized into `event_daily` every day, not only at purge, so stats reads the raw window from raw events and completed rollup days from the rollups. A backdated event is added to its day's rollup on ingest.
+- Hourly stats for short windows: `?since=1d`/`2d` answer 25/49 per-hour buckets (`echo.granularity: "hour"`, each point carries `hour` + `day`) read raw end to end (exact, `approximate: false`) whenever the active raw window covers the requested days (true by default; only a shortened advanced `rawDays` override can drop 2d to daily); longer windows keep the daily grain.
+
+### Changed
+
+- Retention is now a single user-facing knob: `PUT /api/v1/admin/retention` accepts `{retentionDays}` and derives `rawDays = min(30, retentionDays)` and `rollupDays = retentionDays`. Raw events are kept for up to 30 whole UTC days by default (day-granular deletion, worst case just under 31 days); daily rollups cover any additional retention beyond the active raw window. `PUT {retentionDays}` validation errors name `retentionDays`, never the derived legacy fields. When total retention fits inside the active raw window, `event_daily` is empty and stats reads raw-only. The legacy `{rawDays, rollupDays}` pair is still accepted as an advanced override, with `rawDays` capped at 30 and honored when smaller (rollups stay enabled while total exceeds the active raw window); a set-but-unparseable `CONFIGWIRE_RETENTION_DAYS` env falls through to the legacy env pair instead of ignoring it. The legacy invariant error now reads `invalid rawDays: must be <= rollupDays.` (was `invalid rollupDays: must be >= rawDays.`). The purge cutoff is now the UTC midnight of `now - rawDays` (`purge.RawCutoff`), so the boundary day stays fully raw-owned until it leaves the window — this fixes early-day events dropping out of long-window stats.
+- Images run as non-root (UID 10001) and work with a read-only filesystem; only the data volume and `/tmp` are writable. When upgrading, keep `--cap-add CHOWN --cap-add SETGID --cap-add SETUID`: the entrypoint fixes a legacy root-owned volume on first boot (top dir plus `data.db*` ownership, verified with a write probe as UID 10001), then drops privileges — without the set caps even a correctly-owned volume fails to start. The server itself preflights `--dir` before migrations and exits with the `chown -R 10001:10001` fix instead of looping on SQLite `readonly`. Pre-own a bind-mounted data directory with `chown 10001:10001`.
+- Release builds scan each architecture with Trivy and keyless-sign the image with cosign.
+- The console talks only to its own origin: no more api.github.com calls on load, CSP `connect-src 'self'`, version badge from `/api/v1/meta`.
+- The console uses one shared design system; the logs table scrolls inside its card and card headers are aligned.
+- Duplicate flag keys are caught earlier and named: staging, publish (drafts kept, failing row highlighted), and transfer import (whole file rejected).
+- Purge reports an additive `auditLogs` count.
+- Operator docs no longer cite source line numbers.
+
+### Fixed
+
+- The update badge compares rc versions numerically, so `rc.12` beats `rc.11`.
+- Upgrading a pre-non-root volume: the one-shot auto-chown now covers nested `data.db*` files (not just the top dir) and surfaces the kernel reason when it cannot repair, and both the entrypoint and the server fail fast with the `chown -R 10001:10001` fix instead of looping on SQLite `readonly` (1544).
+- Pinned `modernc.org/sqlite v1.60.1` / `libc v1.77.1` to the versions PocketBase `v0.41.1` tests against, silencing the boot version-mismatch warning.
+- Long values in the Logs table wrap instead of widening the card.
+
+### Removed
+
+- The PocketBase dashboard from release images (`/_/` shows the ConfigWire admin shell); build with `--build-arg GO_TAGS=` to get it back.
+- The unused htmx bundle.
+
 ## v0.2.0-rc.12 — 2026-11-06
 
 ### Changed
