@@ -18,13 +18,18 @@
 // apis.RequireSuperuserAuth().
 //
 // SCALE NOTE: aggregation runs in-Go over indexed filter queries —
-// loadRows selects today's events by (env, ts >= horizon) and loadRollups
-// selects event_daily by (env, cutoffDay <= day < horizon), served by
-// idx_events_env_ts and idx_event_daily_env_day / idx_event_daily_day. The
+// loadRows selects events by (env, ts >= eventCutoff, the later of the
+// request cutoff and the active horizon); loadRollups selects
+// event_daily by (env, cutoffDay <= day < horizon), served by
+// idx_events_env_ts and idx_event_daily_env_ts / idx_event_daily_day. The
 // frozen Aggregate / AggregateRollups helpers re-apply the same predicates
 // in-Go, so the DB prefilter is a pure subset narrowing: identical results,
 // no full scan. CONFIGWIRE_STATS_ROLLUPS=legacy (or an incomplete rollup
-// backfill) widens the raw side to the historic now-RawDays horizon.
+// backfill) widens the raw side to the historic raw-window horizon.
+// Short windows (1d/2d, the last 24/48 hours) read raw events end to end
+// and answer hourly series whenever the active raw window covers the
+// requested days (always true by default; the raw window is 30 days unless
+// shortened by the advanced rawDays override).
 package stats
 
 import (
@@ -53,9 +58,30 @@ const (
 	DefaultSinceDays = 7
 	// MaxSinceDays clamps large ?since= values (e.g. 400d -> 90d).
 	MaxSinceDays = 90
+	// HourlyWindowDays is the largest ?since= window served with hourly
+	// series. 1d/2d are the "last 24/48 hours" console ranges; longer
+	// windows keep the daily grain (and its rollup read path).
+	HourlyWindowDays = 2
 	// Flag keys are bounded by flagkey.MaxLen, shared with publish and
 	// ingest so a published flag is always stats-queryable.
 )
+
+// HourlyFor reports whether a window is served hour by hour: only 1..2 day
+// windows, and only while the active raw-events retention covers the whole
+// requested window. If rawDays is shorter than the window, the caller keeps
+// the daily rollup split so completed days never appear as partial hours.
+func HourlyFor(days, rawDays int) bool {
+	return days >= 1 && days <= HourlyWindowDays && rawDays >= days
+}
+
+// GranularityFor maps the hourly decision onto the echo label: "hour" or
+// "day". Clients use it to label series points without guessing.
+func GranularityFor(hourly bool) string {
+	if hourly {
+		return "hour"
+	}
+	return "day"
+}
 
 // maxSinceDays returns the active ?since= clamp from the retention
 // singleton (rollupDays): stats history cannot reach past the
@@ -169,9 +195,11 @@ func EffectiveSince(days int) string {
 // and rollupHorizon is the UTC RFC3339 midnight that splits raw events
 // from completed-day rollups (see HorizonFor). horizon keeps its original
 // label meaning ("7d"); rollupHorizon is the additive machine-readable
-// split point for the split actually used (today midnight in auto mode,
-// now-RawDays when stats falls back to the legacy raw window), so old
-// clients keep parsing horizon untouched.
+// split point for the split actually used (today midnight on upgrade
+// paths where rollups cover through yesterday, the request cutoff for
+// hourly 1d/2d windows and raw-only policies, or
+// DayBucket(now-EffectiveRawDays) in the steady-state legacy window), so
+// old clients keep parsing horizon untouched.
 // The optional flag (pass only for ?flag= requests) echoes back as
 // echo.flag; without it the key stays absent (no per-key entry).
 func EchoFor(envSlug string, days int, cutoff, horizon time.Time, flag ...string) map[string]any {
@@ -191,12 +219,12 @@ func EchoFor(envSlug string, days int, cutoff, horizon time.Time, flag ...string
 }
 
 // HorizonFor returns the UTC-midnight split between raw events and
-// completed-day rollups in the normal (auto) path: DayBucket(now), today
-// midnight, the same day grain the purge rolls up into. Raw events at or
-// after the horizon are today; rollup buckets strictly before it are
-// completed days. Disjoint by construction, so a crash-window row present
-// in BOTH sources is still counted once (plus approximate:true marks the
-// taint).
+// completed-day rollups in the pre-raw-floor (upgrade-compat) path:
+// DayBucket(now), today midnight. Raw events at or after the horizon are
+// today; rollup buckets strictly before it are completed days. Disjoint by
+// construction, so a crash-window row present in BOTH sources is still
+// counted once (plus approximate:true marks the taint). The steady-state
+// split under the raw-floor walk is LegacyHorizonFor instead.
 func HorizonFor(now time.Time) time.Time {
 	return purge.DayBucket(now)
 }
@@ -207,7 +235,7 @@ func HorizonFor(now time.Time) time.Time {
 // Raw events at/after this horizon are live; older history comes from
 // rollups exactly as before.
 func LegacyHorizonFor(now time.Time) time.Time {
-	return purge.DayBucket(now.AddDate(0, 0, -retention.GetConfig().RawDays))
+	return purge.DayBucket(now.AddDate(0, 0, -retention.GetConfig().EffectiveRawDays()))
 }
 
 // statsRollupsEnvVar selects the stats read path: "auto" (default, and the
@@ -225,7 +253,7 @@ func statsRollupsLegacy() bool {
 // EventCutoffFor clamps the raw-events window to the live side of the
 // horizon: the later of the ?since= cutoff and the active horizon. The raw
 // side is therefore today's UTC midnight in auto mode, or DayBucket(now -
-// RawDays) in legacy/fallback mode; purged history comes from rollups
+// EffectiveRawDays) in legacy/fallback mode; purged history comes from rollups
 // exactly once either way.
 func EventCutoffFor(cutoff, horizon time.Time) time.Time {
 	if cutoff.After(horizon) {
@@ -420,8 +448,25 @@ func getStats(re *core.RequestEvent) error {
 	}
 	now := time.Now().UTC()
 	cutoff := now.Add(-time.Duration(days) * 24 * time.Hour)
+	rawDays := retention.GetConfig().EffectiveRawDays()
+	hourly := HourlyFor(days, rawDays)
 	horizon := HorizonFor(now)
-	if statsRollupsLegacy() || !purge.RollupsReady(re.App, now) {
+	if hourly || !purge.RollupsEnabled() {
+		// Short windows, and any window when rollups are disabled by policy
+		// (total retention <= 30d), read raw events end to end: one exact
+		// source, no rollup side, no approximation.
+		horizon = cutoff
+	} else if statsRollupsLegacy() || !purge.RollupsReady(re.App, now) {
+		// Steady state under the raw-floor walk: rollups only exist below
+		// the raw-window boundary, so the split is that boundary and the
+		// whole raw window reads from raw events. (RollupsReady can only
+		// be true for rollup state carried over from the pre-raw-floor
+		// model, where event_daily covers through yesterday and the
+		// today-midnight split stays correct.) Note the split horizon is
+		// time-derived and can advance up to ~one ticker interval before
+		// the walk advances lastDay; a backdated event landing in that
+		// lag day stays invisible to stats until the next walk rolls it
+		// (pre-existing, bounded by the 23-25h interval).
 		horizon = LegacyHorizonFor(now)
 	}
 	cutoffDay := purge.DayBucket(cutoff)
@@ -435,13 +480,18 @@ func getStats(re *core.RequestEvent) error {
 		if err != nil {
 			return err
 		}
-		buckets, err = loadRollups(re.App, env.Id, cutoffDay, horizon)
-		if err != nil {
-			return err
+		if !hourly && purge.RollupsEnabled() {
+			buckets, err = loadRollups(re.App, env.Id, cutoffDay, horizon)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	stEvents := Aggregate(rows, env.Id, eventCutoff, flagFilter)
-	stRollups := AggregateRollups(buckets, env.Id, cutoffDay, horizon, flagFilter)
+	stRollups := Stats{PerVariant: map[string]int{}, PerVersion: map[int]int{}}
+	if !hourly && purge.RollupsEnabled() {
+		stRollups = AggregateRollups(buckets, env.Id, cutoffDay, horizon, flagFilter)
+	}
 	st := MergeStats(stEvents, stRollups)
 
 	eventsTotal := TotalFor(stEvents)
@@ -456,14 +506,27 @@ func getStats(re *core.RequestEvent) error {
 	rates := RatesFor(st)
 	total := TotalFor(st)
 	echo := EchoFor(slug, days, cutoff, horizon, flag)
+	echo["granularity"] = GranularityFor(hourly)
 
 	// Series window matches the totals window: every counted row lands on
-	// exactly one series day, so series sums equal totals (scoped to the
-	// flag too when ?flag= is set).
-	daysList := SeriesDays(cutoffDay, now)
-	evMap := BuildEventSeries(rows, env.Id, eventCutoff, flagFilter)
-	roMap := BuildRollupSeries(buckets, env.Id, cutoffDay, horizon, flagFilter)
-	series := MergeSeries(evMap, roMap, daysList)
+	// exactly one series bucket, so series sums equal totals (scoped to the
+	// flag too when ?flag= is set). Short windows bucket by hour from the
+	// same raw rows; longer windows keep the dense daily rollup split.
+	var series []SeriesPoint
+	if hourly {
+		hours := HourlySeriesHours(cutoff, now)
+		evMap := BuildEventSeriesHourly(rows, env.Id, eventCutoff, flagFilter)
+		series = MergeHourlySeries(evMap, hours)
+	} else {
+		daysList := SeriesDays(cutoffDay, now)
+		evMap := BuildEventSeries(rows, env.Id, eventCutoff, flagFilter)
+		if purge.RollupsEnabled() {
+			roMap := BuildRollupSeries(buckets, env.Id, cutoffDay, horizon, flagFilter)
+			series = MergeSeries(evMap, roMap, daysList)
+		} else {
+			series = MergeSeries(evMap, nil, daysList)
+		}
+	}
 
 	resp := map[string]any{
 		"fetches":     st.Fetches,

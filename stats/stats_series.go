@@ -6,14 +6,18 @@ import (
 	"github.com/configwire/configwire/purge"
 )
 
-// SeriesPoint is one dense daily bucket: Day is YYYY-MM-DD UTC
+// SeriesPoint is one dense bucket: Day is always YYYY-MM-DD UTC
 // (purge.DayBucket formatted), Fetches/Exposures are exact ints.
-// Versions splits Fetches per day by fetched release version
-// (exposures have no version); sum(Versions)==Fetches per point.
+// Hourly series (echo.granularity == "hour") additionally carry Hour, the
+// RFC3339 UTC bucket start (e.g. "2026-11-14T13:00:00Z"); daily series
+// omit it, so older clients that key only by Day still sum hours back to
+// their day. Versions splits Fetches per bucket by fetched release
+// version (exposures have no version); sum(Versions)==Fetches per point.
 // JSON map[int]int marshals with string keys; never nil on the wire
-// (zero-fetch days render {}).
+// (zero-fetch buckets render {}).
 type SeriesPoint struct {
 	Day       string      `json:"day"`
+	Hour      string      `json:"hour,omitempty"`
 	Fetches   int         `json:"fetches"`
 	Exposures int         `json:"exposures"`
 	Versions  map[int]int `json:"versions"`
@@ -22,6 +26,39 @@ type SeriesPoint struct {
 // dayKey formats a UTC-midnight day the same way every series map keys it.
 func dayKey(t time.Time) string {
 	return t.UTC().Format("2006-01-02")
+}
+
+// HourBucket truncates ts to its UTC hour (the hourly series grain).
+func HourBucket(ts time.Time) time.Time {
+	return ts.UTC().Truncate(time.Hour)
+}
+
+// hourKey formats a UTC hour as RFC3339, the hourly series map key and
+// wire Hour value (fixed width, so lexicographic order is chronological).
+func hourKey(t time.Time) string {
+	return HourBucket(t).Format(time.RFC3339)
+}
+
+// HourlySeriesHours returns the dense UTC-hour window from
+// HourBucket(cutoff) inclusive to HourBucket(now) inclusive, in
+// chronological order. The first and last hours can be partial (rows are
+// still filtered by ts >= cutoff and come from the request's now), so a
+// 1d window yields 25 points and a 2d window 49; every counted row lands
+// inside exactly one and sums equal the hourly totals.
+func HourlySeriesHours(cutoff, now time.Time) []time.Time {
+	if cutoff.IsZero() || now.IsZero() {
+		return nil
+	}
+	start := HourBucket(cutoff)
+	end := HourBucket(now)
+	if end.Before(start) {
+		return nil
+	}
+	out := make([]time.Time, 0, int(end.Sub(start)/time.Hour)+1)
+	for h := start; !h.After(end); h = h.Add(time.Hour) {
+		out = append(out, h)
+	}
+	return out
 }
 
 // SeriesDays returns the dense UTC-midnight window from DayBucket(cutoffDay)
@@ -56,8 +93,19 @@ func SeriesDays(cutoffDay, now time.Time) []time.Time {
 // or ts before eventCutoff are excluded; unknown kinds are ignored.
 // userHash is never read — counts only.
 func BuildEventSeries(rows []EventRow, envID string, eventCutoff time.Time, flagFilter ...string) map[string]*SeriesPoint {
+	return buildEventSeries(rows, envID, eventCutoff, flagOnly(flagFilter), false)
+}
+
+// BuildEventSeriesHourly folds rows into per-hour counts keyed by
+// HourBucket(ts) RFC3339. Same parity contract as BuildEventSeries
+// (env/flag/cutoff/kind filters, counts only); every point carries both
+// Day and Hour so day-keyed consumers still aggregate correctly.
+func BuildEventSeriesHourly(rows []EventRow, envID string, eventCutoff time.Time, flagFilter ...string) map[string]*SeriesPoint {
+	return buildEventSeries(rows, envID, eventCutoff, flagOnly(flagFilter), true)
+}
+
+func buildEventSeries(rows []EventRow, envID string, eventCutoff time.Time, flag string, hourly bool) map[string]*SeriesPoint {
 	out := map[string]*SeriesPoint{}
-	flag := flagOnly(flagFilter)
 	for _, r := range rows {
 		if r.EnvID != envID {
 			continue
@@ -78,9 +126,15 @@ func BuildEventSeries(rows []EventRow, envID string, eventCutoff time.Time, flag
 			continue
 		}
 		key := dayKey(purge.DayBucket(r.Ts))
+		if hourly {
+			key = hourKey(r.Ts)
+		}
 		p, ok := out[key]
 		if !ok {
-			p = &SeriesPoint{Day: key}
+			p = &SeriesPoint{Day: dayKey(purge.DayBucket(r.Ts))}
+			if hourly {
+				p.Hour = key
+			}
 			out[key] = p
 		}
 		if isFetch {
@@ -143,9 +197,23 @@ func BuildRollupSeries(buckets []purge.Rollup, envID string, cutoffDay, horizon 
 // pre-horizon ts never reaches the event map, horizon-day buckets never
 // reach the rollup map). Nil maps and days outside either map yield zeros.
 func MergeSeries(eventMap, rollupMap map[string]*SeriesPoint, days []time.Time) []SeriesPoint {
-	out := make([]SeriesPoint, 0, len(days))
-	for _, d := range days {
-		key := dayKey(purge.DayBucket(d))
+	return mergeSeries(eventMap, rollupMap, days, false)
+}
+
+// MergeHourlySeries densifies the hourly event map over hours, zero-filling
+// empty hours. There is no rollup side: hourly windows are served entirely
+// from raw events, so every bucket sums back to the same totals Aggregate saw.
+func MergeHourlySeries(eventMap map[string]*SeriesPoint, hours []time.Time) []SeriesPoint {
+	return mergeSeries(eventMap, nil, hours, true)
+}
+
+func mergeSeries(eventMap, rollupMap map[string]*SeriesPoint, buckets []time.Time, hourly bool) []SeriesPoint {
+	out := make([]SeriesPoint, 0, len(buckets))
+	for _, b := range buckets {
+		key := dayKey(purge.DayBucket(b))
+		if hourly {
+			key = hourKey(b)
+		}
 		var fetches, exposures int
 		versions := map[int]int{}
 		if p := eventMap[key]; p != nil {
@@ -162,7 +230,11 @@ func MergeSeries(eventMap, rollupMap map[string]*SeriesPoint, days []time.Time) 
 				versions[v] += n
 			}
 		}
-		out = append(out, SeriesPoint{Day: key, Fetches: fetches, Exposures: exposures, Versions: versions})
+		point := SeriesPoint{Day: dayKey(purge.DayBucket(b)), Fetches: fetches, Exposures: exposures, Versions: versions}
+		if hourly {
+			point.Hour = key
+		}
+		out = append(out, point)
 	}
 	return out
 }
