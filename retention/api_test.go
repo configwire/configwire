@@ -7,52 +7,80 @@ import (
 func intPtr(n int) *int { return &n }
 
 func TestToBodyShape(t *testing.T) {
-	body := toBody(Config{RawDays: 45, RollupDays: 120})
-	if body["rawDays"] != 45 || body["rollupDays"] != 120 {
+	body := toBody(Config{RawDays: 30, RollupDays: 120})
+	if body["retentionDays"] != 120 {
+		t.Fatalf("retentionDays should equal rollupDays: %+v", body)
+	}
+	if body["rawDays"] != 30 || body["rollupDays"] != 120 {
 		t.Fatalf("unexpected body shape: %+v", body)
 	}
 }
 
-func TestResolvePUTDaysNilKeepsStored(t *testing.T) {
-	if got := resolvePUTDays(30, nil); got != 30 {
-		t.Fatalf("nil should keep stored 30, got %d", got)
+func TestResolveRetentionPUTSingleKnob(t *testing.T) {
+	stored := Config{RawDays: 30, RollupDays: 90}
+	// retentionDays alone derives rawDays as min(retentionDays, MaxRawDays).
+	next, err := resolveRetentionPUT(stored, retentionBody{RetentionDays: intPtr(120)})
+	if err != nil {
+		t.Fatalf("single-knob PUT should resolve: %v", err)
 	}
-	if got := resolvePUTDays(30, intPtr(45)); got != 45 {
-		t.Fatalf("explicit 45 should win, got %d", got)
+	if next.RawDays != 30 || next.RollupDays != 120 {
+		t.Fatalf("120d retention should derive {30,120}, got %+v", next)
+	}
+
+	next, err = resolveRetentionPUT(stored, retentionBody{RetentionDays: intPtr(7)})
+	if err != nil {
+		t.Fatalf("short single-knob PUT should resolve: %v", err)
+	}
+	if next.RawDays != 7 || next.RollupDays != 7 {
+		t.Fatalf("7d retention should derive {7,7}, got %+v", next)
 	}
 }
 
-func TestPutMergeSemantics(t *testing.T) {
-	resetForTest(Config{RawDays: 30, RollupDays: 90})
-	stored := GetConfig()
-	// Absent rawDays keeps stored; explicit rollupDays replaces.
-	next := Config{
-		RawDays:    resolvePUTDays(stored.RawDays, nil),
-		RollupDays: resolvePUTDays(stored.RollupDays, intPtr(120)),
+func TestResolveRetentionPUTAdvancedPair(t *testing.T) {
+	stored := Config{RawDays: 30, RollupDays: 90}
+	// Legacy advanced pair: rollupDays is the total retention; rawDays is
+	// capped by validation but accepted verbatim here.
+	next, err := resolveRetentionPUT(stored, retentionBody{RollupDays: intPtr(120)})
+	if err != nil {
+		t.Fatalf("advanced rollupDays PUT should resolve: %v", err)
 	}
 	if next.RawDays != 30 || next.RollupDays != 120 {
-		t.Fatalf("merge should be {30,120}, got %+v", next)
+		t.Fatalf("rollupDays=120 should keep raw=30, got %+v", next)
 	}
-	if err := ValidateConfig(next); err != nil {
-		t.Fatalf("merged config should validate: %v", err)
+
+	// Explicit rawDays is preserved for advanced overrides.
+	next, err = resolveRetentionPUT(stored, retentionBody{RawDays: intPtr(14), RollupDays: intPtr(120)})
+	if err != nil {
+		t.Fatalf("advanced pair PUT should resolve: %v", err)
 	}
-	// Both absent keeps everything.
-	keep := Config{
-		RawDays:    resolvePUTDays(stored.RawDays, nil),
-		RollupDays: resolvePUTDays(stored.RollupDays, nil),
+	if next.RawDays != 14 || next.RollupDays != 120 {
+		t.Fatalf("advanced pair should preserve explicit values, got %+v", next)
 	}
-	if keep != stored {
-		t.Fatalf("all-absent merge should keep stored, got %+v", keep)
+}
+
+func TestResolveRetentionPUTRejectsMixedFields(t *testing.T) {
+	stored := Config{RawDays: 30, RollupDays: 90}
+	cases := []retentionBody{
+		{RetentionDays: intPtr(90), RawDays: intPtr(30)},
+		{RetentionDays: intPtr(90), RollupDays: intPtr(90)},
+		{RetentionDays: intPtr(90), RawDays: intPtr(30), RollupDays: intPtr(90)},
 	}
-	// Invariant-violating explicit pair is rejected.
-	bad := Config{
-		RawDays:    resolvePUTDays(stored.RawDays, intPtr(100)),
-		RollupDays: resolvePUTDays(stored.RollupDays, intPtr(50)),
+	for i, req := range cases {
+		if _, err := resolveRetentionPUT(stored, req); err == nil {
+			t.Fatalf("case %d (%+v) should be rejected", i, req)
+		}
 	}
-	if err := ValidateConfig(bad); err == nil {
-		t.Fatalf("rollup<raw merge should be rejected: %+v", bad)
+}
+
+func TestResolveRetentionPUTAbsentKeepsStored(t *testing.T) {
+	stored := Config{RawDays: 30, RollupDays: 120}
+	next, err := resolveRetentionPUT(stored, retentionBody{})
+	if err != nil {
+		t.Fatalf("empty PUT should keep stored: %v", err)
 	}
-	resetForTest(Defaults())
+	if next != stored {
+		t.Fatalf("empty PUT should keep stored %+v, got %+v", stored, next)
+	}
 }
 
 func TestPutBoundsRejected(t *testing.T) {
@@ -60,9 +88,29 @@ func TestPutBoundsRejected(t *testing.T) {
 		{RawDays: 0, RollupDays: 90},
 		{RawDays: 30, RollupDays: 1826},
 		{RawDays: 1826, RollupDays: 1826},
+		{RawDays: 31, RollupDays: 90}, // raw above MaxRawDays
+		{RawDays: 90, RollupDays: 30}, // rollup < raw
 	} {
 		if err := ValidateConfig(c); err == nil {
 			t.Fatalf("%+v should be rejected", c)
 		}
+	}
+}
+
+func TestSingleKnobErrorNamesRetentionDays(t *testing.T) {
+	// A single-knob PUT {retentionDays: N} maps onto rollupDays, so a
+	// range rejection must name retentionDays, not the derived legacy
+	// field the caller never sent.
+	err := singleKnobError(ValidateConfig(Config{RawDays: 0, RollupDays: 0}))
+	if err == nil || err.Error() != "invalid retentionDays: must be 1..1825." {
+		t.Fatalf("single-knob zero = %v, want retentionDays wording", err)
+	}
+	err = singleKnobError(ValidateConfig(Config{RawDays: 30, RollupDays: 1826}))
+	if err == nil || err.Error() != "invalid retentionDays: must be 1..1825." {
+		t.Fatalf("single-knob 1826 = %v, want retentionDays wording", err)
+	}
+	// Non-configError values pass through untouched.
+	if got := singleKnobError(nil); got != nil {
+		t.Fatalf("nil should pass through, got %v", got)
 	}
 }

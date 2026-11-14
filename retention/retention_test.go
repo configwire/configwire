@@ -18,19 +18,45 @@ func TestDefaults(t *testing.T) {
 }
 
 func TestLoadDefaultsFromEnv(t *testing.T) {
+	// Single-knob env: retentionDays drives both windows.
+	t.Setenv("CONFIGWIRE_RETENTION_DAYS", "120")
+	t.Setenv("CONFIGWIRE_RAW_RETENTION_DAYS", "")
+	t.Setenv("CONFIGWIRE_ROLLUP_RETENTION_DAYS", "")
+	c := loadDefaultsFromEnv()
+	if c.RawDays != 30 || c.RollupDays != 120 {
+		t.Fatalf("single-knob env should derive {30,120}, got %+v", c)
+	}
+	// Short retention: raw capped to the total retention, no rollups.
+	t.Setenv("CONFIGWIRE_RETENTION_DAYS", "7")
+	c = loadDefaultsFromEnv()
+	if c.RawDays != 7 || c.RollupDays != 7 {
+		t.Fatalf("short retention should derive {7,7}, got %+v", c)
+	}
+	// Legacy advanced envs: raw capped at MaxRawDays.
+	t.Setenv("CONFIGWIRE_RETENTION_DAYS", "")
 	t.Setenv("CONFIGWIRE_RAW_RETENTION_DAYS", "45")
 	t.Setenv("CONFIGWIRE_ROLLUP_RETENTION_DAYS", "120")
-	c := loadDefaultsFromEnv()
-	if c.RawDays != 45 || c.RollupDays != 120 {
-		t.Fatalf("env overrides not applied: %+v", c)
+	c = loadDefaultsFromEnv()
+	if c.RawDays != 30 || c.RollupDays != 120 {
+		t.Fatalf("legacy env overrides should clamp raw to 30, got %+v", c)
 	}
 	// Invalid values fall back to defaults.
+	t.Setenv("CONFIGWIRE_RETENTION_DAYS", "bogus")
 	t.Setenv("CONFIGWIRE_RAW_RETENTION_DAYS", "bogus")
 	t.Setenv("CONFIGWIRE_ROLLUP_RETENTION_DAYS", "")
 	if c := loadDefaultsFromEnv(); c.RawDays != DefaultRawDays || c.RollupDays != DefaultRollupDays {
 		t.Fatalf("invalid env should fall back to defaults, got %+v", c)
 	}
+	// A set-but-unparseable single knob falls through to the legacy pair
+	// instead of silently discarding it (migration typo keeps legacy tuning).
+	t.Setenv("CONFIGWIRE_RETENTION_DAYS", "bogus")
+	t.Setenv("CONFIGWIRE_RAW_RETENTION_DAYS", "45")
+	t.Setenv("CONFIGWIRE_ROLLUP_RETENTION_DAYS", "120")
+	if c := loadDefaultsFromEnv(); c.RawDays != 30 || c.RollupDays != 120 {
+		t.Fatalf("bogus single knob should fall through to legacy envs, got %+v", c)
+	}
 	// Unset env yields code defaults.
+	t.Setenv("CONFIGWIRE_RETENTION_DAYS", "")
 	t.Setenv("CONFIGWIRE_RAW_RETENTION_DAYS", "")
 	t.Setenv("CONFIGWIRE_ROLLUP_RETENTION_DAYS", "")
 	if c := loadDefaultsFromEnv(); c.RawDays != 30 || c.RollupDays != 90 {
@@ -46,6 +72,7 @@ func TestValidateConfig(t *testing.T) {
 		{RawDays: 0, RollupDays: 90},
 		{RawDays: -1, RollupDays: 90},
 		{RawDays: 1826, RollupDays: 1826},
+		{RawDays: 31, RollupDays: 90}, // raw above MaxRawDays
 		{RawDays: 30, RollupDays: 0},
 		{RawDays: 30, RollupDays: 1826},
 		{RawDays: 90, RollupDays: 30}, // rollup < raw violates invariant
@@ -59,7 +86,8 @@ func TestValidateConfig(t *testing.T) {
 	edges := []Config{
 		{RawDays: 1, RollupDays: 1},
 		{RawDays: 1, RollupDays: 1825},
-		{RawDays: 1825, RollupDays: 1825},
+		{RawDays: 30, RollupDays: 30},
+		{RawDays: 30, RollupDays: 1825},
 		{RawDays: 30, RollupDays: 90},
 	}
 	for i, c := range edges {
@@ -75,15 +103,15 @@ func TestClampConfig(t *testing.T) {
 	if got.RawDays != DefaultRawDays || got.RollupDays != DefaultRollupDays {
 		t.Fatalf("out-of-range should clamp to defaults, got %+v", got)
 	}
-	// Invariant repair: rollup < raw resolves to rollup == raw.
+	// Invariant repair: raw capped at min(rollup, MaxRawDays).
 	got = clampConfig(Config{RawDays: 60, RollupDays: 30})
-	if got.RawDays != 60 || got.RollupDays != 60 {
-		t.Fatalf("rollup<raw should clamp rollup up to raw, got %+v", got)
+	if got.RawDays != 30 || got.RollupDays != 30 {
+		t.Fatalf("rollup<raw should clamp raw to min(rollup,30), got %+v", got)
 	}
-	// Valid config survives untouched.
+	// Raw above MaxRawDays is clamped down.
 	got = clampConfig(Config{RawDays: 45, RollupDays: 120})
-	if got.RawDays != 45 || got.RollupDays != 120 {
-		t.Fatalf("valid config should survive clamp, got %+v", got)
+	if got.RawDays != 30 || got.RollupDays != 120 {
+		t.Fatalf("raw>30 should clamp raw to 30, got %+v", got)
 	}
 	if err := ValidateConfig(got); err != nil {
 		t.Fatalf("clamped valid config should validate: %v", err)
@@ -102,7 +130,7 @@ func TestSeedDefaults(t *testing.T) {
 	if err := ValidateConfig(seed); err != nil {
 		t.Fatalf("seed defaults should validate: %v", err)
 	}
-	resetForTest(seed)
+	ResetForTest(seed)
 	got := GetConfig()
 	if got.RawDays != 30 || got.RollupDays != 90 {
 		t.Fatalf("GetConfig after seed should be {30,90}, got %+v", got)
@@ -110,20 +138,40 @@ func TestSeedDefaults(t *testing.T) {
 }
 
 func TestApplyAndGetConfig(t *testing.T) {
-	resetForTest(Defaults())
-	next := Config{RawDays: 45, RollupDays: 120}
+	ResetForTest(Defaults())
+	next := Config{RawDays: 30, RollupDays: 120}
 	if err := applyConfig(next); err != nil {
 		t.Fatalf("valid apply should succeed: %v", err)
 	}
-	if got := GetConfig(); got.RawDays != 45 || got.RollupDays != 120 {
+	if got := GetConfig(); got.RawDays != 30 || got.RollupDays != 120 {
 		t.Fatalf("GetConfig should reflect apply, got %+v", got)
 	}
 	// Invalid apply is rejected and leaves state untouched.
 	if err := applyConfig(Config{RawDays: 100, RollupDays: 50}); err == nil {
 		t.Fatalf("invariant-violating apply should be rejected")
 	}
-	if got := GetConfig(); got.RawDays != 45 || got.RollupDays != 120 {
+	if got := GetConfig(); got.RawDays != 30 || got.RollupDays != 120 {
 		t.Fatalf("rejected apply must not mutate state, got %+v", got)
 	}
-	resetForTest(Defaults())
+	ResetForTest(Defaults())
+}
+
+func TestEffectiveRawDaysHonorsOverride(t *testing.T) {
+	// Advanced override: stored rawDays < 30 shortens the raw window.
+	if got := (Config{RawDays: 14, RollupDays: 120}).EffectiveRawDays(); got != 14 {
+		t.Fatalf("EffectiveRawDays({14,120}) = %d, want 14", got)
+	}
+	if got := (Config{RawDays: 30, RollupDays: 90}).EffectiveRawDays(); got != 30 {
+		t.Fatalf("EffectiveRawDays({30,90}) = %d, want 30", got)
+	}
+	if got := (Config{RawDays: 7, RollupDays: 7}).EffectiveRawDays(); got != 7 {
+		t.Fatalf("EffectiveRawDays({7,7}) = %d, want 7", got)
+	}
+	// Invalid stored values fall back to the derived window, never 0.
+	if got := (Config{RawDays: 0, RollupDays: 0}).EffectiveRawDays(); got != MaxRawDays {
+		t.Fatalf("EffectiveRawDays({0,0}) = %d, want %d", got, MaxRawDays)
+	}
+	if got := (Config{RawDays: 30, RollupDays: 7}).EffectiveRawDays(); got != 7 {
+		t.Fatalf("EffectiveRawDays({30,7}) = %d, want 7", got)
+	}
 }

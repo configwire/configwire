@@ -23,7 +23,7 @@ func retentionAuditApp(t *testing.T) *tests.TestApp {
 		t.Fatalf("NewTestApp: %v", err)
 	}
 	t.Cleanup(func() {
-		resetForTest(Defaults())
+		ResetForTest(Defaults())
 		app.Cleanup()
 	})
 	col := core.NewBaseCollection("retention_settings")
@@ -41,9 +41,9 @@ func retentionAuditApp(t *testing.T) *tests.TestApp {
 
 func TestAuditRetentionUpdate(t *testing.T) {
 	app := retentionAuditApp(t)
-	resetForTest(Defaults())
+	ResetForTest(Defaults())
 
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/retention", strings.NewReader(`{"rawDays":14,"rollupDays":120}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/retention", strings.NewReader(`{"retentionDays":120}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	re := &core.RequestEvent{App: app}
@@ -66,7 +66,7 @@ func TestAuditRetentionUpdate(t *testing.T) {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		t.Fatalf("unmarshal detail: %v", err)
 	}
-	if d["rawDays"] != float64(14) || d["rollupDays"] != float64(120) {
+	if d["retentionDays"] != float64(120) || d["rawDays"] != float64(30) || d["rollupDays"] != float64(120) {
 		t.Errorf("detail = %v", d)
 	}
 }

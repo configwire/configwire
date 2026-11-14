@@ -1,19 +1,28 @@
-// Package retention owns the tunable compliance-retention windows,
-// mirroring configwire/limits (rate_settings singleton pattern) without
-// any API/UI yet (Wave 3 wires the ticker/handler).
+// Package retention owns the tunable compliance-retention window.
+// mirroring configwire/limits (rate_settings singleton pattern).
 //
-// Model: raw events live RawDays, daily aggregates live RollupDays, with
-// the invariant RollupDays >= RawDays (rollups must outlive the raw rows
-// they were built from). Tunables live in Config, defaulted from code
-// ({30,90} matching purge.RawRetentionDays/RollupRetentionDays),
-// overridden by env, overridden at runtime by the retention_settings
-// collection row (key=global) via a future admin API.
+// Model: operators set a single "Event history retention (days)" value.
+// Internally raw events live up to 30 days by default and daily aggregates
+// cover any additional days beyond the raw window:
+//
+//	rawDays    = min(30, retentionDays) (single-knob derivation)
+//	rollupDays = retentionDays
+//
+// The legacy {rawDays, rollupDays} pair is an advanced override: a valid
+// rawDays < 30 shortens the raw window (EffectiveRawDays honors it) and
+// rollups cover rawDays..retentionDays.
+//
+// When total retention <= the active raw window, event_daily is intentionally
+// empty and all reads are raw-only. The invariant RollupDays >= RawDays
+// always holds.
+// Tunables live in Config, defaulted from code ({30,90} so the historic
+// 30d raw / 90d total defaults are preserved), overridden by env,
+// overridden at runtime by the retention_settings collection row
+// (key=global) via the admin API.
 //
 // Why a singleton row: one operator-chosen policy per binary, same as
 // limits.rate_settings — find-or-create on key="global", backed by a
-// UNIQUE index on key. Wave 3 will rewire purge cutoffs to GetConfig()
-// (purge.go cutoffs stay the source of truth until then — do NOT rewire
-// here).
+// UNIQUE index on key. Purge cutoffs read from GetConfig().
 package retention
 
 import (
@@ -27,11 +36,14 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// Defaults mirror purge.RawRetentionDays / purge.RollupRetentionDays:
-// raw events 30d, daily aggregates 90d.
+// Defaults preserve the historic 30d raw / 90d total retention.
 const (
 	DefaultRawDays    = 30
 	DefaultRollupDays = 90
+	// MaxRawDays is the hard cap on the raw-event window. It is also the
+	// threshold above which daily rollups begin; retentionDays <= MaxRawDays
+	// means raw-only storage.
+	MaxRawDays = 30
 
 	// MinDays / MaxDays bound each knob (1d..1825d = 5yr max per Q4).
 	MinDays = 1
@@ -39,6 +51,10 @@ const (
 )
 
 // Config carries the tunable retention windows in days.
+// RollupDays is the user-facing total retention; RawDays is the advanced
+// override for the raw-event window, honored when valid and always
+// <= min(MaxRawDays, RollupDays). Single-knob writes derive it as
+// min(RollupDays, MaxRawDays).
 type Config struct {
 	RawDays    int `json:"rawDays"`
 	RollupDays int `json:"rollupDays"`
@@ -50,6 +66,29 @@ func Defaults() Config {
 		RawDays:    DefaultRawDays,
 		RollupDays: DefaultRollupDays,
 	}
+}
+
+// RetentionDays returns the user-facing total retention window.
+func (c Config) RetentionDays() int {
+	return c.RollupDays
+}
+
+// EffectiveRawDays returns the active raw-event window: the stored RawDays
+// override when valid (1..MaxRawDays and <= RollupDays), otherwise derived
+// as min(RollupDays, MaxRawDays). It is never larger than MaxRawDays and
+// never larger than RollupDays; invalid totals fall back to MaxRawDays so
+// callers never compute a zero/negative cutoff.
+func (c Config) EffectiveRawDays() int {
+	if c.RawDays >= MinDays && c.RawDays <= MaxRawDays && c.RawDays <= c.RollupDays {
+		return c.RawDays
+	}
+	if c.RollupDays < MinDays {
+		return MaxRawDays
+	}
+	if c.RollupDays < MaxRawDays {
+		return c.RollupDays
+	}
+	return MaxRawDays
 }
 
 // parseEnvInt reads an int env var, falling back to def on empty/invalid.
@@ -69,10 +108,29 @@ func parseEnvInt(name string, def int) int {
 // Invalid (non-numeric) values fall back to the default; out-of-range env
 // values are clamped by clampConfig at package init and again in
 // ensureLoaded on the serve path.
+//
+// CONFIGWIRE_RETENTION_DAYS is the single user-facing knob. The legacy
+// CONFIGWIRE_RAW_RETENTION_DAYS / CONFIGWIRE_ROLLUP_RETENTION_DAYS envs
+// still work as advanced overrides; when present, rawDays is capped at
+// MaxRawDays and rollupDays is treated as the total retention. A
+// set-but-unparseable single knob falls through to the legacy pair (a
+// valid single knob always wins and the legacy pair is ignored).
 func loadDefaultsFromEnv() Config {
 	c := Defaults()
-	c.RawDays = parseEnvInt("CONFIGWIRE_RAW_RETENTION_DAYS", c.RawDays)
+	if v := os.Getenv("CONFIGWIRE_RETENTION_DAYS"); v != "" {
+		// A set-but-unparseable single knob falls through to the legacy
+		// env pair below instead of silently discarding it: an operator
+		// migrating who typos the new var keeps their legacy tuning
+		// (out-of-range values are clamped by clampConfig either way).
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			c.RollupDays = n
+			c.RawDays = min(n, MaxRawDays)
+			warnCeiling()
+			return c
+		}
+	}
 	c.RollupDays = parseEnvInt("CONFIGWIRE_ROLLUP_RETENTION_DAYS", c.RollupDays)
+	c.RawDays = min(parseEnvInt("CONFIGWIRE_RAW_RETENTION_DAYS", min(c.RollupDays, MaxRawDays)), c.RollupDays, MaxRawDays)
 	warnCeiling()
 	return c
 }
@@ -106,12 +164,11 @@ func warnCeiling() {
 }
 
 // ValidateConfig enforces 1..1825 on each knob narrowed by the plan
-// ceiling (1..ceiling) plus the rollup >= raw invariant (checked in
-// struct order so multi-field failures always report rawDays first).
-// Above-ceiling values name the ceiling, e.g. "invalid rawDays: must be
-// 1..7 (plan ceiling)."; without a ceiling env the bound is 1..1825
-// exactly as before. Violations are 400-style configErrors for the
-// admin PUT path.
+// ceiling (1..ceiling) plus the new raw-window cap (rawDays must be
+// <= MaxRawDays and <= rollupDays). Above-ceiling values name the
+// ceiling, e.g. "invalid rollupDays: must be 1..7 (plan ceiling).";
+// without a ceiling env the bound is 1..1825 exactly as before.
+// Violations are 400-style configErrors for the admin PUT path.
 func ValidateConfig(c Config) error {
 	ceiling := CeilingDays()
 	if c.RawDays < MinDays || c.RawDays > MaxDays {
@@ -120,14 +177,17 @@ func ValidateConfig(c Config) error {
 	if c.RawDays > ceiling {
 		return &configError{msg: "invalid rawDays: must be 1.." + strconv.Itoa(ceiling) + " (plan ceiling)."}
 	}
+	if c.RawDays > MaxRawDays {
+		return &configError{msg: "invalid rawDays: must be at most " + strconv.Itoa(MaxRawDays) + "."}
+	}
 	if c.RollupDays < MinDays || c.RollupDays > MaxDays {
 		return &configError{msg: "invalid rollupDays: must be 1..1825."}
 	}
 	if c.RollupDays > ceiling {
 		return &configError{msg: "invalid rollupDays: must be 1.." + strconv.Itoa(ceiling) + " (plan ceiling)."}
 	}
-	if c.RollupDays < c.RawDays {
-		return &configError{msg: "invalid rollupDays: must be >= rawDays."}
+	if c.RawDays > c.RollupDays {
+		return &configError{msg: "invalid rawDays: must be <= rollupDays."}
 	}
 	return nil
 }
@@ -136,13 +196,11 @@ type configError struct{ msg string }
 
 func (e *configError) Error() string { return e.msg }
 
-// clampConfig forces each knob into MinDays..ceiling (used when loading
-// env/DB values that bypass admin validation), falling back to the code
-// default per knob on out-of-range absolute values, then pulling
-// above-ceiling values down to the ceiling itself, then repairs the
-// invariant by raising rollupDays up to rawDays (rollups must outlive the
-// raw rows they aggregate). Without a ceiling env the ceiling is MaxDays,
-// so the standalone behavior is unchanged.
+// clampConfig forces rollupDays into MinDays..ceiling, preserves a valid
+// rawDays override (capped at min(rollupDays, MaxRawDays)), and falls back
+// to the code default on out-of-range absolute values. Used when loading
+// env/DB values that bypass admin validation. Without a ceiling env the
+// ceiling is MaxDays, so the standalone behavior is unchanged.
 func clampConfig(c Config) Config {
 	d := Defaults()
 	ceiling := CeilingDays()
@@ -158,11 +216,8 @@ func clampConfig(c Config) Config {
 		}
 		return v
 	}
-	c.RawDays = clamp(c.RawDays, d.RawDays)
 	c.RollupDays = clamp(c.RollupDays, d.RollupDays)
-	if c.RollupDays < c.RawDays {
-		c.RollupDays = c.RawDays
-	}
+	c.RawDays = min(clamp(c.RawDays, d.RawDays), c.RollupDays, MaxRawDays)
 	return c
 }
 
@@ -172,8 +227,8 @@ var (
 	current = clampConfig(loadDefaultsFromEnv())
 )
 
-// resetForTest replaces config (tests only, same package).
-func resetForTest(c Config) {
+// ResetForTest replaces config (tests only, cross-package use allowed).
+func ResetForTest(c Config) {
 	cfgMu.Lock()
 	current = c
 	cfgMu.Unlock()
