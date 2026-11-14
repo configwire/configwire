@@ -51,7 +51,7 @@ func TestEventDailyDeletePathIsBounded(t *testing.T) {
 func TestEventDailyChunked(t *testing.T) {
 	app := parityTestApp(t)
 	cutoff := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC) // ms-aligned
-	rollupCutoff := cutoff.AddDate(0, 0, -(RollupRetentionDays - RawRetentionDays))
+	rollupCutoff := cutoff.AddDate(0, 0, -currentRollupExtraDays())
 
 	const nStale = 2500
 	staleBase := rollupCutoff.AddDate(0, 0, -10)
@@ -144,7 +144,7 @@ func TestEventDailyChunked(t *testing.T) {
 func TestEventDailyConverge(t *testing.T) {
 	app := parityTestApp(t)
 	cutoff := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
-	rollupCutoff := cutoff.AddDate(0, 0, -(RollupRetentionDays - RawRetentionDays))
+	rollupCutoff := cutoff.AddDate(0, 0, -currentRollupExtraDays())
 
 	const nStale = 2500
 	staleBase := rollupCutoff.AddDate(0, 0, -10)

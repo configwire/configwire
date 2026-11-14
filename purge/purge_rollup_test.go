@@ -10,6 +10,8 @@ import (
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"ganigeorgiev.com/pocketbase/pocketbase/tests"
+
+	"github.com/configwire/configwire/retention"
 )
 
 // TestRollupDayReplaceSemantics pins absolute-count replacement: running
@@ -136,8 +138,9 @@ func TestRollupDayPagesBeyondBoundary(t *testing.T) {
 func TestEnsureRollupsAdvancesResumesAndConverges(t *testing.T) {
 	app := parityTestApp(t)
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
-	start := DayBucket(now.AddDate(0, 0, -configuredRawDays()))
-	yesterday := DayBucket(now).AddDate(0, 0, -1)
+	start := DayBucket(now.AddDate(0, 0, -configuredRollupDays()))
+	// Rollups are only created for days outside the 30-day raw window.
+	lastRolledDay := DayBucket(now.AddDate(0, 0, -RawRetentionDays)).AddDate(0, 0, -1)
 
 	var calls []time.Time
 	rollupDayFn = func(_ core.App, d time.Time) error {
@@ -179,11 +182,11 @@ func TestEnsureRollupsAdvancesResumesAndConverges(t *testing.T) {
 	if !calls[0].Equal(start.AddDate(0, 0, 2)) {
 		t.Fatalf("resumed at %v, want the failed day %v", calls[0], start.AddDate(0, 0, 2))
 	}
-	if !last.Equal(yesterday) {
-		t.Fatalf("resumed lastDay = %v, want yesterday %v", last, yesterday)
+	if !last.Equal(lastRolledDay) {
+		t.Fatalf("resumed lastDay = %v, want %v", last, lastRolledDay)
 	}
-	if got := rollupStateDay(t, app); !got.Equal(yesterday) {
-		t.Fatalf("persisted resumed lastDay = %v, want %v", got, yesterday)
+	if got := rollupStateDay(t, app); !got.Equal(lastRolledDay) {
+		t.Fatalf("persisted resumed lastDay = %v, want %v", got, lastRolledDay)
 	}
 
 	calls = nil
@@ -194,8 +197,8 @@ func TestEnsureRollupsAdvancesResumesAndConverges(t *testing.T) {
 	if len(calls) != 0 {
 		t.Fatalf("idempotent walk made %d calls, want 0", len(calls))
 	}
-	if !last.Equal(yesterday) || !rollupStateDay(t, app).Equal(yesterday) {
-		t.Fatalf("idempotent lastDay = %v/%v, want %v", last, rollupStateDay(t, app), yesterday)
+	if !last.Equal(lastRolledDay) || !rollupStateDay(t, app).Equal(lastRolledDay) {
+		t.Fatalf("idempotent lastDay = %v/%v, want %v", last, rollupStateDay(t, app), lastRolledDay)
 	}
 }
 
@@ -286,6 +289,86 @@ func TestPurgeOlderThanRollsUpBackdatedDay(t *testing.T) {
 	}
 	if fetches != 2 || exposures != 1 {
 		t.Fatalf("rolled counts = %d/%d, want 2/1", fetches, exposures)
+	}
+}
+
+// TestEnsureRollupsDisabledForShortRetention pins that when total retention
+// is within the raw window, no daily rollups are created and RollupsReady
+// still reports true (stats reads raw-only, not legacy fallback).
+func TestEnsureRollupsDisabledForShortRetention(t *testing.T) {
+	retention.ResetForTest(retention.Config{RawDays: 7, RollupDays: 7})
+	t.Cleanup(func() { retention.ResetForTest(retention.Defaults()) })
+
+	app := parityTestApp(t)
+	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+
+	var calls []time.Time
+	rollupDayFn = func(_ core.App, d time.Time) error {
+		calls = append(calls, DayBucket(d))
+		return nil
+	}
+	t.Cleanup(func() { rollupDayFn = rollupDayTx })
+
+	last, err := EnsureRollups(app, now)
+	if err != nil {
+		t.Fatalf("EnsureRollups: %v", err)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("expected no rollup calls for 7d retention, got %d", len(calls))
+	}
+	if !last.IsZero() {
+		t.Fatalf("expected zero lastDay, got %v", last)
+	}
+	if !RollupsReady(app, now) {
+		t.Fatal("RollupsReady should be true when rollups are disabled by policy")
+	}
+}
+
+// TestEnsureRollupsHonorsRawOverride pins that an advanced rawDays < 30
+// shortens the raw window: the walk stops at now-rawDays (not now-30d) and
+// rollups stay enabled while total exceeds the active raw window.
+func TestEnsureRollupsHonorsRawOverride(t *testing.T) {
+	retention.ResetForTest(retention.Config{RawDays: 14, RollupDays: 120})
+	t.Cleanup(func() { retention.ResetForTest(retention.Defaults()) })
+
+	if !RollupsEnabled() {
+		t.Fatal("RollupsEnabled should be true for {14,120}")
+	}
+	if got := configuredRawDays(); got != 14 {
+		t.Fatalf("configuredRawDays = %d, want 14", got)
+	}
+
+	app := parityTestApp(t)
+	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+
+	var calls []time.Time
+	rollupDayFn = func(_ core.App, d time.Time) error {
+		calls = append(calls, DayBucket(d))
+		return nil
+	}
+	t.Cleanup(func() { rollupDayFn = rollupDayTx })
+
+	last, err := EnsureRollups(app, now)
+	if err != nil {
+		t.Fatalf("EnsureRollups: %v", err)
+	}
+	wantLast := DayBucket(now.AddDate(0, 0, -14)).AddDate(0, 0, -1)
+	if !last.Equal(wantLast) {
+		t.Fatalf("lastDay = %v, want raw-boundary-1 %v", last, wantLast)
+	}
+	if len(calls) == 0 {
+		t.Fatal("expected rollup calls for {14,120}, got 0")
+	}
+	for _, d := range calls {
+		if !d.Before(DayBucket(now.AddDate(0, 0, -14))) {
+			t.Fatalf("rolled day %v inside raw window (cutoff %v)", d, DayBucket(now.AddDate(0, 0, -14)))
+		}
+	}
+
+	// Total within the overridden raw window disables rollups.
+	retention.ResetForTest(retention.Config{RawDays: 14, RollupDays: 14})
+	if RollupsEnabled() {
+		t.Fatal("RollupsEnabled should be false for {14,14}")
 	}
 }
 

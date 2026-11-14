@@ -166,7 +166,7 @@ func oracleDeleteSet(t *testing.T, app *tests.TestApp, cutoff time.Time) (events
 		}
 	}
 	daily = map[string]bool{}
-	rollupCutoff := cutoff.AddDate(0, 0, -(RollupRetentionDays - RawRetentionDays))
+	rollupCutoff := cutoff.AddDate(0, 0, -currentRollupExtraDays())
 	rows, err := app.FindAllRecords("event_daily")
 	if err != nil {
 		t.Fatalf("oracle daily scan: %v", err)
@@ -212,7 +212,7 @@ func TestPurgeMatchesOracleDeletionSet(t *testing.T) {
 	idZero := seedEvent(t, app, "e1", "fetch", "", time.Time{}, false)
 	idFresh := seedEvent(t, app, "e1", "fetch", "", time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC), true)
 
-	rollupCutoff := cutoff.AddDate(0, 0, -(RollupRetentionDays - RawRetentionDays))
+	rollupCutoff := cutoff.AddDate(0, 0, -currentRollupExtraDays())
 	idStale := seedDaily(t, app, rollupCutoff.AddDate(0, 0, -1), true, "e1", "", 3, 1)
 	idEdge := seedDaily(t, app, rollupCutoff, true, "e1", "", 3, 1)
 	idDailyFresh := seedDaily(t, app, cutoff.AddDate(0, 0, -1), true, "e1", "", 3, 1)
@@ -287,11 +287,19 @@ func TestPurgeMatchesOracleDeletionSet(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("want exactly 1 row for the (day,e1,\"\") key, got %d", len(matches))
 	}
-	if got := matches[0].GetInt("fetches"); got != 10 {
-		t.Fatalf("pre-existing fetches = %d, want 10 (existing rollup is kept, never re-added)", got)
+	// Under the 30-day raw-floor model, EnsureRollups re-rolls any day in
+	// the rollup-only window before purge deletes its raw rows. oldDay is
+	// inside that window, so the pre-existing bucket is rebuilt from raw
+	// counts (2 fetches, 1 exposure) rather than keeping the seeded 10/5.
+	// The no-double-add property still holds: counts are replaced, not added.
+	// The bucket key is (day, env, flag, variant, version). The matched
+	// bucket has variant "" (from idOld and idNoFlag), so exposures=0;
+	// idOld2's exposure has variant "control" and lives in a separate bucket.
+	if got := matches[0].GetInt("fetches"); got != 2 {
+		t.Fatalf("re-rolled fetches = %d, want 2", got)
 	}
-	if got := matches[0].GetInt("exposures"); got != 5 {
-		t.Fatalf("pre-existing exposures = %d, want 5 (untouched)", got)
+	if got := matches[0].GetInt("exposures"); got != 0 {
+		t.Fatalf("re-rolled exposures = %d, want 0", got)
 	}
 
 	// Re-run converges: crash-semantic second run finds nothing to delete

@@ -1,29 +1,37 @@
 // Package purge owns the compliance retention policy and the daily
-// rollup state: raw events die at 30d, daily aggregates live to 90d.
+// rollup state. Raw events live up to EffectiveRawDays (30 days by default,
+// smaller with the advanced rawDays override); daily aggregates cover any
+// additional retention beyond the raw window. When total retention fits
+// inside the active raw window, event_daily is intentionally empty and all
+// reads are raw-only.
 //
 // ROLLUP WALK: EnsureRollups advances a persisted high-water mark
 // (rollup_state.lastDay) one completed UTC day at a time, from
-// now-RawDays up to yesterday. RollupDay rewrites one day's event_daily
-// rows from the raw rows still on disk with ABSOLUTE counts (delete the
-// day's buckets, then save one row per (env, flag, variant, version)), so
-// re-running a day is idempotent. The day's rollup and its lastDay update
-// commit in one transaction, so a late row either lands in the rebuilt day
-// or sees the advanced mark — never neither.
+// now-rollupDays up to the raw-window boundary, i.e. only the days outside
+// the raw window. RollupDay rewrites one day's event_daily rows from the raw rows
+// still on disk with ABSOLUTE counts (delete the day's buckets, then save
+// one row per (env, flag, variant, version)), so re-running a day is
+// idempotent. The day's rollup and its lastDay update commit in one
+// transaction, so a late row either lands in the rebuilt day or sees the
+// advanced mark — never neither.
 //
 // LATE ROWS: a backdated event whose day is already rolled is folded in
 // additively by AddLateRollup, called from the ingest flush inside the same
-// transaction as the raw save. Stats reads raw only for today, so a
-// completed day's raw rows are never read again; without the inline fold a
-// late row would stay invisible until purge deleted it.
+// transaction as the raw save. Stats reads raw only for the raw window,
+// so a completed day's raw rows are never read again; without the inline
+// fold a late row would stay invisible until purge deleted it.
 //
 // A day with no raw rows is a no-op (it never deletes stale buckets on its
-// own). Stats reads completed days from event_daily and only today from
+// own). Stats reads completed days from event_daily and the raw window from
 // raw events.
 //
 // PURGE: rows strictly older than the cutoff are deleted page by page
 // (one short transaction per page, ordered by (ts, id)); stale
 // event_daily rows older than rollupDays are deleted the same way
-// (ordered by (day, id)). Before the first page of a doomed day is
+// (ordered by (day, id)). The cutoff is day-granular (RawCutoff: the UTC
+// midnight of now-rawDays) so whole UTC days are deleted — the boundary
+// day stays fully raw-owned and fully stats-readable (see RawCutoff).
+// Before the first page of a doomed day is
 // deleted, that day is rolled up with RollupDay unless event_daily
 // already has rows for it — this covers backdated/admin rows older than
 // the EnsureRollups window without ever adding counts twice. Raw
@@ -70,9 +78,10 @@ import (
 )
 
 const (
-	// RawRetentionDays bounds raw event lifetime before rollup-then-delete.
+	// RawRetentionDays is the default/max raw event lifetime before
+	// rollup-then-delete. It matches retention.MaxRawDays.
 	RawRetentionDays = 30
-	// RollupRetentionDays bounds daily aggregate lifetime.
+	// RollupRetentionDays is the default total retention (raw + daily).
 	RollupRetentionDays = 90
 	// scrubAfter bounds raw-event identity lifetime independently of the
 	// configured raw window: bucket/country are nulled 48h after ts even
@@ -107,16 +116,41 @@ var (
 )
 
 // configuredRawDays returns the active raw-event window from the
-// retention singleton (defaults {30,90} keep the historic cutoffs when
-// the admin never tunes them).
+// retention singleton (EffectiveRawDays: stored rawDays override when valid,
+// otherwise min(total, MaxRawDays)).
 func configuredRawDays() int {
-	return retention.GetConfig().RawDays
+	return retention.GetConfig().EffectiveRawDays()
 }
 
-// configuredRollupDays returns the active daily-aggregate window from
+// configuredRollupDays returns the active total retention window from
 // the retention singleton.
 func configuredRollupDays() int {
 	return retention.GetConfig().RollupDays
+}
+
+// RollupsEnabled reports whether daily rollups are part of the active
+// retention policy. When total retention is within the active raw window,
+// the rollup set is intentionally empty and stats should read raw-only.
+func RollupsEnabled() bool {
+	return configuredRollupDays() > configuredRawDays()
+}
+
+// RawCutoff maps now to the raw-events purge cutoff: the UTC midnight of
+// now-rawDays. The cutoff is day-granular on purpose, matching the rollup
+// grain and the stats read split: whole UTC days are deleted, so the
+// boundary day (exactly rawDays ago) stays fully raw-owned — rollups are
+// never built for it, and stats reads it from raw events until it leaves
+// the window entirely. An instant-based cutoff (now - rawDays exact) would
+// split the boundary day between "purged" and "raw" at a sub-day grain,
+// losing the purged part: those rows are rolled into a whole-day
+// event_daily bucket stats never reads (day < horizon fails), and the raw
+// side starts at the boundary-day midnight. Whole-day deletion keeps raw
+// lifetime at most just under rawDays+1 days.
+//
+// Exported because the stats read split and its tests must use the exact
+// same formula the ticker and manual route purge with.
+func RawCutoff(now time.Time) time.Time {
+	return DayBucket(now).AddDate(0, 0, -configuredRawDays())
 }
 
 // currentRollupExtraDays derives the event_daily cutoff offset from the
@@ -617,12 +651,16 @@ func AddLateRollup(app core.App, ev EventRow) error {
 }
 
 // EnsureRollups advances the persisted rollup high-water mark through every
-// completed UTC day from max(DayBucket(now-rawDays), lastDay+1) up to
-// DayBucket(now) exclusive. Each day commits its rollup and its lastDay
-// update before the next day starts, so an interrupted backfill resumes at
-// the first uncommitted day. It is a no-op once lastDay is yesterday, and
-// serialized in-process by rollupMu. On error the last committed day is
-// returned and the caller must abort before deleting anything.
+// completed UTC day in the rollup-only window: from
+// max(DayBucket(now-rollupDays), lastDay+1) up to the raw-window boundary
+// DayBucket(now-rawDays) where rawDays is the active raw window.
+// Days inside the raw window are never rolled because stats reads them
+// from raw events. Each day commits its rollup and its lastDay update
+// before the next day starts, so an interrupted backfill resumes at the
+// first uncommitted day. It is a no-op when rollups are disabled or once
+// lastDay reaches the raw-window boundary, and serialized in-process by
+// rollupMu. On error the last committed day is returned and the caller
+// must abort before deleting anything.
 func EnsureRollups(app core.App, now time.Time) (time.Time, error) {
 	rollupMu.Lock()
 	defer rollupMu.Unlock()
@@ -631,16 +669,20 @@ func EnsureRollups(app core.App, now time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	start := DayBucket(now.AddDate(0, 0, -configuredRawDays()))
+	rollupDays := configuredRollupDays()
+	rawCutoffDay := DayBucket(now.AddDate(0, 0, -configuredRawDays()))
+	start := DayBucket(now.AddDate(0, 0, -rollupDays))
 	if !last.IsZero() {
 		next := DayBucket(last).AddDate(0, 0, 1)
 		if next.After(start) {
 			start = next
 		}
 	}
-	end := DayBucket(now)
+	if !start.Before(rawCutoffDay) {
+		return last, nil
+	}
 	rolled := 0
-	for d := start; d.Before(end); d = d.AddDate(0, 0, 1) {
+	for d := start; d.Before(rawCutoffDay); d = d.AddDate(0, 0, 1) {
 		if err := app.RunInTransaction(func(txApp core.App) error {
 			if err := rollupDayFn(txApp, d); err != nil {
 				return err
@@ -658,11 +700,27 @@ func EnsureRollups(app core.App, now time.Time) (time.Time, error) {
 	return last, nil
 }
 
-// RollupsReady reports whether the persisted rollup high-water mark covers
-// every completed day (lastDay >= yesterday), i.e. stats may read history
-// from event_daily instead of falling back to raw events. Any read error
+// RollupsReady reports whether stats may treat every day before today as
+// rollup-owned, i.e. read completed days from event_daily instead of raw
+// events (lastDay >= yesterday).
+//
+// The gate is deliberately conservative and must stay that way: under the
+// raw-floor walk above, EnsureRollups stops at the raw-window boundary, so
+// lastDay never reaches yesterday — while rollups are enabled by the
+// current policy, this can only report true for rollup state carried over
+// from the pre-raw-floor model (upgrades), where event_daily genuinely
+// covers through yesterday. If the gate were widened to "lastDay covers
+// the rollup-only window" (the shape a raw-floor walk actually produces),
+// stats would read days -30..-1 from rollups that no longer exist and
+// silently report zeros for everything except today. When rollups are
+// disabled by policy (total retention within the active raw window), it
+// reports true so
+// stats reads raw-only without treating it as a fallback. Any read error
 // reads as not ready, keeping stats on the safe legacy path.
 func RollupsReady(app core.App, now time.Time) bool {
+	if !RollupsEnabled() {
+		return true
+	}
 	last, err := loadRollupState(app)
 	if err != nil {
 		return false
@@ -678,6 +736,13 @@ func RollupsReady(app core.App, now time.Time) bool {
 // up each doomed day first), then deletes event_daily rows with day strictly
 // before cutoff minus 60d (i.e. older than 90d when cutoff is now-30d). It
 // returns the total rows deleted (raw events + stale rollups).
+//
+// Production callers pass a day-granular cutoff (RawCutoff: the UTC midnight
+// of now-rawDays), so whole UTC days are deleted. That keeps the three day
+// grains aligned: EnsureRollups rolls exactly the days the purge deletes
+// (day < rawCutoffDay == cutoff), and stats' legacy horizon DayBucket(now -
+// rawDays) == cutoff splits rollups (day < cutoff) from raw events
+// (ts >= cutoff) with no gap and no overlap.
 //
 // EnsureRollups runs first for the caller's now (cutoff + rawDays, the exact
 // inverse of the retention cutoff) and any error aborts with zero deletes.
@@ -897,7 +962,8 @@ func CountOlderThan(app core.App, cutoff time.Time) (int, error) {
 
 // Register mounts POST /api/v1/admin/maintenance/purge (superuser-only;
 // ?dry=1 reports without writing) and starts the daily 24h ticker that
-// purges raw events older than RawRetentionDays. Uses re.App / se.App
+// purges raw events whose UTC day has fully left the raw window
+// (RawCutoff: whole days, see RawCutoff). Uses re.App / se.App
 // per request (never a captured stale app beyond the process singleton
 // the ticker legitimately owns, same discipline as ingest.Batcher).
 // purgeEnabled reports whether the daily ticker runs: CONFIGWIRE_PURGE
@@ -946,7 +1012,7 @@ func dailyTicker(app core.App, stop <-chan struct{}) {
 			log.Printf("purge: %s scrub run failed: %v", tag, serr)
 			return
 		}
-		cutoff := now.AddDate(0, 0, -configuredRawDays())
+		cutoff := RawCutoff(now)
 		n, err := PurgeOlderThan(app, cutoff)
 		if err != nil {
 			log.Printf("purge: %s run failed: %v", tag, err)
@@ -983,7 +1049,8 @@ func dailyTicker(app core.App, stop <-chan struct{}) {
 // postPurge handles POST /api/v1/admin/maintenance/purge.
 // ?dry=1 (or true) -> 200 {"deleted":N,"scrubbed":M,"serverLogs":S,"auditLogs":A,"dry":true} with ZERO
 // event/rollup/log writes (one purge.run audit row is appended; deleted counts
-// doomed raw + stale daily rows at the raw cutoff,
+// doomed raw + stale daily rows at the raw cutoff (day-granular: the UTC
+// midnight of now-rawDays, echoed back as "cutoff"),
 // scrubbed counts rows still carrying identity past the 48h scrub cutoff,
 // serverLogs counts outdated server_logs rows under the live logstore
 // window, auditLogs counts outdated audit_log rows under the audit window).
@@ -1003,7 +1070,7 @@ func postPurge(re *core.RequestEvent) error {
 		return re.BadRequestError("invalid dry: must be 0 or 1.", nil)
 	}
 	now := time.Now().UTC()
-	cutoff := now.AddDate(0, 0, -configuredRawDays())
+	cutoff := RawCutoff(now)
 	scrubCutoff := ScrubCutoff(now)
 	if dry {
 		n, err := CountOlderThan(re.App, cutoff)
