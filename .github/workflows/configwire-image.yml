@@ -152,7 +152,11 @@ jobs:
             docker logs configwire-smoke 2>&1 | head -50
             exit 1
           fi
-          APP_UID=$(docker exec configwire-smoke id -u)
+          # docker exec starts a NEW process as the image USER (root: no
+          # USER line by design), so plain `id -u` always reports 0 here.
+          # Assert PID 1's UID instead: the entrypoint execs the server
+          # via su-exec 10001, so /proc/1/status must show Uid 10001.
+          APP_UID=$(docker exec configwire-smoke cat /proc/1/status | awk '/^Uid:/ {print $2}')
           if [ "$APP_UID" != "10001" ]; then
             echo "expected runtime uid 10001, got '$APP_UID'" >&2
             exit 1
