@@ -114,7 +114,11 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
-          UID_OUT=$(docker run --rm --entrypoint id "$REF" -u)
+          # The image starts as root so the entrypoint can chown a legacy
+          # root-owned volume, then drops to 10001 via su-exec. Assert the
+          # effective runtime UID (through the entrypoint), not the image
+          # default USER, so --entrypoint must NOT bypass entrypoint.sh here.
+          UID_OUT=$(docker run --rm "$REF" id -u)
           if [ "$UID_OUT" != "10001" ]; then
             echo "expected uid 10001, got '$UID_OUT'" >&2
             exit 1
@@ -123,6 +127,7 @@ jobs:
           docker volume create configwire-smoke-data >/dev/null
           docker run -d --name configwire-smoke \
             --read-only --tmpfs /tmp --cap-drop ALL \
+            --cap-add CHOWN --cap-add SETGID --cap-add SETUID \
             --security-opt no-new-privileges \
             -v configwire-smoke-data:/app/pb_data \
             -p 8090:8090 "$REF"
@@ -145,6 +150,11 @@ jobs:
           echo "healthz=$healthz root=$root /_/=$dashboard"
           if [ "$healthz" != "200" ] || [ "$root" != "200" ]; then
             docker logs configwire-smoke 2>&1 | head -50
+            exit 1
+          fi
+          APP_UID=$(docker exec configwire-smoke id -u)
+          if [ "$APP_UID" != "10001" ]; then
+            echo "expected runtime uid 10001, got '$APP_UID'" >&2
             exit 1
           fi
           if ! grep -q 'ConfigWire Admin' /tmp/configwire-root.html; then
@@ -284,4 +294,4 @@ jobs:
 
       - name: Smoke test merged tag
         run: |
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} --help
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} ./configwire --help
