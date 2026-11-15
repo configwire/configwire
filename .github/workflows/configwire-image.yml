@@ -97,6 +97,11 @@ jobs:
           provenance: mode=max
           sbom: true
 
+      - name: Pull pushed digest for scan
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker pull "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${DIGEST}"
+
       - name: Scan image for HIGH/CRITICAL vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
