@@ -419,6 +419,23 @@
       legend + svg + '<div class="stats-tip" hidden></div>' + "</div>";
   }
 
+  // SVG text sizes are viewBox units, so a fixed CSS px size grows with the
+  // rendered chart. Measure the chart to keep axis text at 11 screen px.
+  function fitAxisText(svg) {
+    if (!svg || !svg.getBoundingClientRect || !svg.querySelectorAll) return;
+    var width = svg.getBoundingClientRect().width;
+    if (!width) return;
+    var size = 11 * SERIES_W / width;
+    var texts = svg.querySelectorAll(".stats-x, .stats-tick");
+    for (var i = 0; i < texts.length; i++) texts[i].style.fontSize = size + "px";
+  }
+
+  function fitVisibleAxisText() {
+    if (typeof document === "undefined" || !document.querySelectorAll) return;
+    var svgs = document.querySelectorAll("#stats-view svg.stats-series");
+    for (var i = 0; i < svgs.length; i++) fitAxisText(svgs[i]);
+  }
+
   function bindSeriesTip() {
     var view = CW.$("stats-view");
     if (!view || !view.querySelector) return;
@@ -427,6 +444,7 @@
     var g = lastGeom;
     if (!g || !g.pts || !g.pts.length) return;
     var svg = wrap.querySelector("svg");
+    fitAxisText(svg);
     var tip = wrap.querySelector(".stats-tip");
     var line = wrap.querySelector(".stats-hover");
     var dotF = wrap.querySelector(".stats-dot-fetch");
@@ -695,6 +713,10 @@
     } else {
       bindStatsFilterForm();
     }
+  }
+
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("resize", fitVisibleAxisText);
   }
 
   CW.bindStatsFilterForm = bindStatsFilterForm;

@@ -501,6 +501,36 @@ test("bindSeriesTip is a safe no-op without parsed nodes and clamps bad values",
   assert.doesNotThrow(function () { ctx.CW.bindSeriesTip(); });
 });
 
+test("bindSeriesTip fits axis text to a constant on-screen size", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.series = [
+    { day: "2026-09-01", fetches: 4, exposures: 0 },
+    { day: "2026-09-02", fetches: 6, exposures: 0 },
+  ];
+  ctx.CW.renderStats(data);
+  var texts = [{ style: {} }, { style: {} }];
+  var svg = {
+    getBoundingClientRect: function () { return { width: 1120, height: 440 }; },
+    querySelectorAll: function () { return texts; },
+    addEventListener: function () {},
+  };
+  var wrap = {
+    querySelector: function (sel) {
+      if (sel === "svg") return svg;
+      if (sel === ".stats-tip") return { innerHTML: "", hidden: true, style: {} };
+      if (sel === ".stats-hit") return { addEventListener: function () {} };
+      return null;
+    },
+    addEventListener: function () {},
+  };
+  ctx.elementsById["stats-view"].querySelector = function () { return wrap; };
+  ctx.CW.bindSeriesTip();
+  // 11px target on screen -> 5.5px in the 560-unit viewBox at 1120px wide.
+  assert.equal(parseFloat(texts[0].style.fontSize) * 1120 / 560, 11);
+  assert.equal(parseFloat(texts[1].style.fontSize) * 1120 / 560, 11);
+});
+
 test("renderStats per-version bars scale to total and sort numerically", function () {
   var ctx = freshStats();
   var data = fullData();
