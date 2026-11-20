@@ -3,6 +3,8 @@
 // Loads core.js + auth.js + account.js only (never boot.js/scope.js: CW.refreshAll
 // is stubbed with a recorder since auth login calls it — account.js:24, auth.js:24).
 // node:test + node:assert/strict only. Run from configwire/: node --test js_tests/test-auth-account.js
+// Pin the local zone so datetime labels are deterministic on any CI host.
+process.env.TZ = "Asia/Ho_Chi_Minh";
 var test = require("node:test");
 var assert = require("node:assert/strict");
 var h = require("./harness.js");
@@ -228,14 +230,27 @@ test("renderAccounts escapes emails and empty state", function () {
   ctx.CW.renderAccounts();
   assert.equal($(ctx, "account-list").innerHTML, "<li>No admin accounts.</li>");
   ctx.CW.state.accounts = [
-    { id: '1"><script>', email: "<b>evil</b>@x.test", created: "2026<09" },
+    // Unparseable on purpose: exercises the raw-string fallback's escaping.
+    { id: '1"><script>', email: "<b>evil</b>@x.test", created: "2026<09<bad" },
   ];
   ctx.CW.renderAccounts();
   var html = $(ctx, "account-list").innerHTML;
   assert.ok(html.indexOf("&lt;b&gt;evil&lt;/b&gt;@x.test") !== -1, "email escaped: " + html);
-  assert.ok(html.indexOf("2026&lt;09") !== -1, "created escaped: " + html);
+  assert.ok(html.indexOf("2026&lt;09&lt;bad") !== -1, "created escaped: " + html);
   assert.ok(html.indexOf("<b>evil</b>") === -1, "raw HTML leaked");
   assert.ok(html.indexOf('data-account-delete="1&quot;&gt;&lt;script&gt;"') !== -1, "id attr escaped: " + html);
+});
+
+test("renderAccounts shows local created time with UTC hover title", function () {
+  var ctx = fresh();
+  ctx.CW.state.accounts = [
+    { id: "u1", email: "a@b.test", created: "2026-11-14T15:04:05.123Z" },
+  ];
+  ctx.CW.renderAccounts();
+  var html = $(ctx, "account-list").innerHTML;
+  assert.ok(html.indexOf("2026-11-14 22:04:05") !== -1, "created must be local: " + html);
+  assert.ok(html.indexOf('title="UTC: 2026-11-14T15:04:05.123Z"') !== -1, "UTC hover title missing: " + html);
+  assert.ok(html.indexOf("2026-11-14T15:04:05.123Z</span>") === -1, "UTC must not be visible text: " + html);
 });
 
 // --- loadAccounts (account.js:78-88) ---

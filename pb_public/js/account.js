@@ -76,6 +76,16 @@
     });
   }
 
+  function accountCreatedHtml(raw) {
+    var s = String(raw == null ? "" : raw);
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return '<span class="muted">' + CW.esc(s) + "</span>";
+    function p2(n) { return n < 10 ? "0" + n : String(n); }
+    var text = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) +
+      " " + p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds());
+    return '<span class="muted log-created" title="UTC: ' + CW.esc(d.toISOString()) + '">' + text + "</span>";
+  }
+
   function renderAccounts() {
     var list = CW.$("account-list");
     if (!list) return;
@@ -83,7 +93,7 @@
     var single = CW.state.accounts.length === 1;
     list.innerHTML = CW.state.accounts.map(function (a) {
       return "<li><code>" + CW.esc(a.email || a.id) + "</code>" +
-        (a.created ? ' <span class="muted">' + CW.esc(a.created) + "</span>" : "") +
+        (a.created ? " " + accountCreatedHtml(a.created) : "") +
         ' <button type="button" class="btn ghost" data-account-password="' + CW.esc(a.id) + '">Change password</button>' +
         ' <button type="button" class="btn danger" data-account-delete="' + CW.esc(a.id) + '"' +
         (single ? ' disabled title="Cannot delete the last admin account."' : '') + '>Delete</button></li>';
