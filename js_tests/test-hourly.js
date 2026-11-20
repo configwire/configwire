@@ -1,6 +1,8 @@
 "use strict";
 // test-hourly.js — hourly 24h/48h series (stats.js + router.js).
 // Run from configwire/: node --test js_tests/test-hourly.js
+// Pin the local zone so local-time labels are deterministic on any CI host.
+process.env.TZ = "Asia/Ho_Chi_Minh";
 var test = require("node:test");
 var assert = require("node:assert/strict");
 var h = require("./harness.js");
@@ -40,18 +42,36 @@ test("hourly renderSeries uses hour labels and Hourly aria", function () {
   ctx.CW.renderStats(data);
   var html = statsHTML(ctx);
   assert.ok(html.indexOf("Hourly fetches and exposures for 3 hours") !== -1, "hourly aria missing: " + html);
-  assert.ok(html.indexOf(">15:00<") !== -1, "hourly x label missing HH:MM: " + html);
-  assert.ok(html.indexOf("11-13 15:00 UTC") !== -1, "hourly range stamp missing: " + html);
+  assert.ok(html.indexOf(">22:00<") !== -1, "hourly x label must be local HH:MM: " + html);
+  assert.ok(html.indexOf("11-13 22:00 UTC+7") !== -1, "hourly range stamp must be local: " + html);
+  assert.ok(html.indexOf("15:00") === -1, "UTC hour must not leak into chart labels: " + html);
   assert.ok(html.indexOf("for 3 hours") !== -1, "hour count word wrong: " + html);
 });
 
 test("hourly seriesTipHTML heads with day+hour stamp", function () {
   var ctx = freshStats();
   var tip = ctx.CW.seriesTipHTML({ day: "2026-11-14", hour: "2026-11-14T13:00:00Z", fetches: 4, exposures: 1, versions: {} }, true);
-  assert.ok(tip.indexOf("11-14 13:00 UTC") !== -1, "hourly tip heading wrong: " + tip);
+  assert.ok(tip.indexOf("11-14 13:00 UTC") !== -1, "hourly tip heading must stay UTC: " + tip);
   var daily = ctx.CW.seriesTipHTML({ day: "2026-11-14", fetches: 4, exposures: 1, versions: {} });
-  assert.ok(daily.indexOf("2026-11-14") !== -1, "daily tip must keep day: " + daily);
-  assert.ok(daily.indexOf("UTC") === -1, "daily tip must not add UTC stamp: " + daily);
+  assert.ok(daily.indexOf("2026-11-14 UTC") !== -1, "daily tip must name the UTC day: " + daily);
+});
+
+test("hourly chart stays local while hover tooltip reports UTC", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.echo = { since: "1d", granularity: "hour" };
+  data.series = [];
+  for (var i = 0; i < 7; i++) {
+    var hh = String(15 + i);
+    data.series.push({ day: "2026-11-14", hour: "2026-11-14T" + hh + ":00:00Z", fetches: i + 1, exposures: 1 });
+  }
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  assert.ok(html.indexOf(">22:00<") !== -1 && html.indexOf(">04:00<") !== -1, "x ticks must be local: " + html);
+  assert.ok(html.indexOf("UTC+7") !== -1, "range must name the local zone: " + html);
+  assert.ok(html.indexOf("15:00") === -1 && html.indexOf("21:00") === -1, "UTC hours must be tooltip-only: " + html);
+  var tip = ctx.CW.seriesTipHTML({ day: "2026-11-14", hour: "2026-11-14T15:00:00Z", fetches: 5, exposures: 2 }, true);
+  assert.ok(tip.indexOf("11-14 15:00 UTC") !== -1, "hover must show the UTC instant: " + tip);
 });
 
 test("hourly renderSeries ticks every 6h for 25 points", function () {

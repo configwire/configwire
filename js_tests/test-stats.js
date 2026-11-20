@@ -2,6 +2,8 @@
 // test-stats.js — stats.js render/copy/load (Wave 2, todo 7).
 // Loads core.js + stats.js only via js_tests/harness.js.
 // node:test + node:assert/strict only. Run from configwire/: node --test js_tests/test-stats.js
+// Pin the local zone so local-time labels are deterministic on any CI host.
+process.env.TZ = "Asia/Ho_Chi_Minh";
 var test = require("node:test");
 var assert = require("node:assert/strict");
 var h = require("./harness.js");
@@ -383,6 +385,7 @@ test("renderStats series svg is a stacked area chart with axes, tooltip and hove
   assert.ok(html.indexOf('class="stats-dot-exposure"') !== -1, "missing exposure dot: " + html);
   assert.ok(html.indexOf('class="stats-hit"') !== -1, "missing hit overlay: " + html);
   assert.ok(html.indexOf('<div class="stats-tip" hidden></div>') !== -1, "tooltip must be hidden+empty: " + html);
+  assert.ok(html.indexOf("UTC") === -1, "daily chart labels must be local: " + html);
   // Interactivity is wired via the exposed binder (stub DOM has no inner nodes).
   assert.equal(typeof ctx.CW.bindSeriesTip, "function", "binder must be exposed");
 });
@@ -441,6 +444,27 @@ test("renderStats series sparse x labels on long windows; single day paints a ba
     "single day aria wrong: " + html2
   );
   assert.equal(html2.split("<path").length - 1, 4, "single day keeps 2 areas + 2 lines: " + html2);
+});
+
+test("daily chart labels follow local calendar day while tooltip keeps the UTC day", function () {
+  var prev = process.env.TZ;
+  process.env.TZ = "America/New_York";
+  try {
+    var ctx = freshStats();
+    var data = fullData();
+    data.series = [
+      { day: "2026-09-01", fetches: 4, exposures: 1 },
+      { day: "2026-09-02", fetches: 5, exposures: 1 },
+    ];
+    ctx.CW.renderStats(data);
+    var html = statsHTML(ctx);
+    assert.ok(html.indexOf(">08-31<") !== -1, "UTC midnight must render as prior local day: " + html);
+    assert.ok(html.indexOf(">09-01<") !== -1, "second bucket must render as local day: " + html);
+    var tip = ctx.CW.seriesTipHTML({ day: "2026-09-01", fetches: 4, exposures: 1 }, false);
+    assert.ok(tip.indexOf("2026-09-01 UTC") !== -1, "tooltip must keep the UTC day: " + tip);
+  } finally {
+    process.env.TZ = prev;
+  }
 });
 
 test("bindSeriesTip is a safe no-op without parsed nodes and clamps bad values", function () {
@@ -581,7 +605,7 @@ test("seriesTipText shows per-version counts for the hovered day", function () {
 test("seriesTipHTML renders multi-line rows with version dots and escapes probes", function () {
   var ctx = freshStats();
   var tip = ctx.CW.seriesTipHTML({ day: "2026-09-28", fetches: 132, exposures: 0, versions: { 0: 115, 1: 17 } });
-  assert.ok(tip.indexOf('class="stats-tip-day">2026-09-28<') !== -1, "missing day header: " + tip);
+  assert.ok(tip.indexOf('class="stats-tip-day">2026-09-28 UTC<') !== -1, "missing UTC day header: " + tip);
   assert.ok(tip.indexOf("Fetches") !== -1 && tip.indexOf(">132<") !== -1, "missing fetches row: " + tip);
   assert.ok(tip.indexOf("stats-tip-ver") !== -1, "missing version rows: " + tip);
   assert.ok(tip.indexOf(">v0<") !== -1 && tip.indexOf(">115<") !== -1, "missing v0 row: " + tip);

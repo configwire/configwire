@@ -18,24 +18,59 @@
     return Math.round(v * 10) / 10;
   }
 
+  function pad2(n) {
+    return n < 10 ? "0" + n : String(n);
+  }
+
+  function bucketDate(s) {
+    var d = new Date(String(s == null ? "" : s));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Bucket keys are UTC instants; chart labels follow the browser's local zone.
   function fmtDay(d) {
     var s = String(d == null ? "" : d);
-    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-    if (m) return m[2] + "-" + m[3];
+    var t = bucketDate(s);
+    if (t) return pad2(t.getMonth() + 1) + "-" + pad2(t.getDate());
     return s.slice(0, 5) || s;
   }
 
   function fmtHour(d) {
     var s = String(d == null ? "" : d);
     var m = /T(\d{2}):(\d{2})/.exec(s);
+    var t = bucketDate(s);
+    if (t) return pad2(t.getHours()) + ":" + pad2(t.getMinutes());
     if (m) return m[1] + ":" + m[2];
     return fmtDay(s);
+  }
+
+  function localZone(t) {
+    var off = -t.getTimezoneOffset();
+    var sign = off < 0 ? "-" : "+";
+    var abs = Math.abs(off);
+    return "UTC" + sign + Math.floor(abs / 60) + (abs % 60 ? ":" + pad2(abs % 60) : "");
   }
 
   function fmtHourStamp(p) {
     var hour = p && p.hour != null ? String(p.hour) : "";
     if (!hour) return String((p && p.day) || "");
-    return fmtDay(hour) + " " + fmtHour(hour) + " UTC";
+    var t = bucketDate(hour);
+    if (!t) return fmtDay(hour);
+    return fmtDay(hour) + " " + fmtHour(hour) + " " + localZone(t);
+  }
+
+  // The hover tooltip is the only place that names the UTC bucket instant.
+  function utcTipStamp(p, hourly) {
+    var day = p && p.day != null ? String(p.day) : "";
+    if (hourly) {
+      var hour = p && p.hour != null ? String(p.hour) : "";
+      var ht = bucketDate(hour);
+      if (ht) return pad2(ht.getUTCMonth() + 1) + "-" + pad2(ht.getUTCDate()) +
+        " " + pad2(ht.getUTCHours()) + ":" + pad2(ht.getUTCMinutes()) + " UTC";
+    }
+    var dt = bucketDate(day);
+    if (dt) return dt.getUTCFullYear() + "-" + pad2(dt.getUTCMonth() + 1) + "-" + pad2(dt.getUTCDate()) + " UTC";
+    return day;
   }
 
   function isHourlyGrain(granularity) {
@@ -190,7 +225,7 @@
     if (p && p.versions && typeof p.versions === "object") {
       ks = Object.keys(p.versions).sort(function (a, b) { return Number(a) - Number(b); });
     }
-    var heading = hourly ? fmtHourStamp(p) : String((p && p.day) || "");
+    var heading = utcTipStamp(p, hourly);
     var out = '<div class="stats-tip-day">' + CW.esc(heading) + "</div>";
     out += tipRow("#3b82f6", "Fetches", f);
     ks.forEach(function (k, i) {
