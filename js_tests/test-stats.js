@@ -446,6 +446,25 @@ test("renderStats series sparse x labels on long windows; single day paints a ba
   assert.equal(html2.split("<path").length - 1, 4, "single day keeps 2 areas + 2 lines: " + html2);
 });
 
+test("renderStats 90d chart replaces a crowded trailing tick instead of appending it", function () {
+  var ctx = freshStats();
+  var data = fullData();
+  data.series = [];
+  var d = new Date(Date.UTC(2026, 7, 22));
+  for (var i = 0; i < 91; i++) {
+    data.series.push({ day: d.toISOString().slice(0, 10), fetches: 1, exposures: 0 });
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  ctx.CW.renderStats(data);
+  var html = statsHTML(ctx);
+  // step 14 -> regular ticks 08-22..10-31; the last point is only 6 indices
+  // later, too close for two MM-DD labels, so 11-14 must be replaced.
+  assert.equal(html.split('class="stats-x"').length - 1, 7, "90d x label count wrong: " + html);
+  assert.ok(html.indexOf(">10-31<") !== -1, "missing last regular tick: " + html);
+  assert.ok(html.indexOf(">11-20<") !== -1, "missing final day label: " + html);
+  assert.ok(html.indexOf(">11-14<") === -1, "crowded 11-14 tick must be dropped: " + html);
+});
+
 test("daily chart labels follow local calendar day while tooltip keeps the UTC day", function () {
   var prev = process.env.TZ;
   process.env.TZ = "America/New_York";

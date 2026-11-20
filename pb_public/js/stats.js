@@ -332,12 +332,12 @@
     var step = hourly ? (n <= 26 ? 6 : 12) : (n <= 7 ? 1 : (n > 60 ? 14 : 7));
     var xIdx = [];
     for (var xi = 0; xi < n; xi += step) xIdx.push(xi);
-    // Trailing edge: appending the last day when it sits 1-3 days after
-    // the previous tick crowds the two labels (seen as "10-14"/"10-16"
-    // overlap on narrow home cards). Move the last tick to the final
-    // day instead so the edge stays labeled without overlap.
+    // Trailing edge: a final tick closer than a full step to the previous
+    // one crowds the two labels (seen as "10-14"/"10-16" on narrow home
+    // cards, and "11-14"/"11-20" on 90d charts). Move the last tick to
+    // the final day instead so the edge stays labeled without overlap.
     if (xIdx[xIdx.length - 1] !== n - 1) {
-      if (n - 1 - xIdx[xIdx.length - 1] < 4) xIdx[xIdx.length - 1] = n - 1;
+      if (n - 1 - xIdx[xIdx.length - 1] < step) xIdx[xIdx.length - 1] = n - 1;
       else xIdx.push(n - 1);
     }
     function tickLabel(p) {
