@@ -3,6 +3,23 @@
 All notable changes to the ConfigWire server (`configwire/`, image
 `ghcr.io/configwire/configwire`) are documented in this file.
 
+## v0.2.0-rc.14 — 2026-11-22
+
+### Added
+
+- Stats charts label hours and days in the browser's local timezone, with the offset shown in the range stamp; hover tooltips still report the exact UTC bucket. The admin account list formats "Created" times the same way, with the UTC value on hover.
+
+### Changed
+
+- Console views span the full page width, and the auth screen no longer sits in a narrow centered card.
+- On narrow screens the sidebar becomes an off-canvas drawer with a backdrop, larger touch targets, and Escape/route dismissal. Audit, logs, and flag-folder tables stack into cards instead of forcing sideways scrolling; the audit table keeps fixed column widths on larger screens.
+- Primary and ghost buttons have stronger text contrast.
+
+### Fixed
+
+- Stats axis labels keep a constant on-screen size as the chart is resized.
+- A crowded final x-axis date replaces the previous tick instead of appending beside it, so 90-day charts no longer overlap.
+
 ## v0.2.0-rc.13 — 2026-11-15
 
 ### Added
