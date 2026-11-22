@@ -150,6 +150,32 @@
       CW.login(CW.$("login-email").value, CW.$("login-password").value).catch(function () { /* shown inline */ });
     });
     CW.on("logout-btn", "click", CW.logout);
+
+    var navToggle = CW.$("nav-toggle");
+    var navSidebar = document.querySelector(".sidebar");
+    var navBackdrop = CW.$("nav-backdrop");
+    var setNavOpen = function (open, restoreFocus) {
+      if (!navSidebar || !navToggle) return;
+      navSidebar.classList.toggle("is-open", open);
+      navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      navToggle.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+      if (navBackdrop) navBackdrop.hidden = !open;
+      if (open) {
+        var first = navSidebar.querySelector("a:not([hidden])");
+        if (first) first.focus();
+      } else if (restoreFocus) {
+        navToggle.focus();
+      }
+    };
+    CW.on("nav-toggle", "click", function () {
+      setNavOpen(!(navSidebar && navSidebar.classList.contains("is-open")));
+    });
+    CW.on("nav-backdrop", "click", function () { setNavOpen(false, true); });
+    window.addEventListener("hashchange", function () { setNavOpen(false); });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && navSidebar && navSidebar.classList.contains("is-open")) setNavOpen(false, true);
+    });
+
     CW.on("setup-form", "submit", function (ev) {
       if (CW.createSetup) CW.createSetup(ev).catch(function () { /* shown inline */ });
       else ev.preventDefault();
